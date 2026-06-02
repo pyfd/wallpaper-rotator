@@ -35,16 +35,20 @@ TARGET_IMG="/usr/share/backgrounds/login-random.jpg"
 LOGIN_BIN="/usr/local/bin/random-login-bg.sh"
 SETWP_BIN="/usr/local/bin/set-wallpaper.sh"
 FETCH_BIN="/usr/local/bin/fetch-wallpaper.sh"
+GENSTATUS_BIN="/usr/local/bin/gen-status.sh"
+WEB_BIN="/usr/local/bin/wallpaper-web"
+WEB_PORT="8787"
 # Image sources (priority is randomised per fetch for variety; the chain falls
 # through to the next on any failure). picsum is the always-works floor.
 SOURCES="wallhaven bing picsum local"
 # Local image folder for the 'local' source — used only if it exists + has images.
 LOCALDIR="$USER_HOME/Pictures/Wallpapers"
-# Activity log (XDG state dir). Shared by the cron jobs, the setter, and the
-# login generator. Created user-owned so the root-run login generator appends
-# rather than taking ownership.
+# Activity log + web status dir (XDG state dir). Shared by the cron jobs, the
+# setter, and the login generator. Created user-owned so the root-run login
+# generator appends rather than taking ownership.
 LOG_DIR="${XDG_STATE_HOME:-$USER_HOME/.local/state}/wallpaper-rotator"
 LOG_FILE="$LOG_DIR/wallpaper.log"
+WEBDIR="$LOG_DIR/web"
 
 echo "==> wallpaper-rotator install (user: $TARGET_USER)"
 
@@ -145,6 +149,7 @@ ensure_pkg convert  imagemagick imagemagick imagemagick ImageMagick
 ensure_pkg curl     curl        curl        curl        curl
 ensure_pkg crontab  cron        cronie      cronie      cron
 ensure_pkg jq       jq          jq          jq          jq          # JSON parse for wallhaven/bing sources
+ensure_pkg python3  python3     python3     python3     python3     # local status web UI (wallpaper-web)
 case "$DE" in *xfce*) ensure_pkg xfconf-query xfconf xfconf xfconf xfconf ;; esac
 # KDE Plasma sets the wallpaper via plasma-apply-wallpaperimage (ships with
 # plasma-workspace, so normally already present) or a qdbus fallback. We don't
@@ -181,6 +186,22 @@ if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
   "$FETCH_BIN" || echo "    WARNING: seed fetch failed (no internet?). Pool empty for now." >&2
 fi
 
+# --- 5b. local status web UI --------------------------------------------
+echo "==> installing status web UI ($WEB_BIN)"
+mkdir -p "$WEBDIR"
+TMP="$(mktemp)"
+sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@WEBDIR@@#${WEBDIR}#g" \
+    -e "s#@@RES@@#${RES}#g" -e "s#@@SOURCES@@#${SOURCES}#g" \
+    "$REPO_DIR/bin/gen-status.sh" > "$TMP"
+sudo install -m 0755 -o root -g root "$TMP" "$GENSTATUS_BIN"
+rm -f "$TMP"
+TMP="$(mktemp)"
+sed -e "s#@@WEBDIR@@#${WEBDIR}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@PORT@@#${WEB_PORT}#g" \
+    "$REPO_DIR/bin/wallpaper-web.sh" > "$TMP"
+sudo install -m 0755 -o root -g root "$TMP" "$WEB_BIN"
+rm -f "$TMP"
+"$GENSTATUS_BIN" 2>/dev/null || true   # generate the page once now
+
 # --- 6. desktop wallpaper setter ----------------------------------------
 if [ "$DESKTOP_ENABLED" = 1 ]; then
   echo "==> installing $SETWP_BIN"
@@ -204,7 +225,7 @@ fi
 
 # --- 7. cron jobs (download + prune + rotate) ---------------------------
 echo "==> installing cron jobs"
-NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
+NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
 # When coexisting, drop the desktop-rotate line so we never fight the other manager.
@@ -267,3 +288,4 @@ else
   echo "  Login    : skipped (LightDM not detected)"
 fi
 echo "  Pool     : $POOL"
+echo "  Status UI: run 'wallpaper-web' -> http://127.0.0.1:${WEB_PORT}"

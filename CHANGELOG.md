@@ -5,6 +5,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Added (web UI)
+- **Local status web front end.** New `bin/gen-status.sh` builds a self-contained
+  status page (current wallpaper thumbnail, pool size/disk, per-source download
+  tallies, miss/fail counts, prune totals, recent activity, config) from the
+  activity log + pool. `bin/wallpaper-web.sh` (installed as `wallpaper-web`) serves
+  it **on demand** via `python3 -m http.server` bound to `127.0.0.1:8787` — no
+  always-on process, no network exposure. Cron regenerates the page each tick so it
+  stays fresh while the server runs; the page auto-refreshes every 30s. `python3`
+  added as a dependency; port configurable via `WEB_PORT` in `install.sh`.
+
 ### Added (image sources)
 - **Multi-source fetcher with fallback** — new `bin/fetch-wallpaper.sh` replaces the
   single hardcoded picsum download. Pulls from **Wallhaven** (purpose-built wallpapers,
