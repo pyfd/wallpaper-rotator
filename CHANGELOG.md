@@ -5,6 +5,26 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Added (web UI controls + overlays)
+- **Interactive controls in the web UI.** The status page now has a controls form
+  (`Apply` → POST `/set`): **rotation interval** (3/5/10/15/30/60 min, rewrites the
+  rotate cron line), **quote overlay** toggle, and **system-stats overlay** toggle.
+  The static `python3 -m http.server` is replaced by a small `wallpaper-web.py`
+  (`BaseHTTPRequestHandler`, 127.0.0.1 only) that serves the page + thumbnail and
+  handles the control POST (writes `config`, rewrites crontab, applies immediately,
+  regenerates). Config lives at `~/.local/state/wallpaper-rotator/config`.
+- **Overlays** (rendered by `set-wallpaper.sh` via ImageMagick onto a *copy* each
+  tick, so pool originals stay clean and stats stay live; the derived frame gets a
+  unique name so KDE repaints): **quote** (bottom; `fortune` if present, else a
+  bundled list) and **system stats** (top-right: host, uptime, load, mem, disk).
+  Rotate log gains an `overlay=…` tag.
+- **Fixed** a status-page tally bug: `grep -c … || echo 0` printed `0\n0` for
+  zero-count rows (e.g. `local 0 0`, `fails 0 0`) — `grep -c` already prints `0` and
+  exits non-zero, so the `|| echo 0` doubled it. Capture directly + default instead.
+- Rotate interval is now config-driven in the cron template (`*/@@INTERVAL@@`),
+  preserved across re-installs. `uninstall.sh` removes the new bins + (on `--purge`)
+  the state dir. (All verified live in-browser on KDE Plasma 5.24.7.)
+
 ### Added (web UI)
 - **Local status web front end.** New `bin/gen-status.sh` builds a self-contained
   status page (current wallpaper thumbnail, pool size/disk, per-source download

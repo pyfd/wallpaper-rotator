@@ -15,12 +15,70 @@ LOG="@@LOG@@"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null; }
 
+# Optional overlays are toggled from the web UI (wallpaper-web), which writes
+# this config. @@CONFIG@@ substituted by install.sh.
+CONFIG="@@CONFIG@@"
+[ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
+OVERLAY_QUOTE=0; OVERLAY_STATS=0
+[ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
+
+# A short quote for the overlay: `fortune` if installed, else a bundled list.
+pick_quote() {
+  if command -v fortune >/dev/null 2>&1; then
+    fortune -s 2>/dev/null | tr '\n\t' '  ' | sed 's/  */ /g' | cut -c1-160
+    return
+  fi
+  local q=(
+    "The best way to predict the future is to invent it."
+    "Simplicity is the ultimate sophistication."
+    "Make it work, make it right, make it fast."
+    "What we do in life echoes in eternity."
+    "The journey of a thousand miles begins with one step."
+    "Stay hungry, stay foolish."
+    "Less, but better."
+    "First, solve the problem. Then, write the code."
+    "The obstacle is the way."
+    "Done is better than perfect."
+  )
+  printf '%s' "${q[$((RANDOM % ${#q[@]}))]}"
+}
+
 IMG="${1:-}"
 if [ -z "$IMG" ]; then
   IMG="$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | shuf -n 1)"
 fi
 [ -z "$IMG" ] && { log "[rotate] skip (empty pool)"; exit 0; }
 [ -f "$IMG" ] || { log "[rotate] skip (missing file: $IMG)"; exit 0; }
+
+# Overlays: composite quote and/or system stats onto a COPY of the pool image so
+# the original stays clean. The derived file gets a UNIQUE name each tick — a
+# constant path wouldn't repaint (KDE caches by path), and stats must stay live.
+ORIG="$IMG"
+OVERLAYS=""
+if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; } && command -v convert >/dev/null 2>&1; then
+  RDIR="$(dirname "$LOG")/rendered"; mkdir -p "$RDIR"
+  RENDER="$RDIR/$(date +%s).$$.jpg"
+  if cp "$IMG" "$RENDER" 2>>"$LOG"; then
+    if [ "${OVERLAY_STATS:-0}" = 1 ]; then
+      stats="$(printf '%s\n' \
+        "$(hostname)" \
+        "up $(uptime -p 2>/dev/null | sed 's/^up //')" \
+        "load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)" \
+        "mem $(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')" \
+        "disk $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}')")"
+      convert "$RENDER" -gravity NorthEast -pointsize 22 -fill white \
+        -undercolor '#000000aa' -annotate +30+30 "$stats " "$RENDER" 2>>"$LOG" && OVERLAYS="stats"
+    fi
+    if [ "${OVERLAY_QUOTE:-0}" = 1 ]; then
+      quote="$(pick_quote | fold -s -w 52)"
+      convert "$RENDER" -gravity South -pointsize 26 -fill white \
+        -undercolor '#000000aa' -annotate +0+60 "$quote " "$RENDER" 2>>"$LOG" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
+    fi
+    IMG="$RENDER"
+    # Keep only the newest few rendered frames.
+    ls -t "$RDIR"/*.jpg 2>/dev/null | tail -n +4 | xargs -r rm -- 2>/dev/null
+  fi
+fi
 
 # Cron has no session bus / display; assume the usual single-user session.
 [ -z "${DISPLAY:-}" ] && export DISPLAY=:0
@@ -101,10 +159,11 @@ case "$DE" in
     ;;
 esac
 
+tag=""; [ -n "$OVERLAYS" ] && tag=" overlay=$OVERLAYS"
 if [ "$st" -eq 0 ]; then
-  log "[rotate] de=${DE:-unknown} backend=$BACKEND img=$(basename "$IMG") status=ok"
+  log "[rotate] de=${DE:-unknown} backend=$BACKEND img=$(basename "$ORIG")${tag} status=ok"
 else
-  log "[rotate] de=${DE:-unknown} backend=$BACKEND img=$(basename "$IMG") status=fail:$st"
+  log "[rotate] de=${DE:-unknown} backend=$BACKEND img=$(basename "$ORIG")${tag} status=fail:$st"
 fi
 
 # Keep the log bounded (cron writes ~144 rotate lines/day).

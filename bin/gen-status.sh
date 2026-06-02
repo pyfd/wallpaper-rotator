@@ -17,6 +17,11 @@ SOURCES="@@SOURCES@@"
 [ "$RES"     = "@@RES""@@" ]     && RES="unknown"
 [ "$SOURCES" = "@@SOURCES""@@" ] && SOURCES="wallhaven bing picsum local"
 
+CONFIG="@@CONFIG@@"
+[ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
+INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_STATS=0
+[ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
+
 mkdir -p "$WEBDIR"
 [ -f "$LOG" ] || : > "$LOG"
 
@@ -30,13 +35,20 @@ backend=$(printf '%s' "$last_rotate" | grep -oP 'backend=\K\S+' || true)
 de=$(printf '%s' "$last_rotate" | grep -oP 'de=\K\S+' || true)
 rotate_when=$(printf '%s' "$last_rotate" | grep -oP '^\S+ \S+' || true)
 dl_when=$(printf '%s' "$last_dl" | grep -oP '^\S+ \S+' || true)
-dl_fail=$(grep -c '\[download\] fail' "$LOG" 2>/dev/null || echo 0)
-dl_miss=$(grep -c '\[download\] src=.* miss' "$LOG" 2>/dev/null || echo 0)
+# NB: `grep -c` prints 0 AND exits non-zero on no match, so `|| echo 0` would
+# append a SECOND 0 ("0\n0"). Capture directly and default an empty (missing file).
+dl_fail=$(grep -c '\[download\] fail' "$LOG" 2>/dev/null); dl_fail=${dl_fail:-0}
+dl_miss=$(grep -c '\[download\] src=.* miss' "$LOG" 2>/dev/null); dl_miss=${dl_miss:-0}
 pruned_total=$(grep -oP '\[prune\] removed=\K[0-9]+' "$LOG" 2>/dev/null | awk '{s+=$1} END{print s+0}')
 
-# Thumbnail of the current wallpaper (resized; falls back to newest pool image).
+# Thumbnail of the current wallpaper (resized). When an overlay is active the
+# real desktop shows the rendered frame, so prefer the newest rendered image.
 thumb_src="$POOL/$cur_img"
-[ -n "$cur_img" ] && [ -f "$thumb_src" ] || thumb_src=$(ls -t "$POOL"/*.jpg 2>/dev/null | head -1)
+if [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; then
+  r=$(ls -t "$(dirname "$LOG")/rendered"/*.jpg 2>/dev/null | head -1)
+  [ -n "$r" ] && thumb_src="$r"
+fi
+[ -n "${thumb_src:-}" ] && [ -f "$thumb_src" ] || thumb_src=$(ls -t "$POOL"/*.jpg 2>/dev/null | head -1)
 have_thumb=0
 if [ -n "${thumb_src:-}" ] && [ -f "$thumb_src" ]; then
   convert "$thumb_src" -resize 520x "$WEBDIR/current.jpg" 2>/dev/null && have_thumb=1
@@ -47,12 +59,21 @@ esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 # Per-source download tallies -> HTML rows.
 src_rows=""
 for s in $SOURCES; do
-  n=$(grep -c "\[download\] src=$s ok" "$LOG" 2>/dev/null || echo 0)
+  n=$(grep -c "\[download\] src=$s ok" "$LOG" 2>/dev/null); n=${n:-0}
   src_rows="${src_rows}<tr><td>${s}</td><td class=num>${n}</td></tr>"
 done
 
 recent=$(tail -n 18 "$LOG" 2>/dev/null | tac | esc)
 now=$(date '+%Y-%m-%d %H:%M:%S')
+
+# Controls form state (current config reflected in the widgets).
+int_opts=""
+for n in 3 5 10 15 30 60; do
+  sel=""; [ "${INTERVAL_MIN:-10}" = "$n" ] && sel=" selected"
+  int_opts="${int_opts}<option value=\"$n\"$sel>${n} min</option>"
+done
+qchk=""; [ "${OVERLAY_QUOTE:-0}" = 1 ] && qchk=" checked"
+schk=""; [ "${OVERLAY_STATS:-0}" = 1 ] && schk=" checked"
 
 # --- emit page --------------------------------------------------------------
 cat > "$WEBDIR/index.html" <<HTML
@@ -77,6 +98,11 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a909a;ma
 pre{background:#0f1115;border:1px solid #262a33;border-radius:10px;padding:12px;overflow:auto;font-size:12px;margin:0}
 .ok{color:#5fd17a}.bad{color:#e06c75}
 .foot{color:#5a606a;font-size:11px;margin-top:24px}
+form.controls{background:#1c1f26;border:1px solid #262a33;border-radius:10px;padding:16px;display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+form.controls label{display:flex;align-items:center;gap:7px}
+form.controls select{background:#0f1115;color:#e6e8ec;border:1px solid #2a2f39;border-radius:6px;padding:5px 7px}
+form.controls button{background:#3a6df0;color:#fff;border:0;border-radius:6px;padding:8px 18px;cursor:pointer;font-weight:600;margin-left:auto}
+form.controls button:hover{background:#2f5fd6}
 </style></head><body><div class=wrap>
 <h1>🖼️ wallpaper-rotator</h1>
 <div class=sub>desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
@@ -95,6 +121,13 @@ cat >> "$WEBDIR/index.html" <<HTML
   <div class=card><div class=k>Pruned (total)</div><div class=v>${pruned_total:-0}</div></div>
   <div class=card><div class=k>Download misses / fails</div><div class=v>${dl_miss:-0} <small>/ ${dl_fail:-0}</small></div></div>
 </div>
+<h2>Controls</h2>
+<form class=controls method=post action="/set">
+  <label>Change every <select name=interval>${int_opts}</select></label>
+  <label><input type=checkbox name=quote value=1${qchk}> Overlay a random quote</label>
+  <label><input type=checkbox name=stats value=1${schk}> Overlay system stats</label>
+  <button type=submit>Apply</button>
+</form>
 <h2>Downloads by source</h2>
 <table>${src_rows}</table>
 <h2>Recent activity</h2>

@@ -49,6 +49,8 @@ LOCALDIR="$USER_HOME/Pictures/Wallpapers"
 LOG_DIR="${XDG_STATE_HOME:-$USER_HOME/.local/state}/wallpaper-rotator"
 LOG_FILE="$LOG_DIR/wallpaper.log"
 WEBDIR="$LOG_DIR/web"
+CONFIG_FILE="$LOG_DIR/config"          # interval + overlay toggles (web UI writes this)
+PYBIN="/usr/local/bin/wallpaper-web.py"
 
 echo "==> wallpaper-rotator install (user: $TARGET_USER)"
 
@@ -186,18 +188,31 @@ if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
   "$FETCH_BIN" || echo "    WARNING: seed fetch failed (no internet?). Pool empty for now." >&2
 fi
 
-# --- 5b. local status web UI --------------------------------------------
+# --- 5b. local status + control web UI ----------------------------------
 echo "==> installing status web UI ($WEB_BIN)"
 mkdir -p "$WEBDIR"
+# Default config (preserved across re-installs).
+if [ ! -f "$CONFIG_FILE" ]; then
+  printf '# wallpaper-rotator config (managed by wallpaper-web)\nINTERVAL_MIN=10\nOVERLAY_QUOTE=0\nOVERLAY_STATS=0\n' > "$CONFIG_FILE"
+fi
+
+# Status-page generator.
 TMP="$(mktemp)"
 sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@WEBDIR@@#${WEBDIR}#g" \
-    -e "s#@@RES@@#${RES}#g" -e "s#@@SOURCES@@#${SOURCES}#g" \
+    -e "s#@@RES@@#${RES}#g" -e "s#@@SOURCES@@#${SOURCES}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" \
     "$REPO_DIR/bin/gen-status.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$GENSTATUS_BIN"
 rm -f "$TMP"
+
+# Control server (Python) + its launcher.
 TMP="$(mktemp)"
-sed -e "s#@@WEBDIR@@#${WEBDIR}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@PORT@@#${WEB_PORT}#g" \
-    "$REPO_DIR/bin/wallpaper-web.sh" > "$TMP"
+sed -e "s#@@WEBDIR@@#${WEBDIR}#g" -e "s#@@PORT@@#${WEB_PORT}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" \
+    -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" \
+    "$REPO_DIR/bin/wallpaper-web.py" > "$TMP"
+sudo install -m 0755 -o root -g root "$TMP" "$PYBIN"
+rm -f "$TMP"
+TMP="$(mktemp)"
+sed -e "s#@@PYBIN@@#${PYBIN}#g" "$REPO_DIR/bin/wallpaper-web.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$WEB_BIN"
 rm -f "$TMP"
 "$GENSTATUS_BIN" 2>/dev/null || true   # generate the page once now
@@ -206,7 +221,7 @@ rm -f "$TMP"
 if [ "$DESKTOP_ENABLED" = 1 ]; then
   echo "==> installing $SETWP_BIN"
   TMP="$(mktemp)"
-  sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
+  sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
   sudo install -m 0755 -o root -g root "$TMP" "$SETWP_BIN"
   rm -f "$TMP"
 
@@ -225,7 +240,10 @@ fi
 
 # --- 7. cron jobs (download + prune + rotate) ---------------------------
 echo "==> installing cron jobs"
-NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
+# Rotate interval from config (preserved across re-installs; the web UI updates it).
+CFG_INTERVAL="$(grep '^INTERVAL_MIN=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 | tr -dc '0-9')"
+[ -n "$CFG_INTERVAL" ] || CFG_INTERVAL=10
+NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@INTERVAL@@#${CFG_INTERVAL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
 # When coexisting, drop the desktop-rotate line so we never fight the other manager.

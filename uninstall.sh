@@ -23,9 +23,16 @@ crontab -l 2>/dev/null \
 echo "==> removing autostart entry"
 rm -f "$HOME/.config/autostart/random-login-bg.desktop"
 
+echo "==> stopping the status server if running"
+pkill -f /usr/local/bin/wallpaper-web.py 2>/dev/null || true
+
 echo "==> removing scripts + sudoers + login image (sudo)"
 sudo rm -f /usr/local/bin/random-login-bg.sh
 sudo rm -f /usr/local/bin/set-wallpaper.sh
+sudo rm -f /usr/local/bin/fetch-wallpaper.sh
+sudo rm -f /usr/local/bin/gen-status.sh
+sudo rm -f /usr/local/bin/wallpaper-web
+sudo rm -f /usr/local/bin/wallpaper-web.py
 sudo rm -f /etc/sudoers.d/random-login-bg
 sudo rm -f /usr/share/backgrounds/login-random.jpg
 
@@ -37,11 +44,15 @@ done
 echo "    NOTE: the greeter's background= line in /etc/lightdm/lightdm-gtk-greeter.conf"
 echo "    is left as-is (points at a now-removed image). Edit it manually if desired."
 
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator"
 if [ "$PURGE" -eq 1 ]; then
   echo "==> --purge: deleting image pool $POOL"
   rm -rf "$POOL"
+  echo "==> --purge: deleting state (log, config, web, rendered) $STATE"
+  rm -rf "$STATE"
 else
   echo "==> image pool kept at $POOL (pass --purge to delete)"
+  echo "==> state kept at $STATE (log/config/web; pass --purge to delete)"
 fi
 
 echo "Done."
