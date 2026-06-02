@@ -19,6 +19,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   the configured interval (the cron line itself was always correct). Now reports
   the actual `$CFG_INTERVAL`.
 
+### Changed
+- **First install now seeds a batch of images** (`SEED_COUNT`, default 15) instead
+  of a single one, so random rotation has real variety from the first tick rather
+  than repeating one image until cron slowly fills the pool. Each fetch shuffles
+  sources so the batch is varied; only runs when the pool is empty (re-installs
+  don't re-seed), and stays under the keep-30 prune ceiling.
+
 ### Docs
 - Corrected the install.sh header and README intro, which still described the
   pool as refilled "from picsum.photos" only — it has been multi-source

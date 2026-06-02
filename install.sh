@@ -45,6 +45,11 @@ WEB_PORT="8787"
 SOURCES="wallhaven bing picsum local"
 # Local image folder for the 'local' source — used only if it exists + has images.
 LOCALDIR="$USER_HOME/Pictures/Wallpapers"
+# How many images to download up front on a FIRST install, so random rotation has
+# variety from the very first tick instead of repeating one image until cron fills
+# the pool. Only runs when the pool is empty; re-installs don't re-seed. Kept under
+# the keep-30 prune ceiling.
+SEED_COUNT=15
 # Activity log + web status dir (XDG state dir). Shared by the cron jobs, the
 # setter, and the login generator. Created user-owned so the root-run login
 # generator appends rather than taking ownership.
@@ -189,10 +194,21 @@ sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@RES@@#${RES}#
 sudo install -m 0755 -o root -g root "$TMP" "$FETCH_BIN"
 rm -f "$TMP"
 
-# Seed the pool now so nothing is blank until the first cron tick.
+# Seed the pool now so nothing is blank until the first cron tick. Fetch a batch
+# up front (SEED_COUNT) so random rotation has variety immediately rather than
+# repeating one image while cron slowly fills the pool. Each fetch shuffles
+# sources, so the batch is varied; failures (offline) just yield a smaller pool.
 if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
-  echo "==> seeding pool"
-  "$FETCH_BIN" || echo "    WARNING: seed fetch failed (no internet?). Pool empty for now." >&2
+  echo "==> seeding pool (up to $SEED_COUNT images)"
+  got=0
+  for _ in $(seq "$SEED_COUNT"); do
+    "$FETCH_BIN" && got=$((got + 1))
+  done
+  if [ "$got" -gt 0 ]; then
+    echo "    seeded $got/$SEED_COUNT"
+  else
+    echo "    WARNING: seed fetch failed (no internet?). Pool empty for now." >&2
+  fi
 fi
 
 # Quote-cache refresher (keeps the overlay quotes changing via an API).
