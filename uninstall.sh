@@ -23,8 +23,9 @@ crontab -l 2>/dev/null \
 echo "==> removing autostart entry"
 rm -f "$HOME/.config/autostart/random-login-bg.desktop"
 
-echo "==> removing script + sudoers + login image (sudo)"
+echo "==> removing scripts + sudoers + login image (sudo)"
 sudo rm -f /usr/local/bin/random-login-bg.sh
+sudo rm -f /usr/local/bin/set-wallpaper.sh
 sudo rm -f /etc/sudoers.d/random-login-bg
 sudo rm -f /usr/share/backgrounds/login-random.jpg
 
