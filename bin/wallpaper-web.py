@@ -113,8 +113,17 @@ class Handler(BaseHTTPRequestHandler):
         cfg["OVERLAY_STATS"] = "1" if form.get("stats") else "0"
         write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
-        try:                                       # apply now so it's visible immediately
-            subprocess.run([SETWP], timeout=30)
+        # Re-apply the CURRENT image with the new settings (don't shuffle to a
+        # random one) so Apply only changes overlays/interval, not the picture.
+        cur = ""
+        try:
+            with open(os.path.join(os.path.dirname(CONFIG), "current")) as cf:
+                cur = cf.read().strip()
+        except Exception:
+            cur = ""
+        cmd = [SETWP, cur] if (cur and os.path.isfile(cur)) else [SETWP]
+        try:
+            subprocess.run(cmd, timeout=30)
         except Exception:
             pass
         regen()

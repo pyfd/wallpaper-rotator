@@ -6,6 +6,9 @@
 # XDG_CURRENT_DESKTOP is unset. @@POOL@@ and @@LOG@@ are substituted by install.sh.
 
 POOL="@@POOL@@"
+# Screen resolution (for overlay framing). @@RES@@ substituted by install.sh.
+RES="@@RES@@"
+[ "$RES" = "@@RES""@@" ] && RES=""
 
 # Activity log (see install.sh). Fall back to the XDG state path when run from a
 # raw checkout where @@LOG@@ wasn't substituted.
@@ -50,15 +53,23 @@ fi
 [ -z "$IMG" ] && { log "[rotate] skip (empty pool)"; exit 0; }
 [ -f "$IMG" ] || { log "[rotate] skip (missing file: $IMG)"; exit 0; }
 
+# Remember the current pool original so the web UI can RE-apply the same image
+# with changed overlay settings (Apply re-renders, doesn't shuffle the picture).
+ORIG="$IMG"
+printf '%s\n' "$ORIG" > "$(dirname "$LOG")/current" 2>/dev/null
+
 # Overlays: composite quote and/or system stats onto a COPY of the pool image so
 # the original stays clean. The derived file gets a UNIQUE name each tick — a
 # constant path wouldn't repaint (KDE caches by path), and stats must stay live.
-ORIG="$IMG"
 OVERLAYS=""
 if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; } && command -v convert >/dev/null 2>&1; then
   RDIR="$(dirname "$LOG")/rendered"; mkdir -p "$RDIR"
   RENDER="$RDIR/$(date +%s).$$.jpg"
-  if cp "$IMG" "$RENDER" 2>>"$LOG"; then
+  # Frame the base at the SCREEN resolution first (crop-to-fill) so overlays land
+  # where they're actually visible. Otherwise the DE crop-fills the source image
+  # and the top-right stats / bottom quote get pushed off-screen.
+  if { [ -n "$RES" ] && convert "$IMG" -resize "${RES}^" -gravity center -extent "$RES" "$RENDER" 2>>"$LOG"; } \
+       || cp "$IMG" "$RENDER" 2>>"$LOG"; then
     if [ "${OVERLAY_STATS:-0}" = 1 ]; then
       stats="$(printf '%s\n' \
         "$(hostname)" \

@@ -221,7 +221,7 @@ rm -f "$TMP"
 if [ "$DESKTOP_ENABLED" = 1 ]; then
   echo "==> installing $SETWP_BIN"
   TMP="$(mktemp)"
-  sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
+  sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" -e "s#@@RES@@#${RES}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
   sudo install -m 0755 -o root -g root "$TMP" "$SETWP_BIN"
   rm -f "$TMP"
 

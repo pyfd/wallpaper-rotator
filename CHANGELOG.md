@@ -24,6 +24,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 - Rotate interval is now config-driven in the cron template (`*/@@INTERVAL@@`),
   preserved across re-installs. `uninstall.sh` removes the new bins + (on `--purge`)
   the state dir. (All verified live in-browser on KDE Plasma 5.24.7.)
+- **Fixed overlay clipping.** Overlays were annotated onto the source image, which
+  the DE then crop-fills to the screen — pushing the top-right stats / bottom quote
+  off-screen. The overlay frame is now first resized + center-cropped to the screen
+  resolution (`set-wallpaper.sh` gains `@@RES@@`), so text lands where it's visible.
+- **Apply no longer shuffles the picture.** The control POST re-applied a *random*
+  image, so changing an interval/overlay also jumped to a new wallpaper.
+  `set-wallpaper.sh` now records the current pool original (`…/current`) and the
+  server re-applies *that* on Apply — only overlays/interval change, not the image.
+  (Scheduled cron rotations still pick a fresh random image.)
 
 ### Added (web UI)
 - **Local status web front end.** New `bin/gen-status.sh` builds a self-contained
