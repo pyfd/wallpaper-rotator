@@ -20,6 +20,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   the actual `$CFG_INTERVAL`.
 
 ### Changed
+- **Rotation no longer repeats the last image back-to-back.** The random pick now
+  drops the previously-applied original (tracked in `current`) from the candidate
+  list before shuffling, so consecutive ticks always change the picture when the
+  pool has more than one image. Falls back to the unfiltered shuffle for a
+  single-image pool; first run (no `current`) filters nothing.
 - **First install now seeds a batch of images** (`SEED_COUNT`, default 15) instead
   of a single one, so random rotation has real variety from the first tick rather
   than repeating one image until cron slowly fills the pool. Each fetch shuffles

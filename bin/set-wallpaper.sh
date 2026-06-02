@@ -122,7 +122,15 @@ weather_line() {
 
 IMG="${1:-}"
 if [ -z "$IMG" ]; then
-  IMG="$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | shuf -n 1)"
+  # Avoid an immediate repeat: drop the previously-applied original (stored in
+  # `current`) from the candidate list before the random pick. grep -vxF removes
+  # exactly that one path; if filtering leaves nothing (single-image pool, or the
+  # only files ARE the last one) fall back to the unfiltered shuffle so we always
+  # set something. Empty LAST (first run) filters nothing.
+  LAST=""; [ -f "$STATEDIR/current" ] && LAST="$(cat "$STATEDIR/current" 2>/dev/null)"
+  IMG="$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null \
+          | grep -vxF "$LAST" | shuf -n 1)"
+  [ -z "$IMG" ] && IMG="$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | shuf -n 1)"
 fi
 [ -z "$IMG" ] && { log "[rotate] skip (empty pool)"; exit 0; }
 [ -f "$IMG" ] || { log "[rotate] skip (missing file: $IMG)"; exit 0; }
