@@ -11,7 +11,7 @@
 # @@...@@ placeholders are substituted by install.sh; falls back to XDG defaults
 # when run from a raw checkout (guarded by the "@@" prefix check, which the
 # substitution can't reproduce).
-import os, subprocess, urllib.parse
+import os, re, subprocess, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WEBDIR    = "@@WEBDIR@@"
@@ -37,11 +37,16 @@ ALLOWED_SIZE = {"small", "medium", "large"}
 ALLOWED_THEME = {"dark", "light", "accent"}
 ALLOWED_FONT = {"default", "DejaVu-Sans", "DejaVu-Serif", "DejaVu-Sans-Mono",
                 "Liberation-Sans", "Liberation-Serif", "FreeSans", "FreeSerif"}
+ALLOWED_BGTHEME = {"", "nature", "landscape", "minimal", "space", "city", "abstract",
+                   "cars", "animals", "dark", "forest", "ocean"}
 CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
-            "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT")
+            "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
+            "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS", "WEATHER_LOCATION", "THEME")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
-                "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "dark", "OVERLAY_FONT": "default"}
+                "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "dark", "OVERLAY_FONT": "default",
+                "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0", "WEATHER_POS": "north",
+                "WEATHER_LOCATION": "", "THEME": ""}
 
 
 def read_config():
@@ -63,7 +68,9 @@ def write_config(cfg):
     with open(CONFIG, "w") as f:
         f.write("# wallpaper-rotator config (managed by wallpaper-web)\n")
         for k in CFG_KEYS:
-            f.write("%s=%s\n" % (k, cfg.get(k, CFG_DEFAULTS[k])))
+            # Quote values so spaces (e.g. WEATHER_LOCATION="New York") survive
+            # `. config` sourcing in the shell scripts.
+            f.write('%s="%s"\n' % (k, cfg.get(k, CFG_DEFAULTS[k])))
 
 
 def set_cron_interval(n):
@@ -123,15 +130,21 @@ class Handler(BaseHTTPRequestHandler):
         cfg["OVERLAY_QUOTE"] = "1" if form.get("quote") else "0"
         cfg["OVERLAY_QUOTE_DETAIL"] = "1" if form.get("quote_detail") else "0"
         cfg["OVERLAY_STATS"] = "1" if form.get("stats") else "0"
+        cfg["STATS_SPARKLINE"] = "1" if form.get("sparkline") else "0"
+        cfg["OVERLAY_WEATHER"] = "1" if form.get("weather") else "0"
 
         def pick(field, allowed, default):
             v = form.get(field, [default])[0]
             return v if v in allowed else default
-        cfg["QUOTE_POS"]    = pick("quote_pos", ALLOWED_POS, "south")
-        cfg["STATS_POS"]    = pick("stats_pos", ALLOWED_POS, "northeast")
-        cfg["OVERLAY_SIZE"] = pick("size", ALLOWED_SIZE, "medium")
-        cfg["OVERLAY_THEME"]= pick("theme", ALLOWED_THEME, "dark")
-        cfg["OVERLAY_FONT"] = pick("font", ALLOWED_FONT, "default")
+        cfg["QUOTE_POS"]     = pick("quote_pos", ALLOWED_POS, "south")
+        cfg["STATS_POS"]     = pick("stats_pos", ALLOWED_POS, "northeast")
+        cfg["WEATHER_POS"]   = pick("weather_pos", ALLOWED_POS, "north")
+        cfg["OVERLAY_SIZE"]  = pick("size", ALLOWED_SIZE, "medium")
+        cfg["OVERLAY_THEME"] = pick("overlay_theme", ALLOWED_THEME, "dark")
+        cfg["OVERLAY_FONT"]  = pick("font", ALLOWED_FONT, "default")
+        cfg["THEME"]         = pick("theme", ALLOWED_BGTHEME, "")
+        wl = form.get("weather_location", [""])[0].strip()
+        cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", wl)[:40]
         write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
         # Re-apply the CURRENT image with the new settings (don't shuffle to a

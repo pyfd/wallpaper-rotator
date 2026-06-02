@@ -126,8 +126,13 @@ applies immediately):
 
 - **Change every** — rotation interval (3 / 5 / 10 / 15 / 30 / 60 min).
 - **Quote** — composites a quote onto each wallpaper; **+attribution** adds author /
-  source / year (from a bundled list; `fortune` used when attribution is off).
-- **System stats** — composites host / uptime / load / mem / disk.
+  source / year. Quotes come from an API cache (`fetch-quotes.sh`, refreshed daily)
+  so they keep changing, falling back to `fortune`/a bundled list offline.
+- **System stats** — composites host / uptime / load / mem / disk; **sparklines**
+  toggle adds unicode trend bars beside load/mem (from a rolling history).
+- **Weather** — a local-weather overlay (wttr.in, no key) with a location field.
+- **Background theme** — bias the image sources to a theme (Wallhaven `q=`);
+  Bing/Picsum stay as untargeted fallback.
 - **Position** — place each overlay at any corner/edge/centre (per-overlay).
 - **Size / Theme / Font** — text size (small/medium/large), theme (dark / light /
   accent), and font (any installed ImageMagick font from a common set).

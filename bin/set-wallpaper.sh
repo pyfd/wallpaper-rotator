@@ -26,7 +26,12 @@ CONFIG="@@CONFIG@@"
 OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast
 OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
+STATS_SPARKLINE=0
+OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=
+THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
+
+STATEDIR="$(dirname "$LOG")"
 
 # Map a config position token to an ImageMagick -gravity value ($2 = default).
 imgrav() {
@@ -42,8 +47,26 @@ imgrav() {
 # from the bundled list. Without detail, `fortune -s` is used if installed.
 pick_quote() {
   local detail="${1:-0}"
-  if [ "$detail" != 1 ] && command -v fortune >/dev/null 2>&1; then
-    fortune -s 2>/dev/null | tr '\n\t' '  ' | sed 's/  */ /g' | cut -c1-160
+  # Prefer the API cache (text|author||) refreshed by fetch-quotes.sh, so quotes
+  # keep changing; fall back to fortune (non-detail) then the bundled list.
+  local cache="$STATEDIR/quotes.cache" line=""
+  [ -s "$cache" ] && line="$(shuf -n1 "$cache" 2>/dev/null)"
+  if [ -z "$line" ]; then
+    if [ "$detail" != 1 ] && command -v fortune >/dev/null 2>&1; then
+      fortune -s 2>/dev/null | tr '\n\t' '  ' | sed 's/  */ /g' | cut -c1-160
+      return
+    fi
+    line=""
+  fi
+  if [ -n "$line" ]; then
+    local text author source year
+    IFS='|' read -r text author source year <<< "$line"
+    if [ "$detail" = 1 ] && [ -n "$author" ]; then
+      local attr="$author"; [ -n "$source" ] && attr="$attr, $source"; [ -n "$year" ] && attr="$attr ($year)"
+      printf '%s\n— %s' "$text" "$attr"
+    else
+      printf '%s' "$text"
+    fi
     return
   fi
   # text | author | source | year
@@ -72,6 +95,31 @@ pick_quote() {
   fi
 }
 
+# Unicode sparkline from space-separated numbers. awk computes 0-7 levels (float
+# math is fine there); bash maps to block chars (reliable multibyte handling).
+sparkline() {
+  local levels chars=(▁ ▂ ▃ ▄ ▅ ▆ ▇ █) out="" l
+  levels="$(awk -v RS='[ \n]' 'NF{a[n++]=$1} END{if(n==0)exit; mn=a[0];mx=a[0];
+    for(i=0;i<n;i++){if(a[i]<mn)mn=a[i];if(a[i]>mx)mx=a[i]} r=mx-mn;
+    for(i=0;i<n;i++) printf "%d ",(r>0)?int((a[i]-mn)/r*7+0.5):0}' <<<"$1")"
+  for l in $levels; do out="$out${chars[$l]}"; done
+  printf '%s' "$out"
+}
+
+# Local weather via wttr.in (no key); cached ~1h so we don't hammer it.
+weather_line() {
+  local cache="$STATEDIR/weather.txt" loc="${WEATHER_LOCATION:-}"
+  if [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q .; then
+    if curl -fsL --max-time 12 "https://wttr.in/${loc// /+}?format=%l:+%C+%t,+%h,+%w" \
+         -o "$cache.new" 2>>"$LOG" && [ -s "$cache.new" ]; then
+      mv "$cache.new" "$cache"
+    else
+      rm -f "$cache.new"
+    fi
+  fi
+  cat "$cache" 2>/dev/null
+}
+
 IMG="${1:-}"
 if [ -z "$IMG" ]; then
   IMG="$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | shuf -n 1)"
@@ -88,12 +136,13 @@ printf '%s\n' "$ORIG" > "$(dirname "$LOG")/current" 2>/dev/null
 # the original stays clean. The derived file gets a UNIQUE name each tick — a
 # constant path wouldn't repaint (KDE caches by path), and stats must stay live.
 OVERLAYS=""
-if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; } && command -v convert >/dev/null 2>&1; then
-  RDIR="$(dirname "$LOG")/rendered"; mkdir -p "$RDIR"
+if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVERLAY_WEATHER:-0}" = 1 ]; } \
+     && command -v convert >/dev/null 2>&1; then
+  RDIR="$STATEDIR/rendered"; mkdir -p "$RDIR"
   RENDER="$RDIR/$(date +%s).$$.jpg"
   # Frame the base at the SCREEN resolution first (crop-to-fill) so overlays land
   # where they're actually visible. Otherwise the DE crop-fills the source image
-  # and the top-right stats / bottom quote get pushed off-screen.
+  # and the overlays get pushed off-screen.
   if { [ -n "$RES" ] && convert "$IMG" -resize "${RES}^" -gravity center -extent "$RES" "$RENDER" 2>>"$LOG"; } \
        || cp "$IMG" "$RENDER" 2>>"$LOG"; then
     # Style from config: size -> pointsize, theme -> fill + undercolor, font.
@@ -110,24 +159,49 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; } && comman
     fi
     # Offset from the chosen gravity: corners/edges inset 30px; centred edges get
     # x=0; dead-centre gets y=0 too.
-    place() { gx=30; gy=30; case "$1" in North|South|Center) gx=0;; esac; case "$1" in Center) gy=0;; esac; }
+    # Offset from gravity: 30px inset; bottom edge insets further (80px) to clear
+    # a desktop panel/taskbar; dead-centre sits at 0,0.
+    place() {
+      gx=30; gy=30
+      case "$1" in North|South|Center) gx=0;; esac
+      case "$1" in South*) gy=80;; esac
+      case "$1" in Center) gy=0;; esac
+    }
+    draw() {  # $1=position token  $2=default gravity  $3=text
+      local g; g="$(imgrav "$1" "$2")"; place "$g"
+      convert "$RENDER" "${FONTARG[@]}" -gravity "$g" -pointsize "$PS" -fill "$FILL" \
+        -undercolor "$UNDER" -annotate "+${gx}+${gy}" "$3 " "$RENDER" 2>>"$LOG"
+    }
 
     if [ "${OVERLAY_STATS:-0}" = 1 ]; then
+      load3="$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"
+      memhr="$(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')"
+      lspark=""; mspark=""
+      if [ "${STATS_SPARKLINE:-0}" = 1 ]; then
+        # Roll a small history (last 30 samples) and draw sparklines from it.
+        M="$STATEDIR/metrics.csv"
+        printf '%s,%s\n' "$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)" \
+          "$(free 2>/dev/null | awk '/^Mem:/{printf "%.0f",$3/$2*100}')" >> "$M"
+        tail -n 30 "$M" > "$M.tmp" 2>/dev/null && mv "$M.tmp" "$M"
+        lspark=" $(sparkline "$(cut -d, -f1 "$M" | tr '\n' ' ')")"
+        mspark=" $(sparkline "$(cut -d, -f2 "$M" | tr '\n' ' ')")"
+      fi
       stats="$(printf '%s\n' \
         "$(hostname)" \
         "up $(uptime -p 2>/dev/null | sed 's/^up //')" \
-        "load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)" \
-        "mem $(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')" \
+        "load ${load3}${lspark}" \
+        "mem ${memhr}${mspark}" \
         "disk $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}')")"
-      SG="$(imgrav "${STATS_POS:-northeast}" NorthEast)"; place "$SG"
-      convert "$RENDER" "${FONTARG[@]}" -gravity "$SG" -pointsize "$PS" -fill "$FILL" \
-        -undercolor "$UNDER" -annotate "+${gx}+${gy}" "$stats " "$RENDER" 2>>"$LOG" && OVERLAYS="stats"
+      draw "${STATS_POS:-northeast}" NorthEast "$stats" && OVERLAYS="stats"
     fi
     if [ "${OVERLAY_QUOTE:-0}" = 1 ]; then
       quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}" | fold -s -w 52)"
-      QG="$(imgrav "${QUOTE_POS:-south}" South)"; place "$QG"
-      convert "$RENDER" "${FONTARG[@]}" -gravity "$QG" -pointsize "$PS" -fill "$FILL" \
-        -undercolor "$UNDER" -annotate "+${gx}+${gy}" "$quote " "$RENDER" 2>>"$LOG" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
+      draw "${QUOTE_POS:-south}" South "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
+    fi
+    if [ "${OVERLAY_WEATHER:-0}" = 1 ]; then
+      weather="$(weather_line | fold -s -w 60)"
+      [ -n "$weather" ] && draw "${WEATHER_POS:-north}" North "$weather" \
+        && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
     fi
     IMG="$RENDER"
     # Keep only the newest few rendered frames.

@@ -30,6 +30,7 @@ echo "==> removing scripts + sudoers + login image (sudo)"
 sudo rm -f /usr/local/bin/random-login-bg.sh
 sudo rm -f /usr/local/bin/set-wallpaper.sh
 sudo rm -f /usr/local/bin/fetch-wallpaper.sh
+sudo rm -f /usr/local/bin/fetch-quotes.sh
 sudo rm -f /usr/local/bin/gen-status.sh
 sudo rm -f /usr/local/bin/wallpaper-web
 sudo rm -f /usr/local/bin/wallpaper-web.py

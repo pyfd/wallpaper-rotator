@@ -5,6 +5,27 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Added (sources, overlays, weather, sparklines)
+- **API-sourced quotes with local cache** — `fetch-quotes.sh` refreshes a local
+  `quotes.cache` (text|author||) from a quotes API (dummyjson → zenquotes →
+  quotable, first that works), cron-refreshed daily; `set-wallpaper.sh` picks a
+  random cached quote (so they keep changing), falling back to `fortune`/bundled
+  when the cache is empty. Feeds the `+attribution` toggle (author).
+- **Local weather overlay** — a third overlay (host/wttr.in, no key), cached ~1h;
+  config `OVERLAY_WEATHER` / `WEATHER_POS` / `WEATHER_LOCATION` + web UI toggle,
+  position and location field.
+- **Backgrounds by theme** — `THEME` config routed to Wallhaven `q=<theme>`
+  (read live from config by `fetch-wallpaper.sh`); Bing/Picsum stay as untargeted
+  fallback. Web UI background-theme select.
+- **Load/RAM sparklines** — `STATS_SPARKLINE` toggle draws unicode block
+  sparklines (▁▂▃▄▅▆▇█) beside load/mem from a rolling `metrics.csv` (last 30
+  samples; bash/awk, no deps).
+- **Fix:** bottom-edge overlays now inset 80px so a quote/stats at the South edge
+  clears a desktop panel/taskbar (was hidden behind it). Config values are now
+  quoted on write so `WEATHER_LOCATION` with spaces survives shell sourcing.
+  Verified in-browser: weather + stats(+sparkline) + API quote(+attribution) +
+  themed background all render together on KDE Plasma.
+
 ### Docs
 - Added `TODO.md` (roadmap): API-sourced quotes w/ local cache, local-weather
   overlay, backgrounds-by-theme, load/RAM sparklines — each with a feasibility note.

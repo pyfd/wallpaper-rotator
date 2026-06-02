@@ -26,6 +26,13 @@ LOCALDIR="@@LOCALDIR@@"       # local image folder (used only if it exists + has
 [ "$SOURCES"  = "@@SOURCES""@@" ]  && SOURCES="wallhaven bing picsum local"
 [ "$LOCALDIR" = "@@LOCALDIR""@@" ] && LOCALDIR=""
 
+# THEME is read live from the config (set via the web UI) so it can change
+# without re-running install.sh. Empty = no theme (untargeted).
+CONFIG="@@CONFIG@@"
+[ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
+THEME=""
+[ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
+
 mkdir -p "$POOL" "$(dirname "$LOG")" 2>/dev/null
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null; }
 
@@ -44,9 +51,10 @@ valid_image() {
 # --- per-source fetchers: populate "$TMP", return 0 on success ---------------
 
 fetch_wallhaven() {                                     # purpose-built wallpapers, ratio-matched
-  local url
+  local url q=""
+  [ -n "${THEME:-}" ] && q="&q=$(printf '%s' "$THEME" | sed 's/ /+/g')"   # theme search
   url="$(curl -fsL --max-time 15 \
-    "https://wallhaven.cc/api/v1/search?categories=100&purity=100&atleast=${RES}&sorting=random" \
+    "https://wallhaven.cc/api/v1/search?categories=100&purity=100&atleast=${RES}${q}&sorting=random" \
     2>>"$LOG" | jq -r '.data[].path' 2>/dev/null | shuf -n1)"
   [ -n "$url" ] || return 1
   curl -fsL --max-time 30 "$url" -o "$TMP" 2>>"$LOG"

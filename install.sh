@@ -35,6 +35,7 @@ TARGET_IMG="/usr/share/backgrounds/login-random.jpg"
 LOGIN_BIN="/usr/local/bin/random-login-bg.sh"
 SETWP_BIN="/usr/local/bin/set-wallpaper.sh"
 FETCH_BIN="/usr/local/bin/fetch-wallpaper.sh"
+FETCHQ_BIN="/usr/local/bin/fetch-quotes.sh"
 GENSTATUS_BIN="/usr/local/bin/gen-status.sh"
 WEB_BIN="/usr/local/bin/wallpaper-web"
 WEB_PORT="8787"
@@ -177,7 +178,7 @@ echo "    sources: $SOURCES"
 echo "==> installing $FETCH_BIN"
 TMP="$(mktemp)"
 sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@RES@@#${RES}#g" \
-    -e "s#@@SOURCES@@#${SOURCES}#g" -e "s#@@LOCALDIR@@#${LOCALDIR}#g" \
+    -e "s#@@SOURCES@@#${SOURCES}#g" -e "s#@@LOCALDIR@@#${LOCALDIR}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" \
     "$REPO_DIR/bin/fetch-wallpaper.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$FETCH_BIN"
 rm -f "$TMP"
@@ -187,6 +188,14 @@ if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
   echo "==> seeding pool"
   "$FETCH_BIN" || echo "    WARNING: seed fetch failed (no internet?). Pool empty for now." >&2
 fi
+
+# Quote-cache refresher (keeps the overlay quotes changing via an API).
+echo "==> installing $FETCHQ_BIN"
+TMP="$(mktemp)"
+sed -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/fetch-quotes.sh" > "$TMP"
+sudo install -m 0755 -o root -g root "$TMP" "$FETCHQ_BIN"
+rm -f "$TMP"
+"$FETCHQ_BIN" >/dev/null 2>&1 || true   # seed the quote cache once
 
 # --- 5b. local status + control web UI ----------------------------------
 echo "==> installing status web UI ($WEB_BIN)"
@@ -204,6 +213,11 @@ STATS_POS=northeast
 OVERLAY_SIZE=medium
 OVERLAY_THEME=dark
 OVERLAY_FONT=default
+STATS_SPARKLINE=0
+OVERLAY_WEATHER=0
+WEATHER_POS=north
+WEATHER_LOCATION=
+THEME=
 CFG
 fi
 
@@ -254,7 +268,7 @@ echo "==> installing cron jobs"
 # Rotate interval from config (preserved across re-installs; the web UI updates it).
 CFG_INTERVAL="$(grep '^INTERVAL_MIN=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 | tr -dc '0-9')"
 [ -n "$CFG_INTERVAL" ] || CFG_INTERVAL=10
-NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@INTERVAL@@#${CFG_INTERVAL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
+NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@FETCHQ@@#${FETCHQ_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@INTERVAL@@#${CFG_INTERVAL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
 # When coexisting, drop the desktop-rotate line so we never fight the other manager.

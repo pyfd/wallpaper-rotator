@@ -21,6 +21,7 @@ CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
 INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
+STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
 mkdir -p "$WEBDIR"
@@ -81,11 +82,22 @@ done
 qchk="";  [ "${OVERLAY_QUOTE:-0}" = 1 ]        && qchk=" checked"
 qdchk=""; [ "${OVERLAY_QUOTE_DETAIL:-0}" = 1 ] && qdchk=" checked"
 schk="";  [ "${OVERLAY_STATS:-0}" = 1 ]        && schk=" checked"
+spchk=""; [ "${STATS_SPARKLINE:-0}" = 1 ]      && spchk=" checked"
+wchk="";  [ "${OVERLAY_WEATHER:-0}" = 1 ]      && wchk=" checked"
 POSNS="northwest north northeast west center east southwest south southeast"
 qpos_opts=$(opts_for "${QUOTE_POS:-south}" $POSNS)
 spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
+wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
 theme_opts=$(opts_for "${OVERLAY_THEME:-dark}" dark light accent)
+# Background theme select: "any" (empty) + presets.
+bg_cur="${THEME:-}"; bg_sel=""; [ -z "$bg_cur" ] && bg_sel=" selected"
+bgtheme_opts="<option value=\"\"$bg_sel>any</option>"
+for t in nature landscape minimal space city abstract cars animals dark forest ocean; do
+  s=""; [ "$bg_cur" = "$t" ] && s=" selected"
+  bgtheme_opts="$bgtheme_opts<option value=\"$t\"$s>$t</option>"
+done
+wloc_val=$(printf '%s' "${WEATHER_LOCATION:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
 # Font dropdown: "default" + any of a common set that ImageMagick actually has.
 font_sel=""; [ "${OVERLAY_FONT:-default}" = default ] && font_sel=" selected"
 font_opts="<option value=\"default\"$font_sel>default</option>"
@@ -151,8 +163,13 @@ cat >> "$WEBDIR/index.html" <<HTML
   <label>at <select name=quote_pos>${qpos_opts}</select></label>
   <label><input type=checkbox name=stats value=1${schk}> System stats</label>
   <label>at <select name=stats_pos>${spos_opts}</select></label>
+  <label><input type=checkbox name=sparkline value=1${spchk}> sparklines</label>
+  <label><input type=checkbox name=weather value=1${wchk}> Weather</label>
+  <label>at <select name=weather_pos>${wpos_opts}</select></label>
+  <label>loc <input type=text name=weather_location value="${wloc_val}" placeholder="Brighton" size=12></label>
+  <label>Background theme <select name=theme>${bgtheme_opts}</select></label>
   <label>Size <select name=size>${size_opts}</select></label>
-  <label>Theme <select name=theme>${theme_opts}</select></label>
+  <label>Style <select name=overlay_theme>${theme_opts}</select></label>
   <label>Font <select name=font>${font_opts}</select></label>
   <button type=submit>Apply</button>
 </form>
