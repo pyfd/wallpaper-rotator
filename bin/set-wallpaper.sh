@@ -16,8 +16,12 @@ fi
 
 # Cron has no session bus / display; assume the usual single-user session.
 [ -z "${DISPLAY:-}" ] && export DISPLAY=:0
+# XDG_RUNTIME_DIR holds the session-bus socket; Qt/KDE tools
+# (plasma-apply-wallpaperimage) need it and the bus path below derives from it.
+# X11 Plasma works without it, but Wayland sessions locate the bus via this.
+[ -z "${XDG_RUNTIME_DIR:-}" ] && export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-  export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u)/bus"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
 fi
 
 DE="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"

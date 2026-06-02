@@ -14,6 +14,12 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   `install.sh` adds a soft dependency check (warns if neither
   `plasma-apply-wallpaperimage` nor `qdbus` is present; no package is force-installed,
   as the setter ships with `plasma-workspace`). Support matrix updated.
+  `set-wallpaper.sh` also now exports `XDG_RUNTIME_DIR` (derived from the uid) when
+  unset and bases the D-Bus session address on it — X11 Plasma works without it,
+  but Wayland sessions locate the bus via `XDG_RUNTIME_DIR`, so cron ticks there
+  would otherwise fail to reach plasmashell.
+  *Verified live on KDE Plasma 5.24.7 + SDDM (X11):* desktop rotates (incl. from a
+  stripped cron-like env), login correctly skipped, install idempotent on re-run.
 
 ### Notes
 - Login background remains **LightDM-only**. KDE's default display manager is
