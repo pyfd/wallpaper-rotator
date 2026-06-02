@@ -21,6 +21,24 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   *Verified live on KDE Plasma 5.24.7 + SDDM (X11):* desktop rotates (incl. from a
   stripped cron-like env), login correctly skipped, install idempotent on re-run.
 
+### Fixed
+- **KDE wallpaper now actually changes on the live desktop.** The KDE backend
+  preferred `plasma-apply-wallpaperimage`, which on Plasma 5.x only updates the
+  config file and does **not** repaint the running session — so the cron rotation
+  silently changed config and the desktop never visibly updated. The setter now
+  **prefers `qdbus … org.kde.PlasmaShell.evaluateScript`** (runs inside plasmashell,
+  applies live across all desktop containments and persists config), falling back
+  to `plasma-apply-wallpaperimage` only when no `qdbus`/`qdbus6` is present.
+  Verified the live flip both interactively and from a stripped cron-like env.
+
+### Added (logging)
+- **Activity log** at `${XDG_STATE_HOME:-~/.local/state}/wallpaper-rotator/wallpaper.log`
+  (off `/tmp`, so it survives reboots). `set-wallpaper.sh` logs each rotate with the
+  detected DE, backend, image, and the backend's **real exit status** (backend stderr
+  is appended to the log instead of being discarded). Cron logs download ok/fail and
+  prune counts; the login generator logs ok/fail/skip. Self-trimming to the last ~1000
+  lines so it can't grow unbounded. README troubleshooting/verify updated to the new path.
+
 ### Notes
 - Login background remains **LightDM-only**. KDE's default display manager is
   **SDDM**, which is theme-bound and intentionally out of scope — on a KDE+SDDM

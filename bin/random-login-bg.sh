@@ -7,9 +7,18 @@ set -e
 WALLPAPER_DIR="@@POOL@@"
 TARGET="@@TARGET@@"
 RESOLUTION="@@RESOLUTION@@"
+LOG="@@LOG@@"
+case "$LOG" in *@@LOG@@*|"") LOG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/wallpaper.log" ;; esac
+log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null; }
 
 IMG=$(find "$WALLPAPER_DIR" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | shuf -n 1)
 
 if [ -n "$IMG" ]; then
-  convert "$IMG" -gravity center -resize "${RESOLUTION}^" -extent "$RESOLUTION" "$TARGET"
+  if convert "$IMG" -gravity center -resize "${RESOLUTION}^" -extent "$RESOLUTION" "$TARGET" 2>>"$LOG"; then
+    log "[login] ok img=$(basename "$IMG")"
+  else
+    log "[login] fail img=$(basename "$IMG")"
+  fi
+else
+  log "[login] skip (empty pool)"
 fi

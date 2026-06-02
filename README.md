@@ -104,7 +104,7 @@ ls -t ~/Pictures/online-wallpapers/ | head      # pool filling
 crontab -l | grep -A4 wallpaper-rotator          # cron jobs present
 /usr/local/bin/set-wallpaper.sh                  # force a desktop change now
 identify /usr/share/backgrounds/login-random.jpg # login image (LightDM only)
-cat /tmp/wall-errors.log 2>/dev/null             # download errors, if any
+tail -f ~/.local/state/wallpaper-rotator/wallpaper.log  # activity log (rotate/download/prune + errors)
 ```
 
 The desktop changes within ~10 min (or immediately at install). The login
@@ -159,5 +159,6 @@ Templated files use `@@POOL@@`, `@@SETWP@@`, `@@TARGET@@`, `@@RESOLUTION@@`,
 | Desktop not changing | Run `/usr/local/bin/set-wallpaper.sh` by hand. If that works but cron doesn't, cron lacks your session bus — confirm `/run/user/$(id -u)/bus` exists and `DISPLAY=:0` is correct for your box. |
 | Wrong DE detected | `echo $XDG_CURRENT_DESKTOP`; the setter also sniffs running `*-session` processes when run from cron. |
 | Login bg never changes | LightDM only. Is `~/.config/autostart/random-login-bg.desktop` present and `sudo /usr/local/bin/random-login-bg.sh` passwordless? |
-| Pool not filling | `cat /tmp/wall-errors.log`; test `curl -fsL https://picsum.photos/1600/900 -o /tmp/t.jpg`. |
+| Pool not filling | `grep download ~/.local/state/wallpaper-rotator/wallpaper.log`; test `curl -fsL https://picsum.photos/1600/900 -o /tmp/t.jpg`. |
+| Desktop config changes but screen doesn't (KDE) | The setter prefers `qdbus … evaluateScript` (applies live); `plasma-apply-wallpaperimage` only updates config and won't repaint a running Plasma 5.x session. Check `backend=` in the log — `plasma-apply(config-only)` means no qdbus was found. |
 | No package manager | Install `imagemagick`, `curl`, and a cron daemon manually, then re-run. |

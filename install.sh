@@ -34,6 +34,11 @@ POOL="$USER_HOME/Pictures/online-wallpapers"
 TARGET_IMG="/usr/share/backgrounds/login-random.jpg"
 LOGIN_BIN="/usr/local/bin/random-login-bg.sh"
 SETWP_BIN="/usr/local/bin/set-wallpaper.sh"
+# Activity log (XDG state dir). Shared by the cron jobs, the setter, and the
+# login generator. Created user-owned so the root-run login generator appends
+# rather than taking ownership.
+LOG_DIR="${XDG_STATE_HOME:-$USER_HOME/.local/state}/wallpaper-rotator"
+LOG_FILE="$LOG_DIR/wallpaper.log"
 
 echo "==> wallpaper-rotator install (user: $TARGET_USER)"
 
@@ -148,6 +153,9 @@ sudo systemctl enable --now cron    >/dev/null 2>&1 \
 
 # --- 5. image pool (seed one image) -------------------------------------
 mkdir -p "$POOL"
+# Activity log: create the dir + an empty user-owned file up front.
+mkdir -p "$LOG_DIR" && touch "$LOG_FILE" 2>/dev/null
+echo "    log: $LOG_FILE"
 if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
   echo "==> seeding pool with one image"
   if curl -fsL "https://picsum.photos/1600/900" -o /tmp/wall.jpg \
@@ -163,7 +171,7 @@ fi
 if [ "$DESKTOP_ENABLED" = 1 ]; then
   echo "==> installing $SETWP_BIN"
   TMP="$(mktemp)"
-  sed "s#@@POOL@@#${POOL}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
+  sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
   sudo install -m 0755 -o root -g root "$TMP" "$SETWP_BIN"
   rm -f "$TMP"
 
@@ -182,7 +190,7 @@ fi
 
 # --- 7. cron jobs (download + prune + rotate) ---------------------------
 echo "==> installing cron jobs"
-NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" "$REPO_DIR/cron/wallpaper.cron")"
+NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
 # When coexisting, drop the desktop-rotate line so we never fight the other manager.
@@ -200,7 +208,7 @@ if [ -n "$GREETER_CONF" ]; then
   echo "==> setting up LightDM login background"
   TMP="$(mktemp)"
   sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@TARGET@@#${TARGET_IMG}#g" -e "s#@@RESOLUTION@@#${RES}#g" \
-      "$REPO_DIR/bin/random-login-bg.sh" > "$TMP"
+      -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/random-login-bg.sh" > "$TMP"
   sudo install -m 0755 -o root -g root "$TMP" "$LOGIN_BIN"
   rm -f "$TMP"
   sudo "$LOGIN_BIN" || echo "    (login image not generated — pool may be empty)"

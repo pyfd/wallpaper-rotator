@@ -1,8 +1,8 @@
 # >>> wallpaper-rotator >>>  (managed block — do not edit by hand; re-run install.sh)
-# Every 10 min: fetch a fresh random landscape, validate it's really an image, drop it in the pool.
-*/10 * * * * curl -fsL "https://picsum.photos/1600/900" -o /tmp/wall.jpg && file --mime-type /tmp/wall.jpg | grep -q 'image/' && mv /tmp/wall.jpg @@POOL@@/$(date +\%s).jpg || { echo "$(date): wallpaper download failed" >> /tmp/wall-errors.log; rm -f /tmp/wall.jpg; }
-# Hourly: keep only the 30 newest images in the pool.
-5 * * * * ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | xargs -r rm --
-# Every 10 min (offset): rotate the desktop wallpaper to a random pool image (DE-aware).
+# Every 10 min: fetch a fresh random landscape, validate it's really an image, drop it in the pool. Logs ok/fail to @@LOG@@.
+*/10 * * * * F=@@POOL@@/$(date +\%s).jpg; if curl -fsL "https://picsum.photos/1600/900" -o /tmp/wall.jpg && file --mime-type /tmp/wall.jpg | grep -q 'image/'; then mv /tmp/wall.jpg "$F"; echo "$(date '+\%F \%T') [download] ok img=$(basename "$F")" >> @@LOG@@; else echo "$(date '+\%F \%T') [download] fail" >> @@LOG@@; rm -f /tmp/wall.jpg; fi
+# Hourly: keep only the 30 newest images in the pool; log how many were pruned.
+5 * * * * N=$(ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | wc -l); ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | xargs -r rm --; [ "$N" -gt 0 ] && echo "$(date '+\%F \%T') [prune] removed=$N" >> @@LOG@@
+# Every 10 min (offset): rotate the desktop wallpaper to a random pool image (DE-aware; logs internally to @@LOG@@).
 3-59/10 * * * * @@SETWP@@ >/dev/null 2>&1
 # <<< wallpaper-rotator <<<
