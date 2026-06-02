@@ -5,6 +5,20 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Added (overlay customisation)
+- **Quote attribution** — bundled quotes now carry author / source / year; a
+  **+attribution** toggle renders e.g. "… — Socrates, Apology (Plato) (~399 BC)".
+  (`fortune` still used when attribution is off.)
+- **Per-overlay position** — quote and stats can each be placed at any
+  corner / edge / centre (`QUOTE_POS` / `STATS_POS` → ImageMagick gravity).
+- **Size / theme / font** — text size (small/medium/large → pointsize), theme
+  (dark / light / accent → fill + undercolour), and font (any installed
+  ImageMagick font from a common set; falls back to default if unavailable).
+- New config keys (`OVERLAY_QUOTE_DETAIL`, `QUOTE_POS`, `STATS_POS`,
+  `OVERLAY_SIZE`, `OVERLAY_THEME`, `OVERLAY_FONT`); the web UI form gained the
+  matching selects/checkboxes (validated server-side). Verified in-browser:
+  quote+attribution top-left, stats bottom-right, large accent DejaVu-Serif.
+
 ### Added (web UI controls + overlays)
 - **Interactive controls in the web UI.** The status page now has a controls form
   (`Apply` → POST `/set`): **rotation interval** (3/5/10/15/30/60 min, rewrites the

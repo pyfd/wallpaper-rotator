@@ -193,7 +193,18 @@ echo "==> installing status web UI ($WEB_BIN)"
 mkdir -p "$WEBDIR"
 # Default config (preserved across re-installs).
 if [ ! -f "$CONFIG_FILE" ]; then
-  printf '# wallpaper-rotator config (managed by wallpaper-web)\nINTERVAL_MIN=10\nOVERLAY_QUOTE=0\nOVERLAY_STATS=0\n' > "$CONFIG_FILE"
+  cat > "$CONFIG_FILE" <<'CFG'
+# wallpaper-rotator config (managed by wallpaper-web)
+INTERVAL_MIN=10
+OVERLAY_QUOTE=0
+OVERLAY_QUOTE_DETAIL=0
+OVERLAY_STATS=0
+QUOTE_POS=south
+STATS_POS=northeast
+OVERLAY_SIZE=medium
+OVERLAY_THEME=dark
+OVERLAY_FONT=default
+CFG
 fi
 
 # Status-page generator.

@@ -19,7 +19,8 @@ SOURCES="@@SOURCES@@"
 
 CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
-INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_STATS=0
+INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
+QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
 mkdir -p "$WEBDIR"
@@ -67,13 +68,34 @@ recent=$(tail -n 18 "$LOG" 2>/dev/null | tac | esc)
 now=$(date '+%Y-%m-%d %H:%M:%S')
 
 # Controls form state (current config reflected in the widgets).
+opts_for() {  # $1=current value, $2..=options -> <option> HTML
+  local cur="$1"; shift; local o="" v s
+  for v in "$@"; do s=""; [ "$cur" = "$v" ] && s=" selected"; o="$o<option value=\"$v\"$s>$v</option>"; done
+  printf '%s' "$o"
+}
 int_opts=""
 for n in 3 5 10 15 30 60; do
   sel=""; [ "${INTERVAL_MIN:-10}" = "$n" ] && sel=" selected"
   int_opts="${int_opts}<option value=\"$n\"$sel>${n} min</option>"
 done
-qchk=""; [ "${OVERLAY_QUOTE:-0}" = 1 ] && qchk=" checked"
-schk=""; [ "${OVERLAY_STATS:-0}" = 1 ] && schk=" checked"
+qchk="";  [ "${OVERLAY_QUOTE:-0}" = 1 ]        && qchk=" checked"
+qdchk=""; [ "${OVERLAY_QUOTE_DETAIL:-0}" = 1 ] && qdchk=" checked"
+schk="";  [ "${OVERLAY_STATS:-0}" = 1 ]        && schk=" checked"
+POSNS="northwest north northeast west center east southwest south southeast"
+qpos_opts=$(opts_for "${QUOTE_POS:-south}" $POSNS)
+spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
+size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
+theme_opts=$(opts_for "${OVERLAY_THEME:-dark}" dark light accent)
+# Font dropdown: "default" + any of a common set that ImageMagick actually has.
+font_sel=""; [ "${OVERLAY_FONT:-default}" = default ] && font_sel=" selected"
+font_opts="<option value=\"default\"$font_sel>default</option>"
+avail_fonts=$(convert -list font 2>/dev/null | sed -n 's/^ *Font: //p')
+for fc in DejaVu-Sans DejaVu-Serif DejaVu-Sans-Mono Liberation-Sans Liberation-Serif FreeSans FreeSerif; do
+  if printf '%s\n' "$avail_fonts" | grep -qx "$fc"; then
+    s=""; [ "${OVERLAY_FONT:-default}" = "$fc" ] && s=" selected"
+    font_opts="$font_opts<option value=\"$fc\"$s>$fc</option>"
+  fi
+done
 
 # --- emit page --------------------------------------------------------------
 cat > "$WEBDIR/index.html" <<HTML
@@ -124,8 +146,14 @@ cat >> "$WEBDIR/index.html" <<HTML
 <h2>Controls</h2>
 <form class=controls method=post action="/set">
   <label>Change every <select name=interval>${int_opts}</select></label>
-  <label><input type=checkbox name=quote value=1${qchk}> Overlay a random quote</label>
-  <label><input type=checkbox name=stats value=1${schk}> Overlay system stats</label>
+  <label><input type=checkbox name=quote value=1${qchk}> Quote</label>
+  <label><input type=checkbox name=quote_detail value=1${qdchk}> +attribution</label>
+  <label>at <select name=quote_pos>${qpos_opts}</select></label>
+  <label><input type=checkbox name=stats value=1${schk}> System stats</label>
+  <label>at <select name=stats_pos>${spos_opts}</select></label>
+  <label>Size <select name=size>${size_opts}</select></label>
+  <label>Theme <select name=theme>${theme_opts}</select></label>
+  <label>Font <select name=font>${font_opts}</select></label>
   <button type=submit>Apply</button>
 </form>
 <h2>Downloads by source</h2>

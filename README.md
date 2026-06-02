@@ -125,8 +125,12 @@ wallpaper-web                       # -> http://127.0.0.1:8787  (Ctrl-C to stop)
 applies immediately):
 
 - **Change every** — rotation interval (3 / 5 / 10 / 15 / 30 / 60 min).
-- **Overlay a random quote** — composites a quote (bottom) onto each wallpaper.
-- **Overlay system stats** — composites host / uptime / load / mem / disk (top-right).
+- **Quote** — composites a quote onto each wallpaper; **+attribution** adds author /
+  source / year (from a bundled list; `fortune` used when attribution is off).
+- **System stats** — composites host / uptime / load / mem / disk.
+- **Position** — place each overlay at any corner/edge/centre (per-overlay).
+- **Size / Theme / Font** — text size (small/medium/large), theme (dark / light /
+  accent), and font (any installed ImageMagick font from a common set).
 
 Overlays are rendered onto a *copy* each tick (pool originals stay clean; stats
 stay live). State lives in `~/.local/state/wallpaper-rotator/config`, read by

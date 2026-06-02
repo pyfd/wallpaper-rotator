@@ -31,10 +31,21 @@ if SETWP.startswith("@@"):     SETWP     = os.path.join(HERE, "set-wallpaper.sh"
 PORT = int(PORT)
 
 ALLOWED_INTERVALS = {"3", "5", "10", "15", "30", "60"}
+ALLOWED_POS = {"northwest", "north", "northeast", "west", "center", "east",
+               "southwest", "south", "southeast"}
+ALLOWED_SIZE = {"small", "medium", "large"}
+ALLOWED_THEME = {"dark", "light", "accent"}
+ALLOWED_FONT = {"default", "DejaVu-Sans", "DejaVu-Serif", "DejaVu-Sans-Mono",
+                "Liberation-Sans", "Liberation-Serif", "FreeSans", "FreeSerif"}
+CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
+            "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT")
+CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
+                "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
+                "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "dark", "OVERLAY_FONT": "default"}
 
 
 def read_config():
-    cfg = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_STATS": "0"}
+    cfg = dict(CFG_DEFAULTS)
     try:
         with open(CONFIG) as f:
             for line in f:
@@ -51,8 +62,8 @@ def write_config(cfg):
     os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
     with open(CONFIG, "w") as f:
         f.write("# wallpaper-rotator config (managed by wallpaper-web)\n")
-        for k in ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_STATS"):
-            f.write("%s=%s\n" % (k, cfg[k]))
+        for k in CFG_KEYS:
+            f.write("%s=%s\n" % (k, cfg.get(k, CFG_DEFAULTS[k])))
 
 
 def set_cron_interval(n):
@@ -110,7 +121,17 @@ class Handler(BaseHTTPRequestHandler):
         if iv in ALLOWED_INTERVALS:
             cfg["INTERVAL_MIN"] = iv
         cfg["OVERLAY_QUOTE"] = "1" if form.get("quote") else "0"
+        cfg["OVERLAY_QUOTE_DETAIL"] = "1" if form.get("quote_detail") else "0"
         cfg["OVERLAY_STATS"] = "1" if form.get("stats") else "0"
+
+        def pick(field, allowed, default):
+            v = form.get(field, [default])[0]
+            return v if v in allowed else default
+        cfg["QUOTE_POS"]    = pick("quote_pos", ALLOWED_POS, "south")
+        cfg["STATS_POS"]    = pick("stats_pos", ALLOWED_POS, "northeast")
+        cfg["OVERLAY_SIZE"] = pick("size", ALLOWED_SIZE, "medium")
+        cfg["OVERLAY_THEME"]= pick("theme", ALLOWED_THEME, "dark")
+        cfg["OVERLAY_FONT"] = pick("font", ALLOWED_FONT, "default")
         write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
         # Re-apply the CURRENT image with the new settings (don't shuffle to a

@@ -22,28 +22,54 @@ log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/nu
 # this config. @@CONFIG@@ substituted by install.sh.
 CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
-OVERLAY_QUOTE=0; OVERLAY_STATS=0
+# Overlay defaults (the web UI overwrites these in the config).
+OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
+QUOTE_POS=south; STATS_POS=northeast
+OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
-# A short quote for the overlay: `fortune` if installed, else a bundled list.
+# Map a config position token to an ImageMagick -gravity value ($2 = default).
+imgrav() {
+  case "$1" in
+    northwest) echo NorthWest;; north) echo North;; northeast) echo NorthEast;;
+    west) echo West;; center) echo Center;; east) echo East;;
+    southwest) echo SouthWest;; south) echo South;; southeast) echo SouthEast;;
+    *) echo "$2";;
+  esac
+}
+
+# A quote for the overlay. With detail, append attribution (author, source, year)
+# from the bundled list. Without detail, `fortune -s` is used if installed.
 pick_quote() {
-  if command -v fortune >/dev/null 2>&1; then
+  local detail="${1:-0}"
+  if [ "$detail" != 1 ] && command -v fortune >/dev/null 2>&1; then
     fortune -s 2>/dev/null | tr '\n\t' '  ' | sed 's/  */ /g' | cut -c1-160
     return
   fi
-  local q=(
-    "The best way to predict the future is to invent it."
-    "Simplicity is the ultimate sophistication."
-    "Make it work, make it right, make it fast."
-    "What we do in life echoes in eternity."
-    "The journey of a thousand miles begins with one step."
-    "Stay hungry, stay foolish."
-    "Less, but better."
-    "First, solve the problem. Then, write the code."
-    "The obstacle is the way."
-    "Done is better than perfect."
+  # text | author | source | year
+  local list=(
+    "The best way to predict the future is to invent it.|Alan Kay||1971"
+    "Simplicity is the ultimate sophistication.|Leonardo da Vinci||"
+    "What we do in life echoes in eternity.|Marcus Aurelius|Meditations|~170 AD"
+    "The journey of a thousand miles begins with one step.|Lao Tzu|Tao Te Ching|~6th c. BC"
+    "Stay hungry, stay foolish.|Steve Jobs|Stanford commencement|2005"
+    "Less, but better.|Dieter Rams||"
+    "The obstacle is the way.|Marcus Aurelius|Meditations|~170 AD"
+    "We are what we repeatedly do.|Will Durant|The Story of Philosophy|1926"
+    "The unexamined life is not worth living.|Socrates|Apology (Plato)|~399 BC"
+    "It always seems impossible until it's done.|Nelson Mandela||"
   )
-  printf '%s' "${q[$((RANDOM % ${#q[@]}))]}"
+  local text author source year pick
+  pick="${list[$((RANDOM % ${#list[@]}))]}"
+  IFS='|' read -r text author source year <<< "$pick"
+  if [ "$detail" = 1 ] && [ -n "$author" ]; then
+    local attr="$author"
+    [ -n "$source" ] && attr="$attr, $source"
+    [ -n "$year" ] && attr="$attr ($year)"
+    printf '%s\n— %s' "$text" "$attr"
+  else
+    printf '%s' "$text"
+  fi
 }
 
 IMG="${1:-}"
@@ -70,6 +96,22 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; } && comman
   # and the top-right stats / bottom quote get pushed off-screen.
   if { [ -n "$RES" ] && convert "$IMG" -resize "${RES}^" -gravity center -extent "$RES" "$RENDER" 2>>"$LOG"; } \
        || cp "$IMG" "$RENDER" 2>>"$LOG"; then
+    # Style from config: size -> pointsize, theme -> fill + undercolor, font.
+    case "$OVERLAY_SIZE" in small) PS=18;; large) PS=34;; *) PS=24;; esac
+    case "$OVERLAY_THEME" in
+      light)  FILL=black;     UNDER='#ffffffaa';;
+      accent) FILL='#6cb6ff'; UNDER='#000000aa';;
+      *)      FILL=white;     UNDER='#000000aa';;   # dark
+    esac
+    FONTARG=()
+    if [ "${OVERLAY_FONT:-default}" != default ] && [ -n "${OVERLAY_FONT:-}" ] \
+         && convert -list font 2>/dev/null | grep -q "Font: ${OVERLAY_FONT}$"; then
+      FONTARG=(-font "$OVERLAY_FONT")
+    fi
+    # Offset from the chosen gravity: corners/edges inset 30px; centred edges get
+    # x=0; dead-centre gets y=0 too.
+    place() { gx=30; gy=30; case "$1" in North|South|Center) gx=0;; esac; case "$1" in Center) gy=0;; esac; }
+
     if [ "${OVERLAY_STATS:-0}" = 1 ]; then
       stats="$(printf '%s\n' \
         "$(hostname)" \
@@ -77,13 +119,15 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; } && comman
         "load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)" \
         "mem $(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')" \
         "disk $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}')")"
-      convert "$RENDER" -gravity NorthEast -pointsize 22 -fill white \
-        -undercolor '#000000aa' -annotate +30+30 "$stats " "$RENDER" 2>>"$LOG" && OVERLAYS="stats"
+      SG="$(imgrav "${STATS_POS:-northeast}" NorthEast)"; place "$SG"
+      convert "$RENDER" "${FONTARG[@]}" -gravity "$SG" -pointsize "$PS" -fill "$FILL" \
+        -undercolor "$UNDER" -annotate "+${gx}+${gy}" "$stats " "$RENDER" 2>>"$LOG" && OVERLAYS="stats"
     fi
     if [ "${OVERLAY_QUOTE:-0}" = 1 ]; then
-      quote="$(pick_quote | fold -s -w 52)"
-      convert "$RENDER" -gravity South -pointsize 26 -fill white \
-        -undercolor '#000000aa' -annotate +0+60 "$quote " "$RENDER" 2>>"$LOG" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
+      quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}" | fold -s -w 52)"
+      QG="$(imgrav "${QUOTE_POS:-south}" South)"; place "$QG"
+      convert "$RENDER" "${FONTARG[@]}" -gravity "$QG" -pointsize "$PS" -fill "$FILL" \
+        -undercolor "$UNDER" -annotate "+${gx}+${gy}" "$quote " "$RENDER" 2>>"$LOG" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
     fi
     IMG="$RENDER"
     # Keep only the newest few rendered frames.
