@@ -4,8 +4,9 @@
 # -------------------------------------------------------------------------
 # Auto-rotating desktop wallpaper on any common Linux desktop (XFCE, GNOME,
 # Cinnamon, MATE, or a feh fallback), plus an auto-rotating LightDM login
-# background where LightDM is the display manager. One image pool, refilled
-# from picsum.photos by cron, drives both.
+# background where LightDM is the display manager. One image pool, refilled by
+# cron from several sources (Wallhaven, Bing, Picsum, local) with fallback,
+# drives both.
 #
 # Run as your normal user (NOT root). It calls sudo only for the system bits.
 # Idempotent: safe to re-run.

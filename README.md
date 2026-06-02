@@ -2,7 +2,8 @@
 
 Auto-rotating **desktop wallpaper** (XFCE, GNOME, Cinnamon, MATE, or a `feh`
 fallback) and **LightDM login background**, fed from a single image pool that
-cron refills every 10 minutes from [picsum.photos](https://picsum.photos).
+cron refills every 10 minutes from several sources ([Wallhaven](https://wallhaven.cc),
+Bing, [Picsum](https://picsum.photos), or a local folder) with fallback.
 
 Works on any Linux desktop — no dotfiles, no clone, no USB stick needed.
 

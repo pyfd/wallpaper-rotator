@@ -5,6 +5,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Docs
+- Corrected the install.sh header and README intro, which still described the
+  pool as refilled "from picsum.photos" only — it has been multi-source
+  (Wallhaven, Bing, Picsum, local, with fallback) since the sources rework.
+
 ### Added (sources, overlays, weather, sparklines)
 - **API-sourced quotes with local cache** — `fetch-quotes.sh` refreshes a local
   `quotes.cache` (text|author||) from a quotes API (dummyjson → zenquotes →
