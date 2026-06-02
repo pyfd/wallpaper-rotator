@@ -5,6 +5,10 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Docs
+- Added `TODO.md` (roadmap): API-sourced quotes w/ local cache, local-weather
+  overlay, backgrounds-by-theme, load/RAM sparklines — each with a feasibility note.
+
 ### Added (overlay customisation)
 - **Quote attribution** — bundled quotes now carry author / source / year; a
   **+attribution** toggle renders e.g. "… — Socrates, Apology (Plato) (~399 BC)".
