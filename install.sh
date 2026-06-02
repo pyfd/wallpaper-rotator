@@ -19,6 +19,15 @@ if [ "$(id -u)" -eq 0 ]; then
   exit 1
 fi
 
+# Non-interactive answers for the "existing rotator detected" prompt.
+DISABLE_OTHERS=""   # "yes" | "no" | "" (ask via /dev/tty)
+for arg in "$@"; do
+  case "$arg" in
+    --yes-disable) DISABLE_OTHERS="yes" ;;
+    --no-disable)  DISABLE_OTHERS="no"  ;;
+  esac
+done
+
 TARGET_USER="$USER"
 USER_HOME="$HOME"
 POOL="$USER_HOME/Pictures/online-wallpapers"
@@ -68,6 +77,51 @@ else
   echo "    display manager: ${DM:-unknown} — login background NOT supported, will skip (desktop rotation still works)"
 fi
 
+# --- 2b. existing wallpaper rotator? ------------------------------------
+# If another manager (Variety, Wallch, a GNOME slideshow…) is already driving
+# the desktop, ours would fight it. Offer to disable it; if declined, coexist
+# (install the pool + LightDM login only, leave their desktop alone).
+DESKTOP_ENABLED=1
+OTHERS=""
+for proc in variety wallch; do
+  pgrep -x "$proc" >/dev/null 2>&1 && OTHERS="$OTHERS $proc"
+done
+if printf '%s' "$DE" | grep -qE 'gnome|ubuntu|budgie|cinnamon'; then
+  CUR_URI="$(gsettings get org.gnome.desktop.background picture-uri 2>/dev/null | tr -d \")"
+  printf '%s' "$CUR_URI" | grep -qiE '\.xml' && OTHERS="$OTHERS gnome-slideshow"
+fi
+OTHERS="$(printf '%s' "$OTHERS" | sed 's/^ *//')"
+
+if [ -n "$OTHERS" ]; then
+  echo "    ! existing wallpaper rotator detected: $OTHERS"
+  ANS="$DISABLE_OTHERS"
+  if [ -z "$ANS" ]; then
+    if [ -e /dev/tty ]; then
+      printf "    Disable it so wallpaper-rotator owns the desktop? [y/N] " > /dev/tty
+      read -r REPLY_RAW < /dev/tty || REPLY_RAW=""
+      case "$REPLY_RAW" in [Yy]*) ANS="yes" ;; *) ANS="no" ;; esac
+    else
+      ANS="no"   # non-interactive with no terminal — coexist by default
+    fi
+  fi
+  if [ "$ANS" = "yes" ]; then
+    for proc in $OTHERS; do
+      [ "$proc" = "gnome-slideshow" ] && continue   # cleared by setting a still image
+      echo "    disabling $proc"
+      pkill -x "$proc" 2>/dev/null || pkill -f "$proc" 2>/dev/null || true
+      UA="$HOME/.config/autostart/${proc}.desktop"
+      [ -f "$UA" ] && mv -f "$UA" "${UA}.disabled"
+      if [ -f "/etc/xdg/autostart/${proc}.desktop" ]; then   # mask a system autostart
+        mkdir -p "$HOME/.config/autostart"
+        printf '[Desktop Entry]\nHidden=true\n' > "$HOME/.config/autostart/${proc}.desktop"
+      fi
+    done
+  else
+    echo "    coexisting — leaving the desktop to the existing manager; installing pool + login only."
+    DESKTOP_ENABLED=0
+  fi
+fi
+
 # --- 3. screen resolution (for the login image only) --------------------
 RES="$(xrandr 2>/dev/null | awk '/\*/{print $1; exit}')"
 [ -z "$RES" ] && RES="1920x1080"
@@ -98,34 +152,40 @@ if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
 fi
 
 # --- 6. desktop wallpaper setter ----------------------------------------
-echo "==> installing $SETWP_BIN"
-TMP="$(mktemp)"
-sed "s#@@POOL@@#${POOL}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
-sudo install -m 0755 -o root -g root "$TMP" "$SETWP_BIN"
-rm -f "$TMP"
+if [ "$DESKTOP_ENABLED" = 1 ]; then
+  echo "==> installing $SETWP_BIN"
+  TMP="$(mktemp)"
+  sed "s#@@POOL@@#${POOL}#g" "$REPO_DIR/bin/set-wallpaper.sh" > "$TMP"
+  sudo install -m 0755 -o root -g root "$TMP" "$SETWP_BIN"
+  rm -f "$TMP"
 
-# XFCE: set zoom style + hand desktop cycling to cron (disable native cycler).
-case "$DE" in
-  *xfce*)
-    for ws in $(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep -oE '/backdrop/screen0/[^/]+/workspace[0-9]+' | sort -u); do
-      xfconf-query -c xfce4-desktop -p "$ws/image-style" -n -t int -s 4 2>/dev/null \
-        || xfconf-query -c xfce4-desktop -p "$ws/image-style" -s 4 2>/dev/null
-      xfconf-query -c xfce4-desktop -p "$ws/backdrop-cycle-enable" -s false 2>/dev/null || true
-    done ;;
-esac
+  # XFCE: set zoom style + hand desktop cycling to cron (disable native cycler).
+  case "$DE" in
+    *xfce*)
+      for ws in $(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep -oE '/backdrop/screen0/[^/]+/workspace[0-9]+' | sort -u); do
+        xfconf-query -c xfce4-desktop -p "$ws/image-style" -n -t int -s 4 2>/dev/null \
+          || xfconf-query -c xfce4-desktop -p "$ws/image-style" -s 4 2>/dev/null
+        xfconf-query -c xfce4-desktop -p "$ws/backdrop-cycle-enable" -s false 2>/dev/null || true
+      done ;;
+  esac
+else
+  echo "==> SKIPPED desktop setup (coexisting with existing rotator)"
+fi
 
 # --- 7. cron jobs (download + prune + rotate) ---------------------------
 echo "==> installing cron jobs"
 NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
+# When coexisting, drop the desktop-rotate line so we never fight the other manager.
+[ "$DESKTOP_ENABLED" = 1 ] || NEWCRON="$(printf '%s' "$NEWCRON" | grep -v '/set-wallpaper\.sh')"
 EXISTING="$(crontab -l 2>/dev/null \
   | sed '/# >>> wallpaper-rotator >>>/,/# <<< wallpaper-rotator <<</d' \
   | grep -vE 'picsum\.photos|online-wallpapers/\*\.jpg|/set-wallpaper\.sh')"
 printf '%s\n%s\n' "$EXISTING" "$NEWCRON" | sed '/^$/N;/^\n$/D' | crontab -
 
 # Set the desktop now so it isn't blank until the first cron tick.
-"$SETWP_BIN" || true
+[ "$DESKTOP_ENABLED" = 1 ] && "$SETWP_BIN" || true
 
 # --- 8. login background (LightDM only) ---------------------------------
 if [ -n "$GREETER_CONF" ]; then
@@ -166,7 +226,11 @@ fi
 
 echo
 echo "Done."
-echo "  Desktop  : rotates every 10 min via cron + set-wallpaper.sh (${DE:-feh fallback})"
+if [ "$DESKTOP_ENABLED" = 1 ]; then
+  echo "  Desktop  : rotates every 10 min via cron + set-wallpaper.sh (${DE:-feh fallback})"
+else
+  echo "  Desktop  : left to the existing rotator (coexist mode)"
+fi
 if [ -n "$GREETER_CONF" ]; then
   echo "  Login    : refreshes each login (LightDM, $RES)"
 else

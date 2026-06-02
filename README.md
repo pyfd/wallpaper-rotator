@@ -68,6 +68,27 @@ Login backgrounds on GDM/SDDM are theme-bound and fragile, so they're
 intentionally out of scope. Everything else still installs and the desktop
 rotates normally.
 
+### Existing wallpaper managers (Variety, Wallch, GNOME slideshow…)
+
+If another rotator is **actively running**, ours would fight it over the desktop
+(both set the same wallpaper property). On install, if one is detected you're
+asked:
+
+```
+! existing wallpaper rotator detected: variety
+Disable it so wallpaper-rotator owns the desktop? [y/N]
+```
+
+- **Yes** — it's stopped and its autostart disabled (user entry renamed to
+  `.desktop.disabled`; a system entry masked with `Hidden=true`), so we own the desktop.
+- **No** (default) — we **coexist**: the existing tool keeps the desktop, and we
+  install only the image pool + LightDM login background (Variety etc. don't touch
+  the login screen, so that combo is conflict-free).
+
+Non-interactive: pass `--yes-disable` or `--no-disable`. With no terminal, it
+defaults to coexist. A *dormant* (installed but not running) rotator isn't
+flagged — only a live one can conflict.
+
 ### Distros
 Dependency install auto-detects `apt` / `dnf` / `pacman` / `zypper`. Core deps:
 `imagemagick` (`convert`), `curl`, a cron daemon. XFCE also needs `xfconf`.
