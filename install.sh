@@ -327,7 +327,7 @@ fi
 echo
 echo "Done."
 if [ "$DESKTOP_ENABLED" = 1 ]; then
-  echo "  Desktop  : rotates every 10 min via cron + set-wallpaper.sh (${DE:-feh fallback})"
+  echo "  Desktop  : rotates every ${CFG_INTERVAL} min via cron + set-wallpaper.sh (${DE:-feh fallback})"
 else
   echo "  Desktop  : left to the existing rotator (coexist mode)"
 fi

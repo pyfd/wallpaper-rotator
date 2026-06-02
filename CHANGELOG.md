@@ -15,6 +15,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   fallback colour). Now matches the full command line via `pgrep -f` and maps to a
   clean DE keyword (`gnome`/`xfce`/`cinnamon`/`mate`/`plasma`); same hardening
   applied to `install.sh`'s detection fallback.
+- **install.sh summary printed a hardcoded "rotates every 10 min"** regardless of
+  the configured interval (the cron line itself was always correct). Now reports
+  the actual `$CFG_INTERVAL`.
 
 ### Docs
 - Corrected the install.sh header and README intro, which still described the
