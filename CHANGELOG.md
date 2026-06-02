@@ -5,6 +5,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Fixed
+- **Desktop rotation silently failed under cron on GNOME variants** (Zorin, and
+  any setup whose session binary name is suffixed). `set-wallpaper.sh`'s
+  no-`XDG_CURRENT_DESKTOP` fallback (the cron case) used `pgrep -x gnome-session`,
+  but the running process is `gnome-session-binary` *and* the kernel truncates the
+  comm name to 15 chars, so the exact match missed → `de=unknown` → it fell through
+  to the `feh` branch → exit 127, wallpaper never set (desktop showed the GNOME
+  fallback colour). Now matches the full command line via `pgrep -f` and maps to a
+  clean DE keyword (`gnome`/`xfce`/`cinnamon`/`mate`/`plasma`); same hardening
+  applied to `install.sh`'s detection fallback.
+
 ### Docs
 - Corrected the install.sh header and README intro, which still described the
   pool as refilled "from picsum.photos" only — it has been multi-source

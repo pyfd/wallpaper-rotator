@@ -221,9 +221,17 @@ fi
 
 DE="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
 if [ -z "$DE" ]; then            # fall back to process sniffing (cron context)
-  for p in xfce4-session gnome-session cinnamon-session mate-session plasmashell; do
-    if pgrep -x "$p" >/dev/null 2>&1; then DE="$p"; break; fi
-  done
+  # Match the full command line (pgrep -f), NOT the comm name: the comm is
+  # truncated to 15 chars and the real binary is often suffixed (e.g. Zorin/
+  # GNOME runs `gnome-session-binary --session=zorin`, so `pgrep -x gnome-session`
+  # misses and we'd wrongly fall through to feh). Map to a clean DE keyword the
+  # case below matches (*gnome*/*xfce*/…).
+  if   pgrep -f 'xfce4-session'    >/dev/null 2>&1; then DE="xfce"
+  elif pgrep -f 'gnome-session'    >/dev/null 2>&1; then DE="gnome"
+  elif pgrep -f 'cinnamon-session' >/dev/null 2>&1; then DE="cinnamon"
+  elif pgrep -f 'mate-session'     >/dev/null 2>&1; then DE="mate"
+  elif pgrep -f 'plasmashell'      >/dev/null 2>&1; then DE="plasma"
+  fi
 fi
 
 # Each branch records the backend it used and its real exit status (backend

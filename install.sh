@@ -72,9 +72,14 @@ ensure_pkg() {
 # --- 1. desktop environment ---------------------------------------------
 DE="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
 if [ -z "$DE" ]; then
-  for p in xfce4-session gnome-session cinnamon-session mate-session plasmashell; do
-    pgrep -x "$p" >/dev/null 2>&1 && { DE="$p"; break; }
-  done
+  # Match full cmdline (pgrep -f), not the 15-char-truncated comm: e.g. Zorin/
+  # GNOME runs `gnome-session-binary`, which `pgrep -x gnome-session` misses.
+  if   pgrep -f 'xfce4-session'    >/dev/null 2>&1; then DE="xfce"
+  elif pgrep -f 'gnome-session'    >/dev/null 2>&1; then DE="gnome"
+  elif pgrep -f 'cinnamon-session' >/dev/null 2>&1; then DE="cinnamon"
+  elif pgrep -f 'mate-session'     >/dev/null 2>&1; then DE="mate"
+  elif pgrep -f 'plasmashell'      >/dev/null 2>&1; then DE="plasma"
+  fi
 fi
 echo "    desktop: ${DE:-<unknown — will use feh fallback>}"
 
