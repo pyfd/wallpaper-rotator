@@ -1,0 +1,46 @@
+#!/bin/bash
+#
+# wallpaper-rotator uninstaller — reverses install.sh.
+# Run as your normal user (NOT root). Leaves the downloaded image pool intact
+# unless you pass --purge.
+# -------------------------------------------------------------------------
+set -uo pipefail
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "ERROR: run as your normal user, not root." >&2
+  exit 1
+fi
+
+POOL="$HOME/Pictures/online-wallpapers"
+PURGE=0
+[ "${1:-}" = "--purge" ] && PURGE=1
+
+echo "==> removing cron jobs"
+crontab -l 2>/dev/null \
+  | sed '/# >>> wallpaper-rotator >>>/,/# <<< wallpaper-rotator <<</d' \
+  | crontab - || true
+
+echo "==> removing autostart entry"
+rm -f "$HOME/.config/autostart/random-login-bg.desktop"
+
+echo "==> removing script + sudoers + login image (sudo)"
+sudo rm -f /usr/local/bin/random-login-bg.sh
+sudo rm -f /etc/sudoers.d/random-login-bg
+sudo rm -f /usr/share/backgrounds/login-random.jpg
+
+echo "==> disabling XFCE folder-cycle on all known monitor nodes"
+for p in $(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'backdrop-cycle-enable'); do
+  xfconf-query -c xfce4-desktop -p "$p" -s false 2>/dev/null || true
+done
+
+echo "    NOTE: the greeter's background= line in /etc/lightdm/lightdm-gtk-greeter.conf"
+echo "    is left as-is (points at a now-removed image). Edit it manually if desired."
+
+if [ "$PURGE" -eq 1 ]; then
+  echo "==> --purge: deleting image pool $POOL"
+  rm -rf "$POOL"
+else
+  echo "==> image pool kept at $POOL (pass --purge to delete)"
+fi
+
+echo "Done."

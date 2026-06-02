@@ -1,0 +1,6 @@
+# >>> wallpaper-rotator >>>  (managed block — do not edit by hand; re-run install.sh)
+# Every 10 min: fetch a fresh random landscape, validate it's really an image, drop it in the pool.
+*/10 * * * * curl -fsL "https://picsum.photos/1600/900" -o /tmp/wall.jpg && file --mime-type /tmp/wall.jpg | grep -q 'image/' && mv /tmp/wall.jpg @@POOL@@/$(date +\%s).jpg || { echo "$(date): wallpaper download failed" >> /tmp/wall-errors.log; rm -f /tmp/wall.jpg; }
+# Hourly: keep only the 30 newest images in the pool.
+5 * * * * ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | xargs -r rm --
+# <<< wallpaper-rotator <<<

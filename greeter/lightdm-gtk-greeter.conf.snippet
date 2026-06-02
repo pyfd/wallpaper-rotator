@@ -1,0 +1,12 @@
+# Reference snippet — install.sh merges the `background=` line into the existing
+# [greeter] section of /etc/lightdm/lightdm-gtk-greeter.conf. The rest of these
+# keys are the values used on paul-e210; install.sh does NOT overwrite them, it
+# only ensures `background=` points at the rotating target image.
+[greeter]
+background=/usr/share/backgrounds/login-random.jpg
+theme-name=Adwaita
+icon-theme-name=Adwaita
+font-name=Sans Bold 11
+indicators=~host;~spacer;~clock;~spacer;~power
+hide-user-image=false
+focus-password=true
