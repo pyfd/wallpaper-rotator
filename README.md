@@ -57,6 +57,7 @@ One **image pool** (`~/Pictures/online-wallpapers/`) feeds two consumers:
 | GNOME / Ubuntu / Budgie | ✅ | `gsettings … picture-uri[-dark]` |
 | Cinnamon            | ✅ | `gsettings org.cinnamon.desktop.background` |
 | MATE                | ✅ | `gsettings org.mate.background` |
+| KDE Plasma          | ✅ | `plasma-apply-wallpaperimage` (qdbus `evaluateScript` fallback) |
 | Other (i3/openbox/…) | ☑️ | `feh --bg-fill` if `feh` is installed |
 
 | Display manager | Login background |

@@ -44,6 +44,17 @@ case "$DE" in
   *mate*)
     gsettings set org.mate.background picture-filename "$IMG" 2>/dev/null
     ;;
+  *kde*|*plasma*)
+    # KDE Plasma: the official setter talks to the running plasmashell over the
+    # session bus (re-established above for cron). On older Plasma without
+    # plasma-apply-wallpaperimage, drive plasmashell directly via D-Bus.
+    if command -v plasma-apply-wallpaperimage >/dev/null 2>&1; then
+      plasma-apply-wallpaperimage "$IMG" >/dev/null 2>&1
+    elif command -v qdbus >/dev/null 2>&1; then
+      qdbus org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
+        "var d=desktops();for(i=0;i<d.length;i++){d[i].wallpaperPlugin='org.kde.image';d[i].currentConfigGroup=['Wallpaper','org.kde.image','General'];d[i].writeConfig('Image','file://$IMG');}" >/dev/null 2>&1
+    fi
+    ;;
   *)
     # Generic X11 fallback (i3/openbox/etc.) — needs feh if present.
     if command -v feh >/dev/null 2>&1; then

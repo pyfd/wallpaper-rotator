@@ -134,6 +134,14 @@ ensure_pkg convert  imagemagick imagemagick imagemagick ImageMagick
 ensure_pkg curl     curl        curl        curl        curl
 ensure_pkg crontab  cron        cronie      cronie      cron
 case "$DE" in *xfce*) ensure_pkg xfconf-query xfconf xfconf xfconf xfconf ;; esac
+# KDE Plasma sets the wallpaper via plasma-apply-wallpaperimage (ships with
+# plasma-workspace, so normally already present) or a qdbus fallback. We don't
+# pull a package for it — just warn if neither is available.
+case "$DE" in
+  *kde*|*plasma*)
+    command -v plasma-apply-wallpaperimage >/dev/null 2>&1 || command -v qdbus >/dev/null 2>&1 \
+      || echo "    WARNING: no plasma-apply-wallpaperimage or qdbus found — install plasma-workspace for KDE wallpaper setting." >&2 ;;
+esac
 # Make sure a cron daemon is actually running.
 sudo systemctl enable --now cron    >/dev/null 2>&1 \
   || sudo systemctl enable --now cronie >/dev/null 2>&1 || true
