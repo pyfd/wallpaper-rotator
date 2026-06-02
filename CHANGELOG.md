@@ -5,6 +5,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## 2026-06-02
 
+### Added (image sources)
+- **Multi-source fetcher with fallback** — new `bin/fetch-wallpaper.sh` replaces the
+  single hardcoded picsum download. Pulls from **Wallhaven** (purpose-built wallpapers,
+  screen-ratio matched via `atleast=<RES>`, SFW), **Bing** (curated daily images),
+  **Picsum** (random floor), and an optional **local folder** (`LOCALDIR`). Each run
+  shuffles the enabled sources (variety) and tries them in order until one yields a
+  *valid* image — validated as non-trivial + `identify`-decodable, so tiny HTML error
+  bodies are rejected (resilience). If all fail, the pool is left unchanged and rotation
+  continues. Sources/priority configurable via `SOURCES`/`LOCALDIR` in `install.sh`;
+  JSON parsed with `jq` (added as a dependency). Each fetch logs `src=<name> ok|miss` /
+  overall `fail`. Cron now calls the fetcher instead of an inline curl.
+- *Note:* the `@@...@@` substitution guards in the templated scripts use split string
+  literals (`"@@X""@@"`) so `install.sh`'s sed doesn't rewrite the fallback checks
+  themselves (an earlier `case *@@X@@*` form broke post-substitution on values with
+  spaces and wrongly blanked `LOCALDIR`).
+
 ### Added
 - **KDE Plasma desktop support.** `set-wallpaper.sh` now sets the desktop on KDE
   Plasma via `plasma-apply-wallpaperimage`, with a `qdbus`

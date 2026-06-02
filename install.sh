@@ -34,6 +34,12 @@ POOL="$USER_HOME/Pictures/online-wallpapers"
 TARGET_IMG="/usr/share/backgrounds/login-random.jpg"
 LOGIN_BIN="/usr/local/bin/random-login-bg.sh"
 SETWP_BIN="/usr/local/bin/set-wallpaper.sh"
+FETCH_BIN="/usr/local/bin/fetch-wallpaper.sh"
+# Image sources (priority is randomised per fetch for variety; the chain falls
+# through to the next on any failure). picsum is the always-works floor.
+SOURCES="wallhaven bing picsum local"
+# Local image folder for the 'local' source — used only if it exists + has images.
+LOCALDIR="$USER_HOME/Pictures/Wallpapers"
 # Activity log (XDG state dir). Shared by the cron jobs, the setter, and the
 # login generator. Created user-owned so the root-run login generator appends
 # rather than taking ownership.
@@ -138,6 +144,7 @@ command -v apt-get >/dev/null 2>&1 && sudo apt-get update -qq
 ensure_pkg convert  imagemagick imagemagick imagemagick ImageMagick
 ensure_pkg curl     curl        curl        curl        curl
 ensure_pkg crontab  cron        cronie      cronie      cron
+ensure_pkg jq       jq          jq          jq          jq          # JSON parse for wallhaven/bing sources
 case "$DE" in *xfce*) ensure_pkg xfconf-query xfconf xfconf xfconf xfconf ;; esac
 # KDE Plasma sets the wallpaper via plasma-apply-wallpaperimage (ships with
 # plasma-workspace, so normally already present) or a qdbus fallback. We don't
@@ -151,20 +158,27 @@ esac
 sudo systemctl enable --now cron    >/dev/null 2>&1 \
   || sudo systemctl enable --now cronie >/dev/null 2>&1 || true
 
-# --- 5. image pool (seed one image) -------------------------------------
+# --- 5. image pool + multi-source fetcher -------------------------------
 mkdir -p "$POOL"
 # Activity log: create the dir + an empty user-owned file up front.
 mkdir -p "$LOG_DIR" && touch "$LOG_FILE" 2>/dev/null
 echo "    log: $LOG_FILE"
+echo "    sources: $SOURCES"
+
+# Fetcher feeds the pool for BOTH the desktop and login consumers, so it's
+# installed regardless of coexist mode.
+echo "==> installing $FETCH_BIN"
+TMP="$(mktemp)"
+sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@RES@@#${RES}#g" \
+    -e "s#@@SOURCES@@#${SOURCES}#g" -e "s#@@LOCALDIR@@#${LOCALDIR}#g" \
+    "$REPO_DIR/bin/fetch-wallpaper.sh" > "$TMP"
+sudo install -m 0755 -o root -g root "$TMP" "$FETCH_BIN"
+rm -f "$TMP"
+
+# Seed the pool now so nothing is blank until the first cron tick.
 if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
-  echo "==> seeding pool with one image"
-  if curl -fsL "https://picsum.photos/1600/900" -o /tmp/wall.jpg \
-       && file --mime-type /tmp/wall.jpg | grep -q 'image/'; then
-    mv /tmp/wall.jpg "$POOL/$(date +%s).jpg"
-  else
-    echo "    WARNING: seed download failed (no internet?). Pool is empty for now." >&2
-    rm -f /tmp/wall.jpg
-  fi
+  echo "==> seeding pool"
+  "$FETCH_BIN" || echo "    WARNING: seed fetch failed (no internet?). Pool empty for now." >&2
 fi
 
 # --- 6. desktop wallpaper setter ----------------------------------------
@@ -190,7 +204,7 @@ fi
 
 # --- 7. cron jobs (download + prune + rotate) ---------------------------
 echo "==> installing cron jobs"
-NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
+NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
 # When coexisting, drop the desktop-rotate line so we never fight the other manager.

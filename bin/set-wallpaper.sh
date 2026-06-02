@@ -10,7 +10,8 @@ POOL="@@POOL@@"
 # Activity log (see install.sh). Fall back to the XDG state path when run from a
 # raw checkout where @@LOG@@ wasn't substituted.
 LOG="@@LOG@@"
-case "$LOG" in *@@LOG@@*|"") LOG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/wallpaper.log" ;; esac
+# Split literal so install.sh's sed doesn't rewrite this guard too (see fetch-wallpaper.sh).
+[ "$LOG" = "@@LOG""@@" ] && LOG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/wallpaper.log"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null; }
 

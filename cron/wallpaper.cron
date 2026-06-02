@@ -1,6 +1,6 @@
 # >>> wallpaper-rotator >>>  (managed block — do not edit by hand; re-run install.sh)
-# Every 10 min: fetch a fresh random landscape, validate it's really an image, drop it in the pool. Logs ok/fail to @@LOG@@.
-*/10 * * * * F=@@POOL@@/$(date +\%s).jpg; if curl -fsL "https://picsum.photos/1600/900" -o /tmp/wall.jpg && file --mime-type /tmp/wall.jpg | grep -q 'image/'; then mv /tmp/wall.jpg "$F"; echo "$(date '+\%F \%T') [download] ok img=$(basename "$F")" >> @@LOG@@; else echo "$(date '+\%F \%T') [download] fail" >> @@LOG@@; rm -f /tmp/wall.jpg; fi
+# Every 10 min: fetch a fresh wallpaper into the pool (multi-source + fallback; fetch-wallpaper.sh logs ok/miss/fail to @@LOG@@).
+*/10 * * * * @@FETCH@@ >/dev/null 2>&1
 # Hourly: keep only the 30 newest images in the pool; log how many were pruned.
 5 * * * * N=$(ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | wc -l); ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | xargs -r rm --; [ "$N" -gt 0 ] && echo "$(date '+\%F \%T') [prune] removed=$N" >> @@LOG@@
 # Every 10 min (offset): rotate the desktop wallpaper to a random pool image (DE-aware; logs internally to @@LOG@@).

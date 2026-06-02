@@ -33,7 +33,7 @@ The installer is **idempotent** — safe to re-run.
 One **image pool** (`~/Pictures/online-wallpapers/`) feeds two consumers:
 
 ```
-                    ┌─ cron 10-minutely : download picsum → pool
+                    ┌─ cron 10-minutely : fetch-wallpaper.sh (multi-source) → pool
    IMAGE POOL  ◄────┼─ cron hourly      : prune to 30 newest
    ~/Pictures/      └─ cron 10-minutely : set-wallpaper.sh → desktop (random pick)
    online-wallpapers
@@ -112,9 +112,28 @@ background updates on your next login.
 
 ---
 
+## Image sources
+
+The pool is filled by `bin/fetch-wallpaper.sh`, which pulls from several sources
+for **variety** and falls through on failure for **resilience**. Each run shuffles
+the enabled sources and tries them in that order until one yields a valid image
+(non-trivial, decodable — tiny HTML error bodies are rejected); if all fail, the
+pool is left unchanged and rotation continues on what's there.
+
+| Source | Key? | Notes |
+|--------|:----:|-------|
+| `wallhaven` | none | Purpose-built wallpapers, screen-ratio matched (`atleast=<RES>`), SFW. |
+| `bing`      | none | Bing's curated daily images (1920×1080). |
+| `picsum`    | none | Random photos — the always-works fallback floor. |
+| `local`     | n/a  | A local folder (`LOCALDIR`), used only if it exists and has images. |
+
+The JSON sources (`wallhaven`, `bing`) need `jq` (installed automatically).
+
 ## Customise
 
-- **Image source** — change the `picsum.photos` URL in `cron/wallpaper.cron`, re-run `install.sh`.
+- **Sources / priority** — edit `SOURCES` (space-separated) and `LOCALDIR` near the
+  top of `install.sh`, then re-run it. Or edit the substituted values at the top of
+  `/usr/local/bin/fetch-wallpaper.sh` directly.
 - **Rotation/download frequency** — change the `*/10` schedules in `cron/wallpaper.cron`.
 - **Pool size** — change `tail -n +31` (keep-30).
 - **Login resolution** — auto-detected via `xrandr` (falls back to 1920×1080); override `RESOLUTION=` in `/usr/local/bin/random-login-bg.sh`.
@@ -139,6 +158,7 @@ wallpaper-rotator/
 ├── install.sh                             # idempotent, DE/DM/distro-aware installer
 ├── uninstall.sh
 ├── bin/
+│   ├── fetch-wallpaper.sh                   # multi-source pool fetcher w/ fallback (templated)
 │   ├── set-wallpaper.sh                    # DE-aware desktop wallpaper setter (templated)
 │   └── random-login-bg.sh                  # login-image generator (templated)
 ├── cron/wallpaper.cron                     # download + prune + rotate (templated)
@@ -147,8 +167,9 @@ wallpaper-rotator/
 └── greeter/lightdm-gtk-greeter.conf.snippet
 ```
 
-Templated files use `@@POOL@@`, `@@SETWP@@`, `@@TARGET@@`, `@@RESOLUTION@@`,
-`@@USER@@` placeholders that `install.sh` substitutes per-machine.
+Templated files use `@@POOL@@`, `@@SETWP@@`, `@@FETCH@@`, `@@LOG@@`, `@@RES@@`,
+`@@SOURCES@@`, `@@LOCALDIR@@`, `@@TARGET@@`, `@@RESOLUTION@@`, `@@USER@@`
+placeholders that `install.sh` substitutes per-machine.
 
 ---
 
