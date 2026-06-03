@@ -173,6 +173,20 @@ form.controls input[type=text]:focus,form.controls select:focus{border-color:#3a
 form.controls input[type=checkbox]{accent-color:#3a6df0;width:15px;height:15px;margin:0}
 .ctl-apply{margin-top:16px;background:#3a6df0;color:#fff;border:0;border-radius:8px;padding:10px 24px;cursor:pointer;font-weight:600;font-size:14px}
 .ctl-apply:hover{background:#2f5fd6}
+/* card header with the feature name + an enable toggle on the right */
+.ctl-hd{display:flex;align-items:center;justify-content:space-between;margin:0 0 9px}
+.ctl-hd .ctl-lbl{margin:0}
+/* toggle switch (checkbox hidden, sibling span is the track+knob) */
+.tgl{display:inline-flex;cursor:pointer}
+.tgl input{position:absolute;opacity:0;width:0;height:0}
+.tgl .sw{width:34px;height:19px;border-radius:10px;background:#363b45;position:relative;transition:background .15s;display:inline-block}
+.tgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s}
+.tgl input:checked + .sw{background:#3a6df0}
+.tgl input:checked + .sw::after{left:17px}
+/* enabled card gets a subtle accent; disabled sub-controls dim out */
+.ctl-grp.on{border-color:#34508f;background:#171b22}
+.ctl-grp [disabled]{opacity:.38;cursor:not-allowed}
+.ctl-grp.off .ctl-row{opacity:.55}
 </style></head><body><div class=wrap>
 <h1>🖼️ wallpaper-rotator</h1>
 <div class=sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
@@ -194,40 +208,40 @@ cat >> "$WEBDIR/index.html" <<HTML
 <h2>Controls</h2>
 <form class=controls method=post action="/set">
 <div class=ctl-grid>
-  <div class=ctl-grp><span class=ctl-lbl>Rotation</span>
+  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Rotation</span></div>
     <div class=ctl-row><span class=fld><span class=muted>Change every</span><select name=interval>${int_opts}</select></span></div></div>
-  <div class=ctl-grp><span class=ctl-lbl>Quote</span>
+  <div class=ctl-grp data-feat=quote><div class=ctl-hd><span class=ctl-lbl>Quote</span>
+      <label class=tgl><input type=checkbox name=quote value=1${qchk}><span class=sw></span></label></div>
     <div class=ctl-row>
-      <label><input type=checkbox name=quote value=1${qchk}> Show</label>
       <label><input type=checkbox name=quote_detail value=1${qdchk}> Attribution</label>
       <span class=fld><span class=muted>at</span><select name=quote_pos>${qpos_opts}</select></span>
     </div></div>
-  <div class=ctl-grp><span class=ctl-lbl>System stats</span>
+  <div class=ctl-grp data-feat=stats><div class=ctl-hd><span class=ctl-lbl>System stats</span>
+      <label class=tgl><input type=checkbox name=stats value=1${schk}><span class=sw></span></label></div>
     <div class=ctl-row>
-      <label><input type=checkbox name=stats value=1${schk}> Show</label>
       <label><input type=checkbox name=sparkline value=1${spchk}> Sparklines</label>
       <span class=fld><span class=muted>at</span><select name=stats_pos>${spos_opts}</select></span>
     </div></div>
-  <div class=ctl-grp><span class=ctl-lbl>Weather</span>
+  <div class=ctl-grp data-feat=weather><div class=ctl-hd><span class=ctl-lbl>Weather</span>
+      <label class=tgl><input type=checkbox name=weather value=1${wchk}><span class=sw></span></label></div>
     <div class=ctl-row>
-      <label><input type=checkbox name=weather value=1${wchk}> Show</label>
       <span class=fld><span class=muted>at</span><select name=weather_pos>${wpos_opts}</select></span>
       <input type=text name=weather_location value="${wloc_val}" placeholder="Location" size=10>
       <label><input type=checkbox name=weather_icon value=1${wichk}> Icon</label>
       <label><input type=checkbox name=weather_icon_color value=1${wicchk}> Colour</label>
       <label><input type=checkbox name=weather_forecast value=1${wfchk}> Forecast</label>
     </div></div>
-  <div class=ctl-grp><span class=ctl-lbl>Clock</span>
+  <div class=ctl-grp data-feat=clock><div class=ctl-hd><span class=ctl-lbl>Clock</span>
+      <label class=tgl><input type=checkbox name=clock value=1${clkchk}><span class=sw></span></label></div>
     <div class=ctl-row>
-      <label><input type=checkbox name=clock value=1${clkchk}> Show</label>
       <select name=clock_style>${cstyle_opts}</select>
       <span class=fld><span class=muted>at</span><select name=clock_pos>${cpos_opts}</select></span>
       <label><input type=checkbox name=clock_24h value=1${c24chk}> 24h</label>
       <label><input type=checkbox name=clock_date value=1${cdchk}> Date</label>
     </div></div>
-  <div class=ctl-grp><span class=ctl-lbl>Background</span>
+  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Background</span></div>
     <div class=ctl-row><span class=fld><span class=muted>Theme</span><select name=theme>${bgtheme_opts}</select></span></div></div>
-  <div class=ctl-grp><span class=ctl-lbl>Appearance</span>
+  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Appearance</span></div>
     <div class=ctl-row>
       <span class=fld><span class=muted>Style</span><select name=overlay_style>${style_opts}</select></span>
       <span class=fld><span class=muted>Size</span><select name=size>${size_opts}</select></span>
@@ -237,6 +251,21 @@ cat >> "$WEBDIR/index.html" <<HTML
 </div>
 <button type=submit class=ctl-apply>Apply changes</button>
 </form>
+<script>
+(function(){
+  // Reflect each feature's enable toggle on its card (accent when on, dim when
+  // off). Controls are only DIMMED, never disabled — disabled fields aren't
+  // submitted, which would reset a saved position when you toggle off + Apply.
+  function sync(){
+    document.querySelectorAll('.ctl-grp[data-feat]').forEach(function(g){
+      var cb=g.querySelector('.tgl input'); if(!cb)return;
+      g.classList.toggle('on',cb.checked); g.classList.toggle('off',!cb.checked);
+    });
+  }
+  document.addEventListener('change',function(e){if(e.target.closest('.tgl'))sync();});
+  sync();
+})();
+</script>
 <h2>Downloads by source</h2>
 <table>${src_rows}</table>
 <h2>Recent activity</h2>

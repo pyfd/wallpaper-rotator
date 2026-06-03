@@ -5,6 +5,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-03 10:46 BST — paul-HP-ProDesk-400-G4-SFF
+
+### Changed
+- **Controls form polish — toggle switches + active cards.** Each feature card
+  (Quote / System stats / Weather / Clock) now has a header **toggle switch** for
+  its enable, with the sub-options below; an enabled card gets a subtle accent
+  border, and toggling off dims the card (a tiny inline script reflects the
+  toggle state — controls are only *dimmed*, never `disabled`, so their values
+  still submit and a saved position isn't lost when you toggle off + Apply).
+
+### Fixed
+- **Weather overlay didn't show after upgrading** if a pre-structured (legacy)
+  `weather.txt` cache was <60 min old: the new `weather_line` keyed off the
+  `|`-structured format but never force-refreshed the legacy one. It now also
+  refreshes when the cache lacks `|`, so it self-heals on upgrade.
+
 ## 2026-06-03 10:04 BST — paul-HP-ProDesk-400-G4-SFF
 
 ### Changed

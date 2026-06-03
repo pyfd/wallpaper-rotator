@@ -200,7 +200,10 @@ weather_icon_color() {
 # is off) so the caller can render a COLOURED icon separately from the text.
 weather_line() {
   local cache="$STATEDIR/weather.txt" loc="${WEATHER_LOCATION:-}"
-  if [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q .; then
+  # Refresh if missing, >60min old, OR in the pre-structured legacy format (no '|')
+  # — so a cache left over from an older version self-heals on upgrade.
+  if [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q . \
+       || ! grep -q '|' "$cache" 2>/dev/null; then
     if curl -fsL --max-time 12 "https://wttr.in/${loc// /+}?format=%l|%C|%t,+%h,+%w" \
          -o "$cache.new" 2>>"$LOG" && [ -s "$cache.new" ]; then
       mv "$cache.new" "$cache"
