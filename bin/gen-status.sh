@@ -159,11 +159,20 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a909a;ma
 pre{background:#0f1115;border:1px solid #262a33;border-radius:10px;padding:12px;overflow:auto;font-size:12px;margin:0}
 .ok{color:#5fd17a}.bad{color:#e06c75}
 .foot{color:#5a606a;font-size:11px;margin-top:24px}
-form.controls{background:#1c1f26;border:1px solid #262a33;border-radius:10px;padding:16px;display:flex;flex-wrap:wrap;gap:16px;align-items:center}
-form.controls label{display:flex;align-items:center;gap:7px}
-form.controls select{background:#0f1115;color:#e6e8ec;border:1px solid #2a2f39;border-radius:6px;padding:5px 7px}
-form.controls button{background:#3a6df0;color:#fff;border:0;border-radius:6px;padding:8px 18px;cursor:pointer;font-weight:600;margin-left:auto}
-form.controls button:hover{background:#2f5fd6}
+form.controls{background:#1c1f26;border:1px solid #262a33;border-radius:12px;padding:18px}
+.ctl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.ctl-grp{background:#15181e;border:1px solid #23272f;border-radius:10px;padding:12px 14px}
+.ctl-lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7c828c;margin:0 0 9px}
+.ctl-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.ctl-row label{display:flex;align-items:center;gap:6px;color:#cfd3da;font-size:13px;margin:0}
+.ctl-row .muted{color:#7c828c;font-size:12px}
+.ctl-row .fld{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+form.controls select,form.controls input[type=text]{background:#0f1115;color:#e6e8ec;border:1px solid #2a2f39;border-radius:6px;padding:5px 8px;font-size:13px;outline:none}
+form.controls select:hover{border-color:#37425a}
+form.controls input[type=text]:focus,form.controls select:focus{border-color:#3a6df0}
+form.controls input[type=checkbox]{accent-color:#3a6df0;width:15px;height:15px;margin:0}
+.ctl-apply{margin-top:16px;background:#3a6df0;color:#fff;border:0;border-radius:8px;padding:10px 24px;cursor:pointer;font-weight:600;font-size:14px}
+.ctl-apply:hover{background:#2f5fd6}
 </style></head><body><div class=wrap>
 <h1>🖼️ wallpaper-rotator</h1>
 <div class=sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
@@ -184,30 +193,49 @@ cat >> "$WEBDIR/index.html" <<HTML
 </div>
 <h2>Controls</h2>
 <form class=controls method=post action="/set">
-  <label>Change every <select name=interval>${int_opts}</select></label>
-  <label><input type=checkbox name=quote value=1${qchk}> Quote</label>
-  <label><input type=checkbox name=quote_detail value=1${qdchk}> +attribution</label>
-  <label>at <select name=quote_pos>${qpos_opts}</select></label>
-  <label><input type=checkbox name=stats value=1${schk}> System stats</label>
-  <label>at <select name=stats_pos>${spos_opts}</select></label>
-  <label><input type=checkbox name=sparkline value=1${spchk}> sparklines</label>
-  <label><input type=checkbox name=weather value=1${wchk}> Weather</label>
-  <label>at <select name=weather_pos>${wpos_opts}</select></label>
-  <label>loc <input type=text name=weather_location value="${wloc_val}" placeholder="Brighton" size=12></label>
-  <label><input type=checkbox name=weather_icon value=1${wichk}> icon</label>
-  <label><input type=checkbox name=weather_icon_color value=1${wicchk}> colour</label>
-  <label><input type=checkbox name=weather_forecast value=1${wfchk}> forecast</label>
-  <label><input type=checkbox name=clock value=1${clkchk}> Clock</label>
-  <label><select name=clock_style>${cstyle_opts}</select></label>
-  <label>at <select name=clock_pos>${cpos_opts}</select></label>
-  <label><input type=checkbox name=clock_24h value=1${c24chk}> 24h</label>
-  <label><input type=checkbox name=clock_date value=1${cdchk}> date</label>
-  <label>Background theme <select name=theme>${bgtheme_opts}</select></label>
-  <label>Overlay style <select name=overlay_style>${style_opts}</select></label>
-  <label>Size <select name=size>${size_opts}</select></label>
-  <label>Text <select name=overlay_theme>${theme_opts}</select></label>
-  <label>Font <select name=font>${font_opts}</select></label>
-  <button type=submit>Apply</button>
+<div class=ctl-grid>
+  <div class=ctl-grp><span class=ctl-lbl>Rotation</span>
+    <div class=ctl-row><span class=fld><span class=muted>Change every</span><select name=interval>${int_opts}</select></span></div></div>
+  <div class=ctl-grp><span class=ctl-lbl>Quote</span>
+    <div class=ctl-row>
+      <label><input type=checkbox name=quote value=1${qchk}> Show</label>
+      <label><input type=checkbox name=quote_detail value=1${qdchk}> Attribution</label>
+      <span class=fld><span class=muted>at</span><select name=quote_pos>${qpos_opts}</select></span>
+    </div></div>
+  <div class=ctl-grp><span class=ctl-lbl>System stats</span>
+    <div class=ctl-row>
+      <label><input type=checkbox name=stats value=1${schk}> Show</label>
+      <label><input type=checkbox name=sparkline value=1${spchk}> Sparklines</label>
+      <span class=fld><span class=muted>at</span><select name=stats_pos>${spos_opts}</select></span>
+    </div></div>
+  <div class=ctl-grp><span class=ctl-lbl>Weather</span>
+    <div class=ctl-row>
+      <label><input type=checkbox name=weather value=1${wchk}> Show</label>
+      <span class=fld><span class=muted>at</span><select name=weather_pos>${wpos_opts}</select></span>
+      <input type=text name=weather_location value="${wloc_val}" placeholder="Location" size=10>
+      <label><input type=checkbox name=weather_icon value=1${wichk}> Icon</label>
+      <label><input type=checkbox name=weather_icon_color value=1${wicchk}> Colour</label>
+      <label><input type=checkbox name=weather_forecast value=1${wfchk}> Forecast</label>
+    </div></div>
+  <div class=ctl-grp><span class=ctl-lbl>Clock</span>
+    <div class=ctl-row>
+      <label><input type=checkbox name=clock value=1${clkchk}> Show</label>
+      <select name=clock_style>${cstyle_opts}</select>
+      <span class=fld><span class=muted>at</span><select name=clock_pos>${cpos_opts}</select></span>
+      <label><input type=checkbox name=clock_24h value=1${c24chk}> 24h</label>
+      <label><input type=checkbox name=clock_date value=1${cdchk}> Date</label>
+    </div></div>
+  <div class=ctl-grp><span class=ctl-lbl>Background</span>
+    <div class=ctl-row><span class=fld><span class=muted>Theme</span><select name=theme>${bgtheme_opts}</select></span></div></div>
+  <div class=ctl-grp><span class=ctl-lbl>Appearance</span>
+    <div class=ctl-row>
+      <span class=fld><span class=muted>Style</span><select name=overlay_style>${style_opts}</select></span>
+      <span class=fld><span class=muted>Size</span><select name=size>${size_opts}</select></span>
+      <span class=fld><span class=muted>Text</span><select name=overlay_theme>${theme_opts}</select></span>
+      <span class=fld><span class=muted>Font</span><select name=font>${font_opts}</select></span>
+    </div></div>
+</div>
+<button type=submit class=ctl-apply>Apply changes</button>
 </form>
 <h2>Downloads by source</h2>
 <table>${src_rows}</table>

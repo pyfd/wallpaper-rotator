@@ -5,6 +5,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-03 10:04 BST — paul-HP-ProDesk-400-G4-SFF
+
+### Changed
+- **Modernised the web-UI controls form.** The controls had grown to ~24 mixed
+  checkboxes/selects in a single flat wrap that read as cluttered. They're now
+  grouped into labelled cards — **Rotation / Quote / System stats / Weather /
+  Clock / Background / Appearance** — laid out in a responsive grid, with
+  consistent input styling, accent-blue checkboxes, label+control pairs kept
+  together on wrap (`.fld`, no orphaned labels), and a proper **Apply changes**
+  button. Pure layout/CSS in `gen-status.sh`; same control names + behaviour, so
+  `wallpaper-web.py` is unchanged. (Re-applied on top of the clock/forecast/
+  overlay-style controls added in parallel on Fam3/e210.)
+
 ## 2026-06-03 08:58 BST — paul-e210
 
 ### Added
