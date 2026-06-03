@@ -5,6 +5,44 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-03 06:01 BST — Fam3
+
+### Changed
+- **Sparklines are now drawn graphics, not unicode block chars.** The old
+  `▁▂▃▄▅▆▇█` row read like terminal ASCII-art and clashed with the frosted/scrim
+  panels + coloured icons. Replaced with an anti-aliased **line + soft area-fill
+  sparkline** drawn with ImageMagick (`draw_spark`), in the accent blue (`#7cc4ff`)
+  that ties to the editorial accent bar and weather icon. To place the graphic
+  precisely beside the load/mem lines, the stats panel is now assembled
+  line-by-line (`stat_label` → fixed-height rows → vertical append) instead of one
+  caption. Refactored `emit()` into `style_block()` (positions/styles a ready-made
+  block PNG) + `emit()` (builds a text/icon block then calls it), so both text
+  overlays and the composite stats block share the panel/positioning/collision
+  code. Removed the old unicode `sparkline()` helper.
+
+## 2026-06-03 05:51 BST — Fam3
+
+### Added
+- **Coloured weather icons** (new `OVERLAY_WEATHER_ICON_COLOR` + "colour" checkbox
+  next to the icon toggle). When on, the condition glyph is rendered in a
+  characteristic colour — gold `☀`, soft-amber `☼`, grey `☁`, blue `☔`, pale-blue
+  `❄`, yellow `⚡` — instead of the overlay text colour. The glyph is rendered as
+  its own trimmed element (always DejaVu-Sans, which has the glyphs) and prepended
+  to the text, vertically centred with a small gap; `weather_line` now emits
+  `glyph<TAB>colour<TAB>text` so the caller can render the icon separately.
+  Monochrome icons (colour off) stay inline in the text as before.
+
+## 2026-06-03 05:44 BST — Fam3
+
+### Fixed
+- **Overlay panels carried dead space** (stats panel was ~68% empty to the right).
+  `mktext`'s `caption:` pads the block to the full `-size` width regardless of how
+  short the text is, and the frosted/chips panel inherited that width. Added
+  `-trim +repage` so each block crops to its actual text bbox (measured 598→193px
+  on the stats lines); the width arg still bounds wrapping. Panels now hug their
+  content; positioning/collision-avoidance key off the (now smaller) `bw/bh` so
+  they keep working — the `northeast` block just sits flush to the right edge.
+
 ## 2026-06-03 05:35 BST — Fam3
 
 ### Fixed

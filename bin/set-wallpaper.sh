@@ -29,6 +29,7 @@ OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0
 OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
+OVERLAY_WEATHER_ICON_COLOR=0
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -96,17 +97,6 @@ pick_quote() {
   fi
 }
 
-# Unicode sparkline from space-separated numbers. awk computes 0-7 levels (float
-# math is fine there); bash maps to block chars (reliable multibyte handling).
-sparkline() {
-  local levels chars=(▁ ▂ ▃ ▄ ▅ ▆ ▇ █) out="" l
-  levels="$(awk -v RS='[ \n]' 'NF{a[n++]=$1} END{if(n==0)exit; mn=a[0];mx=a[0];
-    for(i=0;i<n;i++){if(a[i]<mn)mn=a[i];if(a[i]>mx)mx=a[i]} r=mx-mn;
-    for(i=0;i<n;i++) printf "%d ",(r>0)?int((a[i]-mn)/r*7+0.5):0}' <<<"$1")"
-  for l in $levels; do out="$out${chars[$l]}"; done
-  printf '%s' "$out"
-}
-
 # Map a wttr.in condition string to a monochrome weather glyph the overlay font
 # (DejaVu Sans) actually contains — verified present: ☀ ☁ ☼ ❄ ⚡ ☔ (⛅ is NOT in
 # DejaVu, renders as tofu, so partly-cloudy uses ☼). Order matters: check
@@ -124,9 +114,26 @@ weather_icon() {
   esac
 }
 
+# Characteristic colour for each weather glyph (used only when coloured icons are
+# enabled). Same condition buckets as weather_icon().
+weather_icon_color() {
+  local c; c="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$c" in
+    *thunder*|*storm*)                      printf '#ffe14d' ;;  # yellow
+    *snow*|*sleet*|*blizzard*|*ice*)        printf '#dff1ff' ;;  # pale blue
+    *rain*|*drizzle*|*shower*)              printf '#5aa9e6' ;;  # blue
+    *partly*)                               printf '#ffd27f' ;;  # soft amber
+    *overcast*|*cloud*|*fog*|*mist*|*haze*) printf '#cfd8e3' ;;  # light grey
+    *clear*|*sunny*)                        printf '#ffd23f' ;;  # gold
+    *)                                      printf '#ffd27f' ;;
+  esac
+}
+
 # Local weather via wttr.in (no key); cached ~1h so we don't hammer it. Cached as
 # structured fields ("loc|condition|metrics") so the location can be title-cased
-# and the icon toggled at render time without re-fetching.
+# and the icon toggled at render time without re-fetching. Outputs three TAB-
+# separated fields: "glyph<TAB>colour<TAB>text" (glyph/colour empty when the icon
+# is off) so the caller can render a COLOURED icon separately from the text.
 weather_line() {
   local cache="$STATEDIR/weather.txt" loc="${WEATHER_LOCATION:-}"
   if [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q .; then
@@ -137,18 +144,20 @@ weather_line() {
       rm -f "$cache.new"
     fi
   fi
-  local raw wl wc wm icon=""
+  local raw wl wc wm glyph="" color=""
   raw="$(cat "$cache" 2>/dev/null)"; [ -n "$raw" ] || return 0
   case "$raw" in
-    *"|"*) : ;;                          # new structured format
-    *) printf '%s' "$raw"; return 0 ;;   # legacy single-line cache: show verbatim until it refreshes
+    *"|"*) : ;;                                  # new structured format
+    *) printf '\t\t%s' "$raw"; return 0 ;;       # legacy single-line cache: text only
   esac
   IFS='|' read -r wl wc wm <<< "$raw"
   wc="${wc%"${wc##*[![:space:]]}"}"   # wttr's %C carries a trailing space -> trim it
   # Title-case the location ("shoreham" -> "Shoreham", "new york" -> "New York").
   wl="$(printf '%s' "$wl" | awk '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')"
-  [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && icon="$(weather_icon "$wc") "
-  printf '%s%s: %s %s' "$icon" "$wl" "$wc" "$wm"
+  if [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ]; then
+    glyph="$(weather_icon "$wc")"; color="$(weather_icon_color "$wc")"
+  fi
+  printf '%s\t%s\t%s: %s %s' "$glyph" "$color" "$wl" "$wc" "$wm"
 }
 
 IMG="${1:-}"
@@ -246,21 +255,42 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       PLACED+=("$x $((OY-pad)) $w $h")   # x unchanged by the nudge; y follows OY
     }
     mktext() {  # out font ps fill width align text -> wrapped transparent PNG
+      # caption: pads to the FULL -size width even when the text is far narrower,
+      # leaving dead space inside panels (stats was ~68% empty). -trim crops the
+      # block to its actual text bbox so panels hug the content; the width arg
+      # still bounds wrapping. +repage resets the virtual canvas after the crop.
       convert -background none -font "$2" -pointsize "$3" -fill "$4" -size "${5}x" \
-        -gravity "$6" caption:"$7" "$1" 2>>"$LOG"
+        -gravity "$6" caption:"$7" -trim +repage "$1" 2>>"$LOG"
     }
-    emit() {  # $1=gravity $2=role $3=text  -> composite a styled block onto RENDER
-      local g="$1" role="$2" txt="$3" f ps align maxw t bw bh PX PY PW PH rad
-      f="$(role_font "$role")"
-      case "$role" in quote) ps=$BASEPS;; *) ps=$(( BASEPS * 3 / 4 ));; esac
-      case "$STYLE" in
-        editorial) align=West;;
-        scrim) case "$g" in *East) align=East;; *West) align=West;; *) align=Center;; esac;;
-        *) align=West;;
-      esac
-      if [ "$role" = quote ]; then maxw=$(( CW * 60 / 100 )); else maxw=$(( CW * 44 / 100 )); fi
-      t="$STATEDIR/_ovl.$$.png"
-      mktext "$t" "$f" "$ps" "$TXT" "$maxw" "$align" "$txt" || { rm -f "$t"; return 1; }
+    # Accent line+area sparkline (drawn, anti-aliased) from a space-separated
+    # series -> PNG at $1. Height tracks the pointsize ($3). Fill is ACCENT at low
+    # opacity. Needs >=2 samples, else returns non-zero so the caller omits it.
+    draw_spark() {  # $1=out $2=series $3=pointsize
+      local out="$1" series="$2" ps="${3:-18}" w=140 h pts area
+      h=$(( ps + 2 )); [ "$h" -lt 12 ] && h=12
+      IFS=$'\t' read -r pts area < <(awk -v s="$series" -v w="$w" -v h="$h" 'BEGIN{
+        n=split(s,a," "); if(n<2) exit;
+        mn=a[1];mx=a[1]; for(i=1;i<=n;i++){if(a[i]<mn)mn=a[i];if(a[i]>mx)mx=a[i]} r=mx-mn; if(r==0)r=1;
+        pad=2; us=h-2*pad; line="";
+        for(i=1;i<=n;i++){x=(i-1)*(w-1)/(n-1); y=pad+us-((a[i]-mn)/r)*us; line=line sprintf("%.1f,%.1f ",x,y)}
+        printf "%s\t0,%d %s%d,%d", line, h-1, line, w-1, h-1 }')
+      [ -n "$pts" ] || return 1
+      convert -size ${w}x${h} xc:none \
+        -fill "rgba(124,196,255,0.22)" -stroke none -draw "polygon $area" \
+        -fill none -stroke "$ACCENT" -strokewidth 1.4 -draw "polyline $pts" \
+        "$out" 2>>"$LOG" || return 1
+    }
+    # One stats line -> fixed-height ($5), left-aligned, text-colour label PNG, so
+    # lines (incl. ones with a sparkline appended) stack with even spacing.
+    stat_label() {  # $1=out $2=text $3=font $4=ps $5=lineheight
+      convert -background none -font "$3" -pointsize "$4" -fill "$TXT" \
+        label:"$2" -trim +repage -background none -gravity West -extent "x$5" "$1" 2>>"$LOG"
+    }
+    # Position + style a READY-MADE block PNG ($3) onto RENDER at gravity $1 (role
+    # $2 selects minor tweaks). Shared by emit() (text/icon blocks) and the stats
+    # builder (text + drawn sparklines).
+    style_block() {  # $1=gravity $2=role $3=block.png
+      local g="$1" role="$2" t="$3" bw bh PX PY PW PH rad
       bw=$(identify -format '%w' "$t" 2>/dev/null); bh=$(identify -format '%h' "$t" 2>/dev/null)
       [ -n "$bw" ] && [ -n "$bh" ] || { rm -f "$t"; return 1; }
       coords "$g" "$bw" "$bh"
@@ -305,6 +335,31 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       esac
       rm -f "$t"
     }
+    emit() {  # $1=gravity $2=role $3=text [$4=icon glyph $5=icon colour]
+      #         Build a text block (optional coloured icon prepended) then style it.
+      local g="$1" role="$2" txt="$3" icon="${4:-}" icol="${5:-}" f ps align maxw t
+      f="$(role_font "$role")"
+      case "$role" in quote) ps=$BASEPS;; *) ps=$(( BASEPS * 3 / 4 ));; esac
+      case "$STYLE" in
+        editorial) align=West;;
+        scrim) case "$g" in *East) align=East;; *West) align=West;; *) align=Center;; esac;;
+        *) align=West;;
+      esac
+      if [ "$role" = quote ]; then maxw=$(( CW * 60 / 100 )); else maxw=$(( CW * 44 / 100 )); fi
+      t="$STATEDIR/_ovl.$$.png"
+      mktext "$t" "$f" "$ps" "$TXT" "$maxw" "$align" "$txt" || { rm -f "$t"; return 1; }
+      # Coloured icon: render the glyph in its own colour (DejaVu-Sans has the
+      # weather glyphs) and prepend it, vertically centred, with a small gap.
+      if [ -n "$icon" ] && [ -n "$icol" ]; then
+        local icn="$STATEDIR/_icn.$$.png"
+        if convert -background none -font DejaVu-Sans -pointsize "$ps" -fill "$icol" \
+             label:"$icon" -trim +repage "$icn" 2>>"$LOG" && [ -s "$icn" ]; then
+          convert "$icn" \( -size 12x1 xc:none \) "$t" -background none -gravity center +append "$t" 2>>"$LOG"
+        fi
+        rm -f "$icn"
+      fi
+      style_block "$g" "$role" "$t"
+    }
 
     # Global gradient wash so edge text reads: scrim washes top+bottom, editorial
     # just the bottom. frosted/chips carry their own panels, so no global wash.
@@ -319,32 +374,52 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     if [ "${OVERLAY_STATS:-0}" = 1 ]; then
       load3="$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"
       memhr="$(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')"
-      lspark=""; mspark=""
+      # Build the stats panel line-by-line so a drawn (anti-aliased) line+area
+      # sparkline can sit beside load/mem instead of blocky unicode chars.
+      sf="$(role_font stats)"; sps=$(( BASEPS * 3 / 4 )); slh=$(( sps * 6 / 5 ))
+      RD="$STATEDIR/_st.$$"; mkdir -p "$RD"
+      stat_label "$RD/0.png" "$(hostname)"                              "$sf" "$sps" "$slh"
+      stat_label "$RD/1.png" "up $(uptime -p 2>/dev/null | sed 's/^up //')" "$sf" "$sps" "$slh"
+      stat_label "$RD/2.png" "load ${load3}"                            "$sf" "$sps" "$slh"
+      stat_label "$RD/3.png" "mem ${memhr}"                             "$sf" "$sps" "$slh"
+      stat_label "$RD/4.png" "disk $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}')" "$sf" "$sps" "$slh"
       if [ "${STATS_SPARKLINE:-0}" = 1 ]; then
         # Roll a small history (last 30 samples) and draw sparklines from it.
         M="$STATEDIR/metrics.csv"
         printf '%s,%s\n' "$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)" \
           "$(free 2>/dev/null | awk '/^Mem:/{printf "%.0f",$3/$2*100}')" >> "$M"
         tail -n 30 "$M" > "$M.tmp" 2>/dev/null && mv "$M.tmp" "$M"
-        lspark=" $(sparkline "$(cut -d, -f1 "$M" | tr '\n' ' ')")"
-        mspark=" $(sparkline "$(cut -d, -f2 "$M" | tr '\n' ' ')")"
+        if draw_spark "$RD/ls.png" "$(cut -d, -f1 "$M" | tr '\n' ' ')" "$sps"; then
+          convert "$RD/2.png" \( -size 10x1 xc:none \) "$RD/ls.png" -background none -gravity center +append "$RD/2.png" 2>>"$LOG"
+        fi
+        if draw_spark "$RD/ms.png" "$(cut -d, -f2 "$M" | tr '\n' ' ')" "$sps"; then
+          convert "$RD/3.png" \( -size 10x1 xc:none \) "$RD/ms.png" -background none -gravity center +append "$RD/3.png" 2>>"$LOG"
+        fi
       fi
-      stats="$(printf '%s\n' \
-        "$(hostname)" \
-        "up $(uptime -p 2>/dev/null | sed 's/^up //')" \
-        "load ${load3}${lspark}" \
-        "mem ${memhr}${mspark}" \
-        "disk $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}')")"
-      emit "$(imgrav "${STATS_POS:-northeast}" NorthEast)" stats "$stats" && OVERLAYS="stats"
+      block="$STATEDIR/_stats.$$.png"
+      if convert "$RD/0.png" "$RD/1.png" "$RD/2.png" "$RD/3.png" "$RD/4.png" \
+           -background none -gravity West -append "$block" 2>>"$LOG"; then
+        style_block "$(imgrav "${STATS_POS:-northeast}" NorthEast)" stats "$block" && OVERLAYS="stats"
+      fi
+      rm -rf "$RD"
     fi
     if [ "${OVERLAY_QUOTE:-0}" = 1 ]; then
       quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}")"
       emit "$(imgrav "${QUOTE_POS:-south}" South)" quote "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
     fi
     if [ "${OVERLAY_WEATHER:-0}" = 1 ]; then
-      weather="$(weather_line)"
-      [ -n "$weather" ] && emit "$(imgrav "${WEATHER_POS:-north}" North)" weather "$weather" \
-        && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
+      # weather_line emits "glyph<TAB>colour<TAB>text" (glyph/colour empty if icon off)
+      IFS=$'\t' read -r wicon wcolor wtext < <(weather_line)
+      if [ -n "$wtext" ]; then
+        wgrav="$(imgrav "${WEATHER_POS:-north}" North)"
+        if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then
+          emit "$wgrav" weather "$wtext" "$wicon" "$wcolor"      # coloured icon, separate
+        elif [ -n "$wicon" ]; then
+          emit "$wgrav" weather "$wicon $wtext"                  # monochrome icon, inline
+        else
+          emit "$wgrav" weather "$wtext"
+        fi && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
+      fi
     fi
     IMG="$RENDER"
     # Keep only the newest few rendered frames.

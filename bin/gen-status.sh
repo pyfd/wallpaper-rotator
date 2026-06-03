@@ -22,7 +22,7 @@ CONFIG="@@CONFIG@@"
 INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
-STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; THEME=
+STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
 mkdir -p "$WEBDIR"
@@ -86,6 +86,7 @@ schk="";  [ "${OVERLAY_STATS:-0}" = 1 ]        && schk=" checked"
 spchk=""; [ "${STATS_SPARKLINE:-0}" = 1 ]      && spchk=" checked"
 wchk="";  [ "${OVERLAY_WEATHER:-0}" = 1 ]      && wchk=" checked"
 wichk=""; [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && wichk=" checked"
+wicchk="";[ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ] && wicchk=" checked"
 POSNS="northwest north northeast west center east southwest south southeast"
 qpos_opts=$(opts_for "${QUOTE_POS:-south}" $POSNS)
 spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
@@ -174,6 +175,7 @@ cat >> "$WEBDIR/index.html" <<HTML
   <label>at <select name=weather_pos>${wpos_opts}</select></label>
   <label>loc <input type=text name=weather_location value="${wloc_val}" placeholder="Brighton" size=12></label>
   <label><input type=checkbox name=weather_icon value=1${wichk}> icon</label>
+  <label><input type=checkbox name=weather_icon_color value=1${wicchk}> colour</label>
   <label>Background theme <select name=theme>${bgtheme_opts}</select></label>
   <label>Overlay style <select name=overlay_style>${style_opts}</select></label>
   <label>Size <select name=size>${size_opts}</select></label>

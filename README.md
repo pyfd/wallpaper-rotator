@@ -148,10 +148,12 @@ applies immediately):
   source / year. Quotes come from an API cache (`fetch-quotes.sh`, refreshed daily)
   so they keep changing, falling back to `fortune`/a bundled list offline.
 - **System stats** — composites host / uptime / load / mem / disk; **sparklines**
-  toggle adds unicode trend bars beside load/mem (from a rolling history).
+  toggle adds anti-aliased line + area trend graphs (accent colour) beside
+  load/mem, drawn from a rolling history.
 - **Weather** — a local-weather overlay (wttr.in, no key) with a location field
   (title-cased on display) and an **icon** toggle that prepends a condition glyph
-  (`☀ ☁ ☼ ☔ ❄ ⚡`).
+  (`☀ ☁ ☼ ☔ ❄ ⚡`); a **colour** toggle renders that glyph in a condition colour
+  (gold sun, blue rain, grey cloud, …) instead of the overlay text colour.
 - **Background theme** — bias the image sources to a theme (Wallhaven `q=`);
   Bing/Picsum stay as untargeted fallback.
 - **Overlay style** — the visual treatment for all overlays:

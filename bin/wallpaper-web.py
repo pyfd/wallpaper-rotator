@@ -43,13 +43,14 @@ ALLOWED_OVERLAY_STYLE = {"scrim", "frosted", "editorial", "chips"}
 CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
             "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
-            "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "THEME")
+            "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "OVERLAY_WEATHER_ICON_COLOR",
+            "THEME")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "dark", "OVERLAY_FONT": "default",
                 "OVERLAY_STYLE": "scrim", "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0",
                 "WEATHER_POS": "north", "WEATHER_LOCATION": "", "OVERLAY_WEATHER_ICON": "0",
-                "THEME": ""}
+                "OVERLAY_WEATHER_ICON_COLOR": "0", "THEME": ""}
 
 
 def read_config():
@@ -136,6 +137,7 @@ class Handler(BaseHTTPRequestHandler):
         cfg["STATS_SPARKLINE"] = "1" if form.get("sparkline") else "0"
         cfg["OVERLAY_WEATHER"] = "1" if form.get("weather") else "0"
         cfg["OVERLAY_WEATHER_ICON"] = "1" if form.get("weather_icon") else "0"
+        cfg["OVERLAY_WEATHER_ICON_COLOR"] = "1" if form.get("weather_icon_color") else "0"
 
         def pick(field, allowed, default):
             v = form.get(field, [default])[0]
