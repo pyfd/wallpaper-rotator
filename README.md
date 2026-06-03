@@ -150,12 +150,21 @@ applies immediately):
 - **System stats** — composites host / uptime / load / mem / disk; **sparklines**
   toggle adds anti-aliased line + area trend graphs (accent colour) beside
   load/mem, drawn from a rolling history.
-- **Weather** — a local-weather overlay (wttr.in, no key) with a location field
-  (title-cased on display) and an **icon** toggle that prepends a condition glyph
-  (`☀ ☁ ☼ ☔ ❄ ⚡`); a **colour** toggle renders that glyph in a condition colour
-  (gold sun, blue rain, grey cloud, …) instead of the overlay text colour.
-- **Background theme** — bias the image sources to a theme (Wallhaven `q=`);
-  Bing/Picsum stay as untargeted fallback.
+- **Weather** — a local-weather overlay (wttr.in, no key) showing **current**
+  conditions, with a location field (title-cased on display) and an **icon** toggle
+  that prepends a condition glyph (`☀ ☁ ☼ ☔ ❄ ⚡`); a **colour** toggle renders that
+  glyph in a condition colour (gold sun, blue rain, grey cloud, …). A **forecast**
+  toggle adds a second, smaller line with a compact 3-day outlook
+  (`Today ☀ 24/14 · Thu ☀ 24/16 · Fri ☀ 24/17`, hi/lo °C, cached ~3h).
+- **Clock** — **digital** (big time, optional date, 12/24h) or **analogue** (drawn
+  dial with ticks + hands). Since the wallpaper is a static render, a 1-minute cron
+  re-renders the *current* image while the clock is on, so it stays accurate to the
+  minute (also keeps weather/stats fresh); no extra render churn when it's off.
+- **Background theme** — bias new downloads to a theme (nature, city, cars,
+  cycling, …). Only Wallhaven is theme-aware (`q=`), so when a theme is set it's
+  tried **first** (Bing/Picsum are untargeted fallback). Changing the theme fetches
+  a matching image immediately and tops up + trims the pool in the background, so
+  the rotation converges to the theme instead of staying mostly untargeted.
 - **Overlay style** — the visual treatment for all overlays:
   - **scrim** *(default)* — top/bottom gradient wash + drop-shadowed text, no boxes.
   - **frosted** — blurred "glass" rounded card behind each block + hairline border;

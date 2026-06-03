@@ -82,8 +82,19 @@ fetch_local() {                                         # offline / your own fol
   cp "$f" "$TMP" 2>>"$LOG"
 }
 
-# --- try sources in a shuffled order until one yields a valid image ----------
-ORDER="$(printf '%s\n' $SOURCES | shuf | tr '\n' ' ')"
+# --- try sources in order until one yields a valid image ---------------------
+# Normally shuffle for variety. But only wallhaven honours THEME (bing=curated,
+# picsum=random), so when a theme is set, try wallhaven FIRST (rest shuffled as
+# fallback) — otherwise themed downloads are drowned out by the theme-blind
+# sources. (case-match for membership, NOT `printf|grep -q`, which SIGPIPEs the
+# producer under `set -o pipefail` and would mis-report.)
+case " $SOURCES " in *" wallhaven "*) has_wh=1 ;; *) has_wh=0 ;; esac
+if [ -n "${THEME:-}" ] && [ "$has_wh" = 1 ]; then
+  rest="$(printf '%s\n' $SOURCES | grep -vx wallhaven | shuf | tr '\n' ' ')"
+  ORDER="wallhaven $rest"
+else
+  ORDER="$(printf '%s\n' $SOURCES | shuf | tr '\n' ' ')"
+fi
 for src in $ORDER; do
   : > "$TMP"
   if "fetch_$src" 2>>"$LOG" && valid_image "$TMP"; then

@@ -22,7 +22,8 @@ CONFIG="@@CONFIG@@"
 INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
-STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; THEME=
+STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
+OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0; THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
 mkdir -p "$WEBDIR"
@@ -87,17 +88,23 @@ spchk=""; [ "${STATS_SPARKLINE:-0}" = 1 ]      && spchk=" checked"
 wchk="";  [ "${OVERLAY_WEATHER:-0}" = 1 ]      && wchk=" checked"
 wichk=""; [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && wichk=" checked"
 wicchk="";[ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ] && wicchk=" checked"
+wfchk=""; [ "${OVERLAY_WEATHER_FORECAST:-0}" = 1 ] && wfchk=" checked"
+clkchk="";[ "${OVERLAY_CLOCK:-0}" = 1 ]        && clkchk=" checked"
+c24chk="";[ "${CLOCK_24H:-1}" = 1 ]            && c24chk=" checked"
+cdchk=""; [ "${CLOCK_DATE:-0}" = 1 ]           && cdchk=" checked"
 POSNS="northwest north northeast west center east southwest south southeast"
 qpos_opts=$(opts_for "${QUOTE_POS:-south}" $POSNS)
 spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
 wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
+cpos_opts=$(opts_for "${CLOCK_POS:-northwest}" $POSNS)
+cstyle_opts=$(opts_for "${CLOCK_STYLE:-digital}" digital analogue)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
 theme_opts=$(opts_for "${OVERLAY_THEME:-dark}" dark light accent)
 style_opts=$(opts_for "${OVERLAY_STYLE:-scrim}" scrim frosted editorial chips)
 # Background theme select: "any" (empty) + presets.
 bg_cur="${THEME:-}"; bg_sel=""; [ -z "$bg_cur" ] && bg_sel=" selected"
 bgtheme_opts="<option value=\"\"$bg_sel>any</option>"
-for t in nature landscape minimal space city abstract cars animals dark forest ocean; do
+for t in nature landscape minimal space city abstract cars cycling animals dark forest ocean; do
   s=""; [ "$bg_cur" = "$t" ] && s=" selected"
   bgtheme_opts="$bgtheme_opts<option value=\"$t\"$s>$t</option>"
 done
@@ -116,12 +123,20 @@ for fc in DejaVu-Sans DejaVu-Serif DejaVu-Sans-Mono Liberation-Sans Liberation-S
   fi
 done
 
+# Inline SVG favicon (framed landscape: accent frame, gold sun, green hills) as a
+# base64 data-URI so no server route or binary asset is needed. base64 is
+# attribute-safe, unlike a raw SVG with #/<>/quotes.
+favicon_svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="2" y="5" width="28" height="22" rx="5" fill="#14161a" stroke="#7cc4ff" stroke-width="2"/><circle cx="11" cy="12" r="3" fill="#ffd23f"/><path d="M3 25 L12 16 L18 21 L23 15 L29 25 Z" fill="#5fd17a"/></svg>'
+favicon_b64="$(printf '%s' "$favicon_svg" | base64 -w0 2>/dev/null)"
+host="$(hostname 2>/dev/null)"
+
 # --- emit page --------------------------------------------------------------
 cat > "$WEBDIR/index.html" <<HTML
 <!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <meta http-equiv=refresh content=30>
-<title>wallpaper-rotator</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,${favicon_b64}">
+<title>Wallpaper Rotator${host:+ · $host}${pool_count:+ — ${pool_count} imgs}</title>
 <style>
 :root{color-scheme:dark}
 body{margin:0;background:#14161a;color:#e6e8ec;font:14px/1.5 system-ui,sans-serif}
@@ -176,6 +191,12 @@ cat >> "$WEBDIR/index.html" <<HTML
   <label>loc <input type=text name=weather_location value="${wloc_val}" placeholder="Brighton" size=12></label>
   <label><input type=checkbox name=weather_icon value=1${wichk}> icon</label>
   <label><input type=checkbox name=weather_icon_color value=1${wicchk}> colour</label>
+  <label><input type=checkbox name=weather_forecast value=1${wfchk}> forecast</label>
+  <label><input type=checkbox name=clock value=1${clkchk}> Clock</label>
+  <label><select name=clock_style>${cstyle_opts}</select></label>
+  <label>at <select name=clock_pos>${cpos_opts}</select></label>
+  <label><input type=checkbox name=clock_24h value=1${c24chk}> 24h</label>
+  <label><input type=checkbox name=clock_date value=1${cdchk}> date</label>
   <label>Background theme <select name=theme>${bgtheme_opts}</select></label>
   <label>Overlay style <select name=overlay_style>${style_opts}</select></label>
   <label>Size <select name=size>${size_opts}</select></label>

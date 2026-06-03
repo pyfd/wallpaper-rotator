@@ -5,6 +5,8 @@
 5 * * * * N=$(ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | wc -l); ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | xargs -r rm --; [ "$N" -gt 0 ] && echo "$(date '+\%F \%T') [prune] removed=$N" >> @@LOG@@
 # Every @@INTERVAL@@ min: rotate the desktop wallpaper to a random pool image (DE-aware; logs internally to @@LOG@@). Interval set via the web UI.
 */@@INTERVAL@@ * * * * @@SETWP@@ >/dev/null 2>&1
+# Every 1 min: when the clock overlay is on, re-render the CURRENT image (no shuffle) so the baked-in clock (and weather/stats) stay current. No-op when the clock is off.
+* * * * * grep -q '^OVERLAY_CLOCK="1"' @@CONFIG@@ 2>/dev/null && [ -s @@CURRENT@@ ] && @@SETWP@@ "$(cat @@CURRENT@@)" >/dev/null 2>&1
 # Every 10 min (offset): refresh the status page for the local web UI (wallpaper-web).
 7-59/10 * * * * @@GENSTATUS@@ >/dev/null 2>&1
 # Daily: refresh the quote cache from the quotes API (so overlay quotes keep changing).

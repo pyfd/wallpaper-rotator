@@ -29,7 +29,8 @@ OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0
 OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
-OVERLAY_WEATHER_ICON_COLOR=0
+OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
+OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -160,6 +161,31 @@ weather_line() {
   printf '%s\t%s\t%s: %s %s' "$glyph" "$color" "$wl" "$wc" "$wm"
 }
 
+# Compact 3-day daily forecast line from wttr.in's JSON (j1), cached ~3h since a
+# forecast moves slowly. Format: "Today <glyph> hi/lo · Thu <glyph> hi/lo · …"
+# (monochrome condition glyphs, rendered inline in the text colour). Needs jq.
+weather_forecast() {
+  local cache="$STATEDIR/forecast.txt" raw="$STATEDIR/forecast.raw" loc="${WEATHER_LOCATION:-}"
+  command -v jq >/dev/null 2>&1 || return 0
+  if [ ! -f "$cache" ] || find "$cache" -mmin +180 2>/dev/null | grep -q .; then
+    if curl -fsL --max-time 15 "https://wttr.in/${loc// /+}?format=j1" -o "$cache.json" 2>>"$LOG" && [ -s "$cache.json" ]; then
+      # date|maxC|minC|midday-condition for the next up-to-3 days
+      jq -r '.weather[0:3][] | "\(.date)|\(.maxtempC)|\(.mintempC)|\(.hourly[4].weatherDesc[0].value)"' "$cache.json" 2>/dev/null > "$raw"
+      local out="" d hi lo desc dn g i=0
+      while IFS='|' read -r d hi lo desc; do
+        [ -n "$d" ] || continue
+        if [ "$i" -eq 0 ]; then dn="Today"; else dn="$(date -d "$d" +%a 2>/dev/null || echo "$d")"; fi
+        g="$(weather_icon "$desc")"
+        out="${out:+$out · }${dn} ${g} ${hi}/${lo}"
+        i=$((i+1))
+      done < "$raw"
+      [ -n "$out" ] && printf '%s' "$out" > "$cache"
+    fi
+    rm -f "$cache.json" "$raw"
+  fi
+  cat "$cache" 2>/dev/null
+}
+
 IMG="${1:-}"
 if [ -z "$IMG" ]; then
   # Avoid an immediate repeat: drop the previously-applied original (stored in
@@ -184,7 +210,7 @@ printf '%s\n' "$ORIG" > "$(dirname "$LOG")/current" 2>/dev/null
 # the original stays clean. The derived file gets a UNIQUE name each tick — a
 # constant path wouldn't repaint (KDE caches by path), and stats must stay live.
 OVERLAYS=""
-if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVERLAY_WEATHER:-0}" = 1 ]; } \
+if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVERLAY_WEATHER:-0}" = 1 ] || [ "${OVERLAY_CLOCK:-0}" = 1 ]; } \
      && command -v convert >/dev/null 2>&1; then
   RDIR="$STATEDIR/rendered"; mkdir -p "$RDIR"
   RENDER="$RDIR/$(date +%s).$$.jpg"
@@ -285,6 +311,24 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     stat_label() {  # $1=out $2=text $3=font $4=ps $5=lineheight
       convert -background none -font "$3" -pointsize "$4" -fill "$TXT" \
         label:"$2" -trim +repage -background none -gravity West -extent "x$5" "$1" 2>>"$LOG"
+    }
+    # Analogue clock face -> transparent PNG at $1, diameter $2, for time $3:$4
+    # (H M). Ring + 12 ticks + hour/minute hands in TXT, accent centre pin. Built
+    # as one MVG -draw program (colours single-quoted so '#' isn't an MVG comment).
+    draw_clock() {  # $1=out $2=diameter $3=hour $4=min
+      local out="$1" d="$2" H="$3" M="$4" prog
+      prog="$(awk -v d="$d" -v H="$H" -v M="$M" -v col="$TXT" -v acc="$ACCENT" 'BEGIN{
+        pi=3.14159265; cx=d/2; cy=d/2; R=cx-3;
+        printf "stroke %c%s%c fill none stroke-width 2 ", 39,col,39;
+        printf "circle %.1f,%.1f %.1f,%.1f ", cx,cy, cx, cy-R;
+        for(i=0;i<12;i++){a=i/12*2*pi-pi/2; printf "line %.1f,%.1f %.1f,%.1f ",
+          cx+0.86*R*cos(a),cy+0.86*R*sin(a), cx+0.97*R*cos(a),cy+0.97*R*sin(a)}
+        ha=((H%12)+M/60)/12*2*pi-pi/2; printf "stroke-width 3 line %.1f,%.1f %.1f,%.1f ",
+          cx,cy, cx+0.50*R*cos(ha),cy+0.50*R*sin(ha);
+        ma=(M/60)*2*pi-pi/2; printf "stroke-width 2 line %.1f,%.1f %.1f,%.1f ",
+          cx,cy, cx+0.74*R*cos(ma),cy+0.74*R*sin(ma);
+        printf "stroke none fill %c%s%c circle %.1f,%.1f %.1f,%.1f", 39,acc,39, cx,cy, cx,cy+3.2 }')"
+      convert -size "${d}x${d}" xc:none -draw "$prog" "$out" 2>>"$LOG"
     }
     # Position + style a READY-MADE block PNG ($3) onto RENDER at gravity $1 (role
     # $2 selects minor tweaks). Shared by emit() (text/icon blocks) and the stats
@@ -404,7 +448,20 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       rm -rf "$RD"
     fi
     if [ "${OVERLAY_QUOTE:-0}" = 1 ]; then
-      quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}")"
+      # Reuse the quote while the SAME image stays current, so the 1-min clock
+      # refresh (re-rendering the current image) doesn't re-randomise it every
+      # minute. Cache = line1 "IMG<US>detail", remaining lines = the quote.
+      quote=""; qcache="$STATEDIR/.quote"
+      if [ -f "$qcache" ]; then
+        IFS=$'\x1f' read -r qimg qdetail < <(head -1 "$qcache")
+        if [ "$qimg" = "$ORIG" ] && [ "$qdetail" = "${OVERLAY_QUOTE_DETAIL:-0}" ]; then
+          quote="$(tail -n +2 "$qcache")"
+        fi
+      fi
+      if [ -z "$quote" ]; then
+        quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}")"
+        { printf '%s\x1f%s\n' "$ORIG" "${OVERLAY_QUOTE_DETAIL:-0}"; printf '%s' "$quote"; } > "$qcache"
+      fi
       emit "$(imgrav "${QUOTE_POS:-south}" South)" quote "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
     fi
     if [ "${OVERLAY_WEATHER:-0}" = 1 ]; then
@@ -412,13 +469,70 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       IFS=$'\t' read -r wicon wcolor wtext < <(weather_line)
       if [ -n "$wtext" ]; then
         wgrav="$(imgrav "${WEATHER_POS:-north}" North)"
-        if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then
-          emit "$wgrav" weather "$wtext" "$wicon" "$wcolor"      # coloured icon, separate
-        elif [ -n "$wicon" ]; then
-          emit "$wgrav" weather "$wicon $wtext"                  # monochrome icon, inline
+        fcast=""; [ "${OVERLAY_WEATHER_FORECAST:-0}" = 1 ] && fcast="$(weather_forecast)"
+        if [ -z "$fcast" ]; then
+          # single current-conditions line (unchanged path)
+          if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then
+            emit "$wgrav" weather "$wtext" "$wicon" "$wcolor"    # coloured icon, separate
+          elif [ -n "$wicon" ]; then
+            emit "$wgrav" weather "$wicon $wtext"                # monochrome icon, inline
+          else
+            emit "$wgrav" weather "$wtext"
+          fi && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
         else
-          emit "$wgrav" weather "$wtext"
-        fi && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
+          # current line + a smaller forecast line, composed into one block
+          wf="$(role_font weather)"; wps=$(( BASEPS * 3 / 4 )); wmaxw=$(( CW * 52 / 100 ))
+          wc1="$STATEDIR/_wxc.$$.png"; wc2="$STATEDIR/_wxf.$$.png"; wblk="$STATEDIR/_wx.$$.png"
+          if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then ctext="$wtext"; else ctext="${wicon:+$wicon }$wtext"; fi
+          if mktext "$wc1" "$wf" "$wps" "$TXT" "$wmaxw" West "$ctext"; then
+            if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then
+              icn="$STATEDIR/_wxi.$$.png"
+              if convert -background none -font DejaVu-Sans -pointsize "$wps" -fill "$wcolor" label:"$wicon" -trim +repage "$icn" 2>>"$LOG" && [ -s "$icn" ]; then
+                convert "$icn" \( -size 12x1 xc:none \) "$wc1" -background none -gravity center +append "$wc1" 2>>"$LOG"
+              fi
+              rm -f "$icn"
+            fi
+            # forecast line: clearly SECONDARY — smaller + dimmed (so the panel
+            # reads as "now" + a quiet outlook, not two competing lines). DejaVu-Sans
+            # guarantees the condition glyphs render. Centred under the current line
+            # with generous spacing so it doesn't look cramped.
+            fps=$(( wps * 7 / 10 )); [ "$fps" -lt 13 ] && fps=13
+            convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT" -size "${wmaxw}x" \
+              -gravity West caption:"$fcast" -trim +repage -channel A -evaluate multiply 0.72 +channel "$wc2" 2>>"$LOG" || :
+            if [ -s "$wc2" ]; then
+              convert "$wc1" \( -size 1x14 xc:none \) "$wc2" -background none -gravity center -append "$wblk" 2>>"$LOG"
+            else
+              cp "$wc1" "$wblk" 2>>"$LOG"
+            fi
+            [ -s "$wblk" ] && style_block "$wgrav" weather "$wblk" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
+          fi
+          rm -f "$wc1" "$wc2"
+        fi
+      fi
+    fi
+    if [ "${OVERLAY_CLOCK:-0}" = 1 ]; then
+      cgrav="$(imgrav "${CLOCK_POS:-northwest}" NorthWest)"
+      cblock="$STATEDIR/_clock.$$.png"
+      if [ "${CLOCK_STYLE:-digital}" = analogue ]; then
+        case "$OVERLAY_SIZE" in small) cd=104;; large) cd=176;; *) cd=136;; esac
+        if draw_clock "$cblock" "$cd" "$(date +%-H)" "$(date +%-M)"; then
+          style_block "$cgrav" clock "$cblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}clock"
+        fi
+      else
+        # digital: big time + optional small date, stacked & centred
+        if [ "${CLOCK_24H:-1}" = 1 ]; then ctime="$(date +%H:%M)"; else ctime="$(date +'%-I:%M %p')"; fi
+        case "$OVERLAY_SIZE" in small) cps=44;; large) cps=76;; *) cps=58;; esac
+        cf="$(role_font clock)"; CRD="$STATEDIR/_cl.$$"; mkdir -p "$CRD"
+        convert -background none -font "$cf" -pointsize "$cps" -fill "$TXT" label:"$ctime" -trim +repage "$CRD/t.png" 2>>"$LOG"
+        if [ "${CLOCK_DATE:-0}" = 1 ]; then
+          dps=$(( cps * 2 / 5 )); [ "$dps" -lt 14 ] && dps=14
+          convert -background none -font "$cf" -pointsize "$dps" -fill "$TXT" label:"$(date +'%a %-d %b')" -trim +repage "$CRD/d.png" 2>>"$LOG"
+          convert "$CRD/t.png" \( -size 1x6 xc:none \) "$CRD/d.png" -background none -gravity center -append "$cblock" 2>>"$LOG"
+        else
+          cp "$CRD/t.png" "$cblock" 2>>"$LOG"
+        fi
+        rm -rf "$CRD"
+        [ -s "$cblock" ] && style_block "$cgrav" clock "$cblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}clock"
       fi
     fi
     IMG="$RENDER"

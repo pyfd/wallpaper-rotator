@@ -5,7 +5,70 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
-## 2026-06-03 06:01 BST — Fam3
+## 2026-06-03 06:55 BST — Fam3
+
+### Changed
+- **Weather forecast line restyled — was cramped/messy.** The forecast read like a
+  second competing line (same weight, tight against the current line). Now it's
+  clearly secondary: ~70% size, dimmed to 72% opacity, centred under the current
+  line with a 14px gap. Reads as "now" + a quiet outlook instead of two dense rows.
+
+## 2026-06-03 06:51 BST — Fam3
+
+### Added
+- **Weather forecast line** (`OVERLAY_WEATHER_FORECAST` + "forecast" checkbox). When
+  on, the weather overlay gains a second, smaller line with a compact 3-day daily
+  outlook — `Today ☀ 24/14 · Thu ☀ 24/16 · Fri ☀ 24/17` (day · condition glyph ·
+  maxC/minC), parsed from wttr.in's `?format=j1` JSON via `weather_forecast()` and
+  cached ~3h (forecasts move slowly). The current-conditions line is unchanged when
+  the toggle is off. Forecast glyphs are rendered in DejaVu-Sans so they never tofu
+  regardless of the chosen overlay font. (The existing weather line is still
+  **current** conditions, not a forecast.)
+
+## 2026-06-03 06:43 BST — Fam3
+
+### Added
+- **Clock overlay** (`OVERLAY_CLOCK`) — **digital** (big time + optional date,
+  12/24h) or **analogue** (drawn dial: ring, 12 ticks, hour/minute hands, accent
+  centre pin via `draw_clock`), with position + size (shared `OVERLAY_SIZE`) and a
+  UI control row (Clock / style / position / 24h / date). Goes through the shared
+  `style_block` so it gets the same panel/shadow/collision-avoidance.
+  - Because the wallpaper is a static render, a **1-minute cron re-renders the
+    current image while the clock is on** (no shuffle) so the baked-in clock stays
+    accurate to the minute (and weather/stats refresh too); it's a no-op when the
+    clock is off, so there's no extra churn otherwise.
+  - To stop that 1-min refresh re-randomising the quote every minute, the quote is
+    now **cached per current image** (re-picked only when the image actually
+    rotates or the +attribution toggle changes).
+
+## 2026-06-03 06:29 BST — Fam3
+
+### Added
+- **Favicon + informative window title for the web UI.** Added an inline SVG
+  favicon (framed landscape — accent frame, gold sun, green hills) as a base64
+  data-URI, so no server route or binary asset is needed. The `<title>` is now
+  `Wallpaper Rotator · <host> — <N> imgs` (was just `wallpaper-rotator`), so the
+  browser tab is identifiable per machine at a glance.
+
+## 2026-06-03 06:26 BST — Fam3
+
+### Added
+- **Cycling theme** in the Background-theme dropdown (Wallhaven `q=cycling`) —
+  fitting for the bike shop.
+
+### Fixed
+- **Background theme barely did anything.** Three causes: (1) hitting *Apply* only
+  re-rendered the current image and never fetched, so theme changes had no visible
+  effect; (2) only Wallhaven honours the theme, but it was 1 of 4 shuffled sources,
+  so ~75% of downloads (Bing/Picsum) ignored it; (3) random rotation over a 30-img
+  pool of mostly old/untargeted images diluted what little was themed. Now:
+  - `fetch-wallpaper.sh` tries **Wallhaven first** when a theme is set (others as
+    fallback), so new downloads actually honour it.
+  - Changing the theme in the web UI **fetches a themed image immediately and
+    displays it** (instant feedback), then tops up the pool with a background burst
+    of themed images and trims to the newest ~12, so rotation **converges** to the
+    theme. (`wallpaper-web.py` gained `@@FETCH@@`/`@@POOL@@`; a plain Apply with no
+    theme change still just re-renders the current image.)
 
 ### Changed
 - **Sparklines are now drawn graphics, not unicode block chars.** The old

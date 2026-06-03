@@ -19,6 +19,8 @@ PORT      = "@@PORT@@"
 CONFIG    = "@@CONFIG@@"
 GENSTATUS = "@@GENSTATUS@@"
 SETWP     = "@@SETWP@@"
+FETCH     = "@@FETCH@@"
+POOL      = "@@POOL@@"
 
 HOME  = os.path.expanduser("~")
 STATE = os.path.join(HOME, ".local/state/wallpaper-rotator")
@@ -28,6 +30,8 @@ if PORT.startswith("@@"):      PORT      = "8787"
 if CONFIG.startswith("@@"):    CONFIG    = os.path.join(STATE, "config")
 if GENSTATUS.startswith("@@"): GENSTATUS = os.path.join(HERE, "gen-status.sh")
 if SETWP.startswith("@@"):     SETWP     = os.path.join(HERE, "set-wallpaper.sh")
+if FETCH.startswith("@@"):     FETCH     = os.path.join(HERE, "fetch-wallpaper.sh")
+if POOL.startswith("@@"):      POOL      = os.path.join(HOME, "Pictures/online-wallpapers")
 PORT = int(PORT)
 
 ALLOWED_INTERVALS = {"3", "5", "10", "15", "30", "60"}
@@ -38,19 +42,25 @@ ALLOWED_THEME = {"dark", "light", "accent"}
 ALLOWED_FONT = {"default", "DejaVu-Sans", "DejaVu-Serif", "DejaVu-Sans-Mono",
                 "Liberation-Sans", "Liberation-Serif", "FreeSans", "FreeSerif"}
 ALLOWED_BGTHEME = {"", "nature", "landscape", "minimal", "space", "city", "abstract",
-                   "cars", "animals", "dark", "forest", "ocean"}
+                   "cars", "cycling", "animals", "dark", "forest", "ocean"}
 ALLOWED_OVERLAY_STYLE = {"scrim", "frosted", "editorial", "chips"}
+ALLOWED_CLOCK_STYLE = {"digital", "analogue"}
 CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
             "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
             "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "OVERLAY_WEATHER_ICON_COLOR",
+            "OVERLAY_WEATHER_FORECAST",
+            "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_POS", "CLOCK_24H", "CLOCK_DATE",
             "THEME")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "dark", "OVERLAY_FONT": "default",
                 "OVERLAY_STYLE": "scrim", "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0",
                 "WEATHER_POS": "north", "WEATHER_LOCATION": "", "OVERLAY_WEATHER_ICON": "0",
-                "OVERLAY_WEATHER_ICON_COLOR": "0", "THEME": ""}
+                "OVERLAY_WEATHER_ICON_COLOR": "0", "OVERLAY_WEATHER_FORECAST": "0",
+                "OVERLAY_CLOCK": "0",
+                "CLOCK_STYLE": "digital", "CLOCK_POS": "northwest", "CLOCK_24H": "1",
+                "CLOCK_DATE": "0", "THEME": ""}
 
 
 def read_config():
@@ -100,6 +110,17 @@ def regen():
         pass
 
 
+def newest_pool_image():
+    """Most-recently-modified image in the pool (the just-fetched one), or ''."""
+    try:
+        files = [os.path.join(POOL, f) for f in os.listdir(POOL)
+                 if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+        files = [f for f in files if os.path.isfile(f)]
+        return max(files, key=os.path.getmtime) if files else ""
+    except Exception:
+        return ""
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, ctype, body):
         self.send_response(code)
@@ -128,6 +149,7 @@ class Handler(BaseHTTPRequestHandler):
         ln = int(self.headers.get("Content-Length") or 0)
         form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
         cfg = read_config()
+        old_theme = cfg.get("THEME", "")
         iv = form.get("interval", ["10"])[0]
         if iv in ALLOWED_INTERVALS:
             cfg["INTERVAL_MIN"] = iv
@@ -138,6 +160,10 @@ class Handler(BaseHTTPRequestHandler):
         cfg["OVERLAY_WEATHER"] = "1" if form.get("weather") else "0"
         cfg["OVERLAY_WEATHER_ICON"] = "1" if form.get("weather_icon") else "0"
         cfg["OVERLAY_WEATHER_ICON_COLOR"] = "1" if form.get("weather_icon_color") else "0"
+        cfg["OVERLAY_WEATHER_FORECAST"] = "1" if form.get("weather_forecast") else "0"
+        cfg["OVERLAY_CLOCK"] = "1" if form.get("clock") else "0"
+        cfg["CLOCK_24H"] = "1" if form.get("clock_24h") else "0"
+        cfg["CLOCK_DATE"] = "1" if form.get("clock_date") else "0"
 
         def pick(field, allowed, default):
             v = form.get(field, [default])[0]
@@ -149,24 +175,53 @@ class Handler(BaseHTTPRequestHandler):
         cfg["OVERLAY_THEME"] = pick("overlay_theme", ALLOWED_THEME, "dark")
         cfg["OVERLAY_FONT"]  = pick("font", ALLOWED_FONT, "default")
         cfg["OVERLAY_STYLE"] = pick("overlay_style", ALLOWED_OVERLAY_STYLE, "scrim")
+        cfg["CLOCK_STYLE"]   = pick("clock_style", ALLOWED_CLOCK_STYLE, "digital")
+        cfg["CLOCK_POS"]     = pick("clock_pos", ALLOWED_POS, "northwest")
         cfg["THEME"]         = pick("theme", ALLOWED_BGTHEME, "")
         wl = form.get("weather_location", [""])[0].strip()
         cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", wl)[:40]
         write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
-        # Re-apply the CURRENT image with the new settings (don't shuffle to a
-        # random one) so Apply only changes overlays/interval, not the picture.
-        cur = ""
-        try:
-            with open(os.path.join(os.path.dirname(CONFIG), "current")) as cf:
-                cur = cf.read().strip()
-        except Exception:
+        if cfg["THEME"] != old_theme:
+            # Theme changed: only wallhaven honours the theme and the pool is mostly
+            # theme-blind, so a plain re-render shows nothing new. Fetch a themed
+            # image NOW and display it (instant feedback), then top up with more
+            # themed images + prune the oldest in the background so rotation
+            # converges to the theme without blocking this response.
+            try:
+                subprocess.run([FETCH], timeout=45)
+            except Exception:
+                pass
+            newest = newest_pool_image()
+            cmd = [SETWP, newest] if newest else [SETWP]
+            try:
+                subprocess.run(cmd, timeout=30)
+            except Exception:
+                pass
+            try:
+                subprocess.Popen(
+                    ["bash", "-c",
+                     "for i in $(seq 1 7); do %s; done; "
+                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --"
+                     % (FETCH, POOL)],
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+        else:
+            # No theme change: re-apply the CURRENT image with the new settings
+            # (don't shuffle) so Apply only changes overlays/interval, not the picture.
             cur = ""
-        cmd = [SETWP, cur] if (cur and os.path.isfile(cur)) else [SETWP]
-        try:
-            subprocess.run(cmd, timeout=30)
-        except Exception:
-            pass
+            try:
+                with open(os.path.join(os.path.dirname(CONFIG), "current")) as cf:
+                    cur = cf.read().strip()
+            except Exception:
+                cur = ""
+            cmd = [SETWP, cur] if (cur and os.path.isfile(cur)) else [SETWP]
+            try:
+                subprocess.run(cmd, timeout=30)
+            except Exception:
+                pass
         regen()
         self.send_response(303)
         self.send_header("Location", "/")
