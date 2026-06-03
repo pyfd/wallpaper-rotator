@@ -5,6 +5,37 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-03 07:26 BST — Fam3
+
+### Fixed
+- **Quotes repeated through the day** (seen the same one earlier). `pick_quote` did
+  `shuf -n1` each rotation, so repeats happened by chance. Now it's a **shuffle-bag**:
+  draw from a shuffled queue (`quotes.bag`) so none repeats until all have shown.
+  - When the bag is **exhausted**, it downloads a **fresh batch** (`fetch-quotes.sh`)
+    for the next bag instead of reshuffling the same set.
+  - A persistent **seen-list** (`quotes.seen`, by quote text, last ~1000) filters
+    every new/re-downloaded bag, so an overlapping re-download never re-shows a
+    quote already had — until the whole known set is exhausted, then the seen-list
+    resets and cycling resumes. (`@@FETCHQ@@` added to set-wallpaper.sh.)
+- **Wallpaper double-rendered / flickered every 3rd minute.** The web UI's
+  `set_cron_interval` rewrote *every* line containing the set-wallpaper path to
+  `*/N` — including the every-minute clock-refresh line — so both fired together and
+  raced (two renders/sets in one second, and a race on the quote bag). Now it only
+  rewrites the rotate line (the clock line references `current`), and set-wallpaper
+  takes a **non-blocking lock** so two runs can never render at once (the later one
+  skips that tick). Live crontab repaired (clock line back to `* * * * *`).
+
+## 2026-06-03 07:13 BST — Fam3
+
+### Changed
+- **Forecast glyphs are now coloured** (when the weather "colour" toggle is on),
+  matching the current-conditions icon — gold sun, blue rain, etc. The forecast
+  cache is now stored **structured** (`label⇥condition⇥hi⇥lo` per day) so the line
+  is composed per-day, letting each glyph take its condition colour; the colour
+  toggle applies at render time without re-fetching. Spacing is via explicit
+  transparent spacers (since `-trim` drops whitespace), and the strip is dimmed
+  only lightly (0.85) so the colours read while staying secondary.
+
 ## 2026-06-03 06:55 BST — Fam3
 
 ### Changed

@@ -22,6 +22,9 @@ log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/nu
 # this config. @@CONFIG@@ substituted by install.sh.
 CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
+# Quote fetcher — re-run to pull a fresh batch when the shuffle-bag is exhausted.
+FETCHQ="@@FETCHQ@@"
+[ "$FETCHQ" = "@@FETCHQ""@@" ] && FETCHQ="$(dirname "$0")/fetch-quotes.sh"
 # Overlay defaults (the web UI overwrites these in the config).
 OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast
@@ -36,6 +39,14 @@ THEME=
 
 STATEDIR="$(dirname "$LOG")"
 
+# Serialise runs: the rotate cron and the 1-min clock-refresh cron coincide every
+# Nth minute and would otherwise double-render (wallpaper flicker) and race on the
+# quote bag. Non-blocking — if another run holds the lock, skip this tick. Falls
+# through harmlessly if flock is unavailable.
+if command -v flock >/dev/null 2>&1 && exec 9>"$STATEDIR/.setwp.lock" 2>/dev/null; then
+  flock -n 9 || exit 0
+fi
+
 # Map a config position token to an ImageMagick -gravity value ($2 = default).
 imgrav() {
   case "$1" in
@@ -46,14 +57,51 @@ imgrav() {
   esac
 }
 
+# Build the shuffle-bag from the quote cache, EXCLUDING quotes already shown
+# (tracked by text in $2). Keeps a re-downloaded batch from repeating earlier
+# quotes. If everything known has been seen, the history resets so we can cycle
+# again rather than run dry.
+build_quote_bag() {  # $1=cache $2=seen $3=bag
+  local cache="$1" seen="$2" bag="$3"
+  if [ -s "$seen" ]; then
+    awk -F'|' 'NR==FNR{s[$0]=1; next} !($1 in s)' "$seen" "$cache" | shuf > "$bag" 2>/dev/null
+  else
+    shuf "$cache" > "$bag" 2>/dev/null
+  fi
+  if [ ! -s "$bag" ]; then            # every known quote already seen -> reset + cycle
+    : > "$seen"
+    shuf "$cache" > "$bag" 2>/dev/null
+  fi
+}
+
 # A quote for the overlay. With detail, append attribution (author, source, year)
 # from the bundled list. Without detail, `fortune -s` is used if installed.
 pick_quote() {
   local detail="${1:-0}"
   # Prefer the API cache (text|author||) refreshed by fetch-quotes.sh, so quotes
   # keep changing; fall back to fortune (non-detail) then the bundled list.
-  local cache="$STATEDIR/quotes.cache" line=""
-  [ -s "$cache" ] && line="$(shuf -n1 "$cache" 2>/dev/null)"
+  # Shuffle-BAG, not a random pick: draw quotes from a shuffled queue so none
+  # repeats until every quote has been shown. When the bag is EXHAUSTED, download a
+  # FRESH batch (fetch-quotes.sh) for the next bag. A persistent "seen" list (quote
+  # texts already shown) filters every new bag, so a re-download — which overlaps
+  # with earlier batches — never re-shows a quote until the whole known set is
+  # exhausted, at which point the seen list resets. (Plain `shuf -n1` repeated all
+  # day by chance.)
+  local cache="$STATEDIR/quotes.cache" bag="$STATEDIR/quotes.bag" seen="$STATEDIR/quotes.seen" line=""
+  if [ -s "$cache" ]; then
+    if [ ! -e "$bag" ] || [ "$cache" -nt "$bag" ]; then
+      build_quote_bag "$cache" "$seen" "$bag"       # first build, or cache refreshed by the daily cron
+    elif [ ! -s "$bag" ]; then
+      "$FETCHQ" >/dev/null 2>&1 || true             # bag empty = every quote shown -> pull a new batch
+      build_quote_bag "$cache" "$seen" "$bag"
+    fi
+    line="$(head -n1 "$bag" 2>/dev/null)"
+    tail -n +2 "$bag" > "$bag.tmp" 2>/dev/null && mv "$bag.tmp" "$bag" 2>/dev/null
+    if [ -n "$line" ]; then                         # record as seen (by text), bounded to recent history
+      printf '%s\n' "${line%%|*}" >> "$seen"
+      tail -n 1000 "$seen" > "$seen.tmp" 2>/dev/null && mv "$seen.tmp" "$seen" 2>/dev/null
+    fi
+  fi
   if [ -z "$line" ]; then
     if [ "$detail" != 1 ] && command -v fortune >/dev/null 2>&1; then
       fortune -s 2>/dev/null | tr '\n\t' '  ' | sed 's/  */ /g' | cut -c1-160
@@ -161,27 +209,28 @@ weather_line() {
   printf '%s\t%s\t%s: %s %s' "$glyph" "$color" "$wl" "$wc" "$wm"
 }
 
-# Compact 3-day daily forecast line from wttr.in's JSON (j1), cached ~3h since a
-# forecast moves slowly. Format: "Today <glyph> hi/lo · Thu <glyph> hi/lo · …"
-# (monochrome condition glyphs, rendered inline in the text colour). Needs jq.
+# 3-day daily forecast from wttr.in's JSON (j1), cached ~3h (forecasts move
+# slowly). Cached STRUCTURED — one day per line, "label<TAB>condition<TAB>hi<TAB>lo"
+# — so the renderer can colour each day's glyph (and the colour toggle applies at
+# render time without re-fetching). Returns the structured text (empty if none).
+# Needs jq.
 weather_forecast() {
-  local cache="$STATEDIR/forecast.txt" raw="$STATEDIR/forecast.raw" loc="${WEATHER_LOCATION:-}"
+  local cache="$STATEDIR/forecast.struct" raw="$STATEDIR/forecast.raw" loc="${WEATHER_LOCATION:-}"
   command -v jq >/dev/null 2>&1 || return 0
   if [ ! -f "$cache" ] || find "$cache" -mmin +180 2>/dev/null | grep -q .; then
     if curl -fsL --max-time 15 "https://wttr.in/${loc// /+}?format=j1" -o "$cache.json" 2>>"$LOG" && [ -s "$cache.json" ]; then
       # date|maxC|minC|midday-condition for the next up-to-3 days
       jq -r '.weather[0:3][] | "\(.date)|\(.maxtempC)|\(.mintempC)|\(.hourly[4].weatherDesc[0].value)"' "$cache.json" 2>/dev/null > "$raw"
-      local out="" d hi lo desc dn g i=0
+      local d hi lo desc dn i=0
       while IFS='|' read -r d hi lo desc; do
         [ -n "$d" ] || continue
         if [ "$i" -eq 0 ]; then dn="Today"; else dn="$(date -d "$d" +%a 2>/dev/null || echo "$d")"; fi
-        g="$(weather_icon "$desc")"
-        out="${out:+$out · }${dn} ${g} ${hi}/${lo}"
+        printf '%s\t%s\t%s\t%s\n' "$dn" "$desc" "$hi" "$lo"
         i=$((i+1))
-      done < "$raw"
-      [ -n "$out" ] && printf '%s' "$out" > "$cache"
+      done < "$raw" > "$cache.tmp"
+      [ -s "$cache.tmp" ] && mv "$cache.tmp" "$cache"
     fi
-    rm -f "$cache.json" "$raw"
+    rm -f "$cache.json" "$raw" "$cache.tmp"
   fi
   cat "$cache" 2>/dev/null
 }
@@ -329,6 +378,41 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
           cx,cy, cx+0.74*R*cos(ma),cy+0.74*R*sin(ma);
         printf "stroke none fill %c%s%c circle %.1f,%.1f %.1f,%.1f", 39,acc,39, cx,cy, cx,cy+3.2 }')"
       convert -size "${d}x${d}" xc:none -draw "$prog" "$out" 2>>"$LOG"
+    }
+    # Compose the forecast line PNG from the structured cache so each day's glyph
+    # can take its CONDITION COLOUR (when OVERLAY_WEATHER_ICON_COLOR=1; else the
+    # text colour). Each day = "label " + glyph + " hi/lo", days joined by " · ",
+    # appended horizontally and vertically centred. Reads $STATEDIR/forecast.struct.
+    build_forecast_strip() {  # $1=out $2=pointsize
+      local out="$1" fps="$2" struct="$STATEDIR/forecast.struct"
+      [ -s "$struct" ] || return 1
+      local fd="$STATEDIR/_fc.$$"; mkdir -p "$fd"
+      # -trim drops whitespace, so explicit transparent spacers (not spaces in the
+      # labels) provide the gaps; widths scale with the font size.
+      local g=$(( fps*2/5 )); [ "$g" -lt 5 ] && g=5; local gs=$(( fps )); [ "$gs" -lt 10 ] && gs=10
+      convert -size "${g}x1"  xc:none "$fd/g.png"  2>>"$LOG"
+      convert -size "${gs}x1" xc:none "$fd/gs.png" 2>>"$LOG"
+      convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT" label:"·" -trim +repage "$fd/sep.png" 2>>"$LOG"
+      local n=0 label cond hi lo glyph gcol
+      while IFS=$'\t' read -r label cond hi lo; do
+        [ -n "$label" ] || continue
+        glyph="$(weather_icon "$cond")"
+        if [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then gcol="$(weather_icon_color "$cond")"; else gcol="$TXT"; fi
+        convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT"  label:"$label"      -trim +repage "$fd/${n}a.png" 2>>"$LOG"
+        convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$gcol" label:"$glyph"      -trim +repage "$fd/${n}b.png" 2>>"$LOG"
+        convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT"  label:"${hi}/${lo}" -trim +repage "$fd/${n}c.png" 2>>"$LOG"
+        n=$((n+1))
+      done < "$struct"
+      [ "$n" -gt 0 ] || { rm -rf "$fd"; return 1; }
+      local args=() i=0
+      while [ "$i" -lt "$n" ]; do
+        [ "$i" -gt 0 ] && args+=("$fd/gs.png" "$fd/sep.png" "$fd/gs.png")
+        args+=("$fd/${i}a.png" "$fd/g.png" "$fd/${i}b.png" "$fd/g.png" "$fd/${i}c.png")
+        i=$((i+1))
+      done
+      convert "${args[@]}" -background none -gravity center +append "$out" 2>>"$LOG"
+      rm -rf "$fd"
+      [ -s "$out" ]
     }
     # Position + style a READY-MADE block PNG ($3) onto RENDER at gravity $1 (role
     # $2 selects minor tweaks). Shared by emit() (text/icon blocks) and the stats
@@ -492,13 +576,13 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
               fi
               rm -f "$icn"
             fi
-            # forecast line: clearly SECONDARY — smaller + dimmed (so the panel
-            # reads as "now" + a quiet outlook, not two competing lines). DejaVu-Sans
-            # guarantees the condition glyphs render. Centred under the current line
-            # with generous spacing so it doesn't look cramped.
+            # forecast line: clearly SECONDARY — smaller + slightly dimmed (so the
+            # panel reads as "now" + a quiet outlook). Composed per-day so each
+            # glyph can be coloured; dimmed only lightly so the colours still read.
             fps=$(( wps * 7 / 10 )); [ "$fps" -lt 13 ] && fps=13
-            convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT" -size "${wmaxw}x" \
-              -gravity West caption:"$fcast" -trim +repage -channel A -evaluate multiply 0.72 +channel "$wc2" 2>>"$LOG" || :
+            if build_forecast_strip "$wc2" "$fps"; then
+              convert "$wc2" -channel A -evaluate multiply 0.85 +channel "$wc2" 2>>"$LOG"
+            fi
             if [ -s "$wc2" ]; then
               convert "$wc1" \( -size 1x14 xc:none \) "$wc2" -background none -gravity center -append "$wblk" 2>>"$LOG"
             else

@@ -95,7 +95,10 @@ def set_cron_interval(n):
         return
     out = []
     for line in cur.splitlines():
-        if SETWP in line and not line.lstrip().startswith("#"):
+        # ONLY the rotate line — not the every-minute clock-refresh line, which also
+        # contains SETWP but references the 'current' file (rewriting it to */n broke
+        # the clock cadence and made it collide/double-run with rotate).
+        if SETWP in line and "current" not in line and not line.lstrip().startswith("#"):
             parts = line.split(None, 5)            # min hour dom mon dow command...
             if len(parts) >= 6:
                 line = "*/%s * * * * %s" % (n, parts[5])

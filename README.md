@@ -145,8 +145,11 @@ applies immediately):
 
 - **Change every** — rotation interval (3 / 5 / 10 / 15 / 30 / 60 min).
 - **Quote** — composites a quote onto each wallpaper; **+attribution** adds author /
-  source / year. Quotes come from an API cache (`fetch-quotes.sh`, refreshed daily)
-  so they keep changing, falling back to `fortune`/a bundled list offline.
+  source / year. Quotes come from an API cache (`fetch-quotes.sh`, refreshed daily),
+  falling back to `fortune`/a bundled list offline. Drawn from a **shuffle-bag** so
+  none repeats until every one has been shown; when the bag empties it downloads a
+  fresh batch, and a persistent **seen-list** stops a re-download from re-showing a
+  quote you've already had (until the whole known set is exhausted, then it cycles).
 - **System stats** — composites host / uptime / load / mem / disk; **sparklines**
   toggle adds anti-aliased line + area trend graphs (accent colour) beside
   load/mem, drawn from a rolling history.
