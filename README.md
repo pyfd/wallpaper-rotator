@@ -104,6 +104,7 @@ If no package manager is recognised, the installer tells you what to install.
 ls -t ~/Pictures/online-wallpapers/ | head      # pool filling
 crontab -l | grep -A4 wallpaper-rotator          # cron jobs present
 /usr/local/bin/set-wallpaper.sh                  # force a desktop change now
+/usr/local/bin/set-wallpaper.sh --version        # installed version + when/where installed
 identify /usr/share/backgrounds/login-random.jpg # login image (LightDM only)
 tail -f ~/.local/state/wallpaper-rotator/wallpaper.log  # activity log (rotate/download/prune + errors)
 ```
@@ -181,6 +182,13 @@ applies immediately):
 Overlays are rendered onto a *copy* each tick (pool originals stay clean; stats
 stay live). State lives in `~/.local/state/wallpaper-rotator/config`, read by
 `set-wallpaper.sh`.
+
+**Version** — the page shows the installed version in the header (`v2026.06.03`) and
+the full id + install date/host in the footer. The version is **derived from the
+CHANGELOG** (the newest `## YYYY-MM-DD HH:MM TZ — host` entry), stamped into
+`~/.local/state/wallpaper-rotator/version` by `install.sh` — so every CHANGELOG
+entry auto-bumps it and each machine's page tells you what it's running. Query it
+from the shell with `set-wallpaper.sh --version`.
 
 It binds to `127.0.0.1` only (no network exposure, no auth — localhost trust),
 needs `python3`, and the page auto-refreshes every 30s (cron also regenerates it

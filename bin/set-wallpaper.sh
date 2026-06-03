@@ -39,6 +39,21 @@ THEME=
 
 STATEDIR="$(dirname "$LOG")"
 
+# Print the installed version (CL-derived, stamped by install.sh) and exit.
+# Done before the flock so a version query never waits on a render.
+if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-V" ]; then
+  VERFILE="$STATEDIR/version"
+  if [ -f "$VERFILE" ]; then
+    # shellcheck disable=SC1090
+    . "$VERFILE" 2>/dev/null
+    echo "wallpaper-rotator ${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on $WR_VERSION_HOST)}"
+    [ -n "${WR_INSTALLED_AT:-}" ] && echo "installed ${WR_INSTALLED_AT}${WR_INSTALLED_ON:+ on $WR_INSTALLED_ON}"
+  else
+    echo "wallpaper-rotator version unknown (re-run install.sh to stamp it)"
+  fi
+  exit 0
+fi
+
 # Serialise runs: the rotate cron and the 1-min clock-refresh cron coincide every
 # Nth minute and would otherwise double-render (wallpaper flicker) and race on the
 # quote bag. Non-blocking — if another run holds the lock, skip this tick. Falls

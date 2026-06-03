@@ -29,6 +29,11 @@ OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DA
 mkdir -p "$WEBDIR"
 [ -f "$LOG" ] || : > "$LOG"
 
+# Installed version (CL-derived, stamped by install.sh in the state dir).
+WR_VERSION=; WR_VERSION_ID=; WR_VERSION_HOST=; WR_INSTALLED_AT=; WR_INSTALLED_ON=
+VERFILE="$(dirname "$LOG")/version"
+[ -f "$VERFILE" ] && . "$VERFILE" 2>/dev/null
+
 # --- gather stats -----------------------------------------------------------
 pool_count=$(ls "$POOL"/*.jpg "$POOL"/*.jpeg "$POOL"/*.png 2>/dev/null | wc -l)
 pool_size=$(du -sh "$POOL" 2>/dev/null | cut -f1)
@@ -161,7 +166,7 @@ form.controls button{background:#3a6df0;color:#fff;border:0;border-radius:6px;pa
 form.controls button:hover{background:#2f5fd6}
 </style></head><body><div class=wrap>
 <h1>🖼️ wallpaper-rotator</h1>
-<div class=sub>desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
+<div class=sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
 HTML
 
 if [ "$have_thumb" = 1 ]; then
@@ -208,6 +213,6 @@ cat >> "$WEBDIR/index.html" <<HTML
 <table>${src_rows}</table>
 <h2>Recent activity</h2>
 <pre>${recent:-（no activity logged yet）}</pre>
-<div class=foot>Sources: ${SOURCES} · log: ${LOG} · auto-refreshes every 30s</div>
+<div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · auto-refreshes every 30s</div>
 </div></body></html>
 HTML

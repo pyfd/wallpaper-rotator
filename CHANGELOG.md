@@ -5,6 +5,21 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-03 08:58 BST — paul-e210
+
+### Added
+- **Version number + tracker, derived from the CHANGELOG.** The version *is* the
+  newest CHANGELOG entry — this header's date (`v2026.06.03`), with the time +
+  authoring host for precise tracking — so every entry auto-bumps it and there's no
+  separate `VERSION` file to maintain.
+  - `install.sh` parses the top `## YYYY-MM-DD HH:MM TZ — host` header and stamps
+    `~/.local/state/wallpaper-rotator/version` (`WR_VERSION`, `WR_VERSION_ID`,
+    authoring host, install time + host), and prints the version in its summary.
+  - The **web UI** shows the version in the header subline (`v2026.06.03`) and the
+    full id + install details in the footer — so each machine's `:8787` page tells
+    you at a glance what it's running and when it was installed.
+  - **`set-wallpaper.sh --version`** (`-V`) prints the installed version and exits.
+
 ## 2026-06-03 07:26 BST — Fam3
 
 ### Fixed

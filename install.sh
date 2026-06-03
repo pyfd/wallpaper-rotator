@@ -184,6 +184,29 @@ mkdir -p "$LOG_DIR" && touch "$LOG_FILE" 2>/dev/null
 echo "    log: $LOG_FILE"
 echo "    sources: $SOURCES"
 
+# Version stamp (CL-derived). The version IS the newest CHANGELOG entry — header
+# `## YYYY-MM-DD HH:MM TZ — host` — so every CHANGELOG entry auto-bumps it and
+# there's no separate VERSION file to maintain. Stamped into the state dir here;
+# surfaced by the web UI (gen-status.sh) and `set-wallpaper.sh --version`.
+VERSION_FILE="$LOG_DIR/version"
+CL_HDR="$(grep -m1 '^## ' "$REPO_DIR/CHANGELOG.md" 2>/dev/null | sed 's/^##[[:space:]]*//')"
+WR_V_DATE="$(printf '%s' "$CL_HDR" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)"
+WR_V_TIME="$(printf '%s' "$CL_HDR" | grep -oE '[0-9]{2}:[0-9]{2}' | head -1)"
+WR_V_TZ="$(printf '%s' "$CL_HDR" | grep -oE '[0-9]{2}:[0-9]{2} [A-Za-z]{2,5}' | head -1 | awk '{print $2}')"
+WR_V_HOST="$(printf '%s' "$CL_HDR" | awk '{print $NF}')"   # last field = authoring host
+WR_VERSION="${WR_V_DATE//-/.}"; [ -n "$WR_VERSION" ] || WR_VERSION="unknown"
+WR_VERSION_ID="${WR_VERSION}${WR_V_TIME:+.${WR_V_TIME//:/}}"   # date+time, for precise compare
+{
+  echo "# wallpaper-rotator version — CL-derived, written by install.sh (do not edit by hand)"
+  echo "WR_VERSION=$WR_VERSION"
+  echo "WR_VERSION_ID=$WR_VERSION_ID"
+  echo "WR_VERSION_TIME=${WR_V_TIME}${WR_V_TZ:+ $WR_V_TZ}"
+  echo "WR_VERSION_HOST=$WR_V_HOST"
+  echo "WR_INSTALLED_AT=$(date '+%Y-%m-%d %H:%M:%S')"
+  echo "WR_INSTALLED_ON=$(hostname 2>/dev/null)"
+} > "$VERSION_FILE"
+echo "    version: $WR_VERSION_ID (authored on ${WR_V_HOST:-?})"
+
 # Fetcher feeds the pool for BOTH the desktop and login consumers, so it's
 # installed regardless of coexist mode.
 echo "==> installing $FETCH_BIN"
@@ -387,4 +410,5 @@ else
   echo "  Login    : skipped (LightDM not detected)"
 fi
 echo "  Pool     : $POOL"
+echo "  Version  : $WR_VERSION_ID (CHANGELOG ${WR_V_DATE:-?} ${WR_V_TIME} ${WR_V_TZ}, authored on ${WR_V_HOST:-?})"
 echo "  Status UI: http://127.0.0.1:${WEB_PORT} (systemd user service 'wallpaper-web', auto-starts at login)"
