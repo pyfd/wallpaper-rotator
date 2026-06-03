@@ -240,6 +240,7 @@ STATS_SPARKLINE=0
 OVERLAY_WEATHER=0
 WEATHER_POS=north
 WEATHER_LOCATION=
+OVERLAY_WEATHER_ICON=0
 THEME=
 CFG
 fi
@@ -264,6 +265,30 @@ sed -e "s#@@PYBIN@@#${PYBIN}#g" "$REPO_DIR/bin/wallpaper-web.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$WEB_BIN"
 rm -f "$TMP"
 "$GENSTATUS_BIN" 2>/dev/null || true   # generate the page once now
+
+# Always-on: systemd user service (auto-starts at login, restarts on crash).
+# The UI is a per-user localhost daemon, so a --user unit is the natural fit.
+echo "==> installing systemd user service (wallpaper-web)"
+SYSTEMD_USER_DIR="$USER_HOME/.config/systemd/user"
+mkdir -p "$SYSTEMD_USER_DIR"
+TMP="$(mktemp)"
+sed -e "s#@@WEB_BIN@@#${WEB_BIN}#g" "$REPO_DIR/systemd/user/wallpaper-web.service" > "$TMP"
+install -m 0644 "$TMP" "$SYSTEMD_USER_DIR/wallpaper-web.service"
+rm -f "$TMP"
+if command -v systemctl >/dev/null 2>&1 && [ -n "${XDG_RUNTIME_DIR:-}" ] \
+   && systemctl --user show-environment >/dev/null 2>&1; then
+  systemctl --user daemon-reload 2>/dev/null || true
+  if systemctl --user enable --now wallpaper-web.service 2>/dev/null; then
+    echo "    enabled + started -> http://127.0.0.1:${WEB_PORT}"
+    echo "    (starts at each login; for pre-login boot run: sudo loginctl enable-linger $TARGET_USER)"
+  else
+    echo "    WARNING: could not enable user service. Enable later with:"
+    echo "             systemctl --user enable --now wallpaper-web.service"
+  fi
+else
+  echo "    NOTE: no active systemd user session here; enable later with:"
+  echo "          systemctl --user enable --now wallpaper-web.service"
+fi
 
 # --- 6. desktop wallpaper setter ----------------------------------------
 if [ "$DESKTOP_ENABLED" = 1 ]; then
@@ -354,4 +379,4 @@ else
   echo "  Login    : skipped (LightDM not detected)"
 fi
 echo "  Pool     : $POOL"
-echo "  Status UI: run 'wallpaper-web' -> http://127.0.0.1:${WEB_PORT}"
+echo "  Status UI: http://127.0.0.1:${WEB_PORT} (systemd user service 'wallpaper-web', auto-starts at login)"

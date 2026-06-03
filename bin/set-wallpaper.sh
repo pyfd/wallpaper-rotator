@@ -28,7 +28,7 @@ QUOTE_POS=south; STATS_POS=northeast
 OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0
-OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=
+OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -107,18 +107,48 @@ sparkline() {
   printf '%s' "$out"
 }
 
-# Local weather via wttr.in (no key); cached ~1h so we don't hammer it.
+# Map a wttr.in condition string to a monochrome weather glyph the overlay font
+# (DejaVu Sans) actually contains — verified present: ☀ ☁ ☼ ❄ ⚡ ☔ (⛅ is NOT in
+# DejaVu, renders as tofu, so partly-cloudy uses ☼). Order matters: check
+# 'partly' before the generic 'cloud'.
+weather_icon() {
+  local c; c="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  case "$c" in
+    *thunder*|*storm*)                      printf '⚡' ;;
+    *snow*|*sleet*|*blizzard*|*ice*)        printf '❄' ;;
+    *rain*|*drizzle*|*shower*)              printf '☔' ;;
+    *partly*)                               printf '☼' ;;
+    *overcast*|*cloud*|*fog*|*mist*|*haze*) printf '☁' ;;
+    *clear*|*sunny*)                        printf '☀' ;;
+    *)                                      printf '☼' ;;
+  esac
+}
+
+# Local weather via wttr.in (no key); cached ~1h so we don't hammer it. Cached as
+# structured fields ("loc|condition|metrics") so the location can be title-cased
+# and the icon toggled at render time without re-fetching.
 weather_line() {
   local cache="$STATEDIR/weather.txt" loc="${WEATHER_LOCATION:-}"
   if [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q .; then
-    if curl -fsL --max-time 12 "https://wttr.in/${loc// /+}?format=%l:+%C+%t,+%h,+%w" \
+    if curl -fsL --max-time 12 "https://wttr.in/${loc// /+}?format=%l|%C|%t,+%h,+%w" \
          -o "$cache.new" 2>>"$LOG" && [ -s "$cache.new" ]; then
       mv "$cache.new" "$cache"
     else
       rm -f "$cache.new"
     fi
   fi
-  cat "$cache" 2>/dev/null
+  local raw wl wc wm icon=""
+  raw="$(cat "$cache" 2>/dev/null)"; [ -n "$raw" ] || return 0
+  case "$raw" in
+    *"|"*) : ;;                          # new structured format
+    *) printf '%s' "$raw"; return 0 ;;   # legacy single-line cache: show verbatim until it refreshes
+  esac
+  IFS='|' read -r wl wc wm <<< "$raw"
+  wc="${wc%"${wc##*[![:space:]]}"}"   # wttr's %C carries a trailing space -> trim it
+  # Title-case the location ("shoreham" -> "Shoreham", "new york" -> "New York").
+  wl="$(printf '%s' "$wl" | awk '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')"
+  [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && icon="$(weather_icon "$wc") "
+  printf '%s%s: %s %s' "$icon" "$wl" "$wc" "$wm"
 }
 
 IMG="${1:-}"
@@ -187,6 +217,34 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       case "$g" in South*) OY=$((CH-bh-mb));; North*) OY=$ins;; *) OY=$(((CH-bh)/2));; esac
       [ "$OX" -lt 0 ] && OX=0; [ "$OY" -lt 0 ] && OY=0
     }
+    # Overlays are positioned independently, so two anchors can collide (e.g.
+    # weather=north running into stats=northeast). After coords(), nudge this block
+    # along its anchored axis (North*/centre -> down, South* -> up) until it clears
+    # every already-placed block, then record its footprint in PLACED. PAD covers
+    # the largest style panel (frosted: bw+68/bh+44) so panels clear, not just text.
+    PLACED=()
+    avoid() {  # $1=gravity ; reads bw/bh/OX, adjusts OY, appends to PLACED
+      local g="$1" pad=36 gap=14 tries=0 r rx ry rw rh hit
+      local x=$((OX-pad)) y=$((OY-pad)) w=$((bw+2*pad)) h=$((bh+2*pad)) dir=1
+      case "$g" in South*) dir=-1;; esac
+      while [ "$tries" -lt 40 ]; do
+        hit=0
+        for r in "${PLACED[@]}"; do
+          set -- $r; rx=$1; ry=$2; rw=$3; rh=$4
+          if [ "$x" -lt $((rx+rw)) ] && [ $((x+w)) -gt "$rx" ] \
+             && [ "$y" -lt $((ry+rh)) ] && [ $((y+h)) -gt "$ry" ]; then
+            if [ "$dir" -gt 0 ]; then y=$((ry+rh+gap)); else y=$((ry-h-gap)); fi
+            hit=1; break
+          fi
+        done
+        [ "$hit" -eq 0 ] && break
+        tries=$((tries+1))
+      done
+      OY=$((y+pad))
+      [ "$OY" -lt 0 ] && OY=0
+      [ $((OY+bh)) -gt "$CH" ] && OY=$((CH-bh))
+      PLACED+=("$x $((OY-pad)) $w $h")   # x unchanged by the nudge; y follows OY
+    }
     mktext() {  # out font ps fill width align text -> wrapped transparent PNG
       convert -background none -font "$2" -pointsize "$3" -fill "$4" -size "${5}x" \
         -gravity "$6" caption:"$7" "$1" 2>>"$LOG"
@@ -206,6 +264,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       bw=$(identify -format '%w' "$t" 2>/dev/null); bh=$(identify -format '%h' "$t" 2>/dev/null)
       [ -n "$bw" ] && [ -n "$bh" ] || { rm -f "$t"; return 1; }
       coords "$g" "$bw" "$bh"
+      avoid "$g"
       case "$STYLE" in
         frosted)
           PX=$((OX-34)); PY=$((OY-22)); PW=$((bw+68)); PH=$((bh+44))

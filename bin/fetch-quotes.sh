@@ -26,9 +26,33 @@ fetch() {  # $1 = source name -> emit "text|author||" lines on stdout
   esac
 }
 
-for src in dummyjson zenquotes quotable; do
-  # keep only well-formed, non-empty lines
-  fetch "$src" | grep -vE '^\|' | grep -E '.\|.' > "$TMP" 2>/dev/null || true
+# Some sources (notably dummyjson) ship quotes pre-mangled in Title Case
+# ("If You Are Out To Describe The Truth...", note the tell-tale "Can'T"). Detect
+# a fully title-cased quote (>=80% of words capitalised, >=4 words) and convert it
+# to sentence case; all-caps acronyms are preserved. Well-cased quotes pass
+# through untouched. Operates on the text field (before the first '|') only.
+normalize() {
+  awk -F'|' 'BEGIN{OFS="|"}
+  {
+    t=$1; n=split(t,w," "); cap=0; alpha=0
+    for(i=1;i<=n;i++){ if(w[i]~/[A-Za-z]/){alpha++; if(w[i]~/^[A-Z]/)cap++} }
+    if(alpha>=4 && cap*10 >= alpha*8){
+      out=""
+      for(i=1;i<=n;i++){
+        tok=w[i]
+        if(tok !~ /^[A-Z][A-Z]+[[:punct:]]?$/) tok=tolower(tok)   # keep ALL-CAPS acronyms
+        out=(i==1)?tok:out" "tok
+      }
+      $1=out
+    }
+    print
+  }' \
+  | sed -E 's/^([a-z])/\U\1/; s/([.!?]"? )([a-z])/\1\U\2/g; s/\bi\b/I/g; s/\bi'\''/I'\''/g'
+}
+
+for src in zenquotes quotable dummyjson; do
+  # keep only well-formed, non-empty lines, then de-Title-Case any mangled ones
+  fetch "$src" | grep -vE '^\|' | grep -E '.\|.' | normalize > "$TMP" 2>/dev/null || true
   if [ "$(wc -l < "$TMP")" -ge 5 ]; then
     mv "$TMP" "$CACHE"
     log "[quotes] refreshed from $src ($(wc -l < "$CACHE") quotes)"

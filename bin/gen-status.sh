@@ -22,7 +22,7 @@ CONFIG="@@CONFIG@@"
 INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
-STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; THEME=
+STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
 mkdir -p "$WEBDIR"
@@ -85,6 +85,7 @@ qdchk=""; [ "${OVERLAY_QUOTE_DETAIL:-0}" = 1 ] && qdchk=" checked"
 schk="";  [ "${OVERLAY_STATS:-0}" = 1 ]        && schk=" checked"
 spchk=""; [ "${STATS_SPARKLINE:-0}" = 1 ]      && spchk=" checked"
 wchk="";  [ "${OVERLAY_WEATHER:-0}" = 1 ]      && wchk=" checked"
+wichk=""; [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && wichk=" checked"
 POSNS="northwest north northeast west center east southwest south southeast"
 qpos_opts=$(opts_for "${QUOTE_POS:-south}" $POSNS)
 spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
@@ -101,11 +102,14 @@ for t in nature landscape minimal space city abstract cars animals dark forest o
 done
 wloc_val=$(printf '%s' "${WEATHER_LOCATION:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
 # Font dropdown: "default" + any of a common set that ImageMagick actually has.
+# NB: match via here-string, NOT `printf ... | grep -qx`. Under `set -o pipefail`
+# grep -q's early exit SIGPIPEs printf (exit 141), so the pipeline reports failure
+# even on a match and every font got rejected (only "default" showed).
 font_sel=""; [ "${OVERLAY_FONT:-default}" = default ] && font_sel=" selected"
 font_opts="<option value=\"default\"$font_sel>default</option>"
 avail_fonts=$(convert -list font 2>/dev/null | sed -n 's/^ *Font: //p')
 for fc in DejaVu-Sans DejaVu-Serif DejaVu-Sans-Mono Liberation-Sans Liberation-Serif FreeSans FreeSerif; do
-  if printf '%s\n' "$avail_fonts" | grep -qx "$fc"; then
+  if grep -qxF -- "$fc" <<<"$avail_fonts"; then
     s=""; [ "${OVERLAY_FONT:-default}" = "$fc" ] && s=" selected"
     font_opts="$font_opts<option value=\"$fc\"$s>$fc</option>"
   fi
@@ -169,6 +173,7 @@ cat >> "$WEBDIR/index.html" <<HTML
   <label><input type=checkbox name=weather value=1${wchk}> Weather</label>
   <label>at <select name=weather_pos>${wpos_opts}</select></label>
   <label>loc <input type=text name=weather_location value="${wloc_val}" placeholder="Brighton" size=12></label>
+  <label><input type=checkbox name=weather_icon value=1${wichk}> icon</label>
   <label>Background theme <select name=theme>${bgtheme_opts}</select></label>
   <label>Overlay style <select name=overlay_style>${style_opts}</select></label>
   <label>Size <select name=size>${size_opts}</select></label>

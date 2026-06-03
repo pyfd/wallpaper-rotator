@@ -116,7 +116,25 @@ background updates on your next login.
 ## Status + control web UI
 
 A small local page — current wallpaper, pool size/disk, per-source download
-tallies, recent activity, config — **plus controls**. Served on demand:
+tallies, recent activity, config — **plus controls**. `install.sh` runs it as an
+**always-on systemd user service** (`wallpaper-web.service`): it auto-starts at
+login and restarts on crash, so the page is always at:
+
+```
+http://127.0.0.1:8787
+```
+
+Manage it like any user unit:
+
+```bash
+systemctl --user status  wallpaper-web      # is it up?
+systemctl --user restart wallpaper-web      # after a code update
+systemctl --user disable --now wallpaper-web  # turn always-on off
+sudo loginctl enable-linger $USER           # optional: also start before login (at boot)
+```
+
+To run it ad-hoc instead (foreground, Ctrl-C to stop) — e.g. on a box with no
+systemd user session — just call the launcher directly:
 
 ```bash
 wallpaper-web                       # -> http://127.0.0.1:8787  (Ctrl-C to stop)
@@ -131,7 +149,9 @@ applies immediately):
   so they keep changing, falling back to `fortune`/a bundled list offline.
 - **System stats** — composites host / uptime / load / mem / disk; **sparklines**
   toggle adds unicode trend bars beside load/mem (from a rolling history).
-- **Weather** — a local-weather overlay (wttr.in, no key) with a location field.
+- **Weather** — a local-weather overlay (wttr.in, no key) with a location field
+  (title-cased on display) and an **icon** toggle that prepends a condition glyph
+  (`☀ ☁ ☼ ☔ ❄ ⚡`).
 - **Background theme** — bias the image sources to a theme (Wallhaven `q=`);
   Bing/Picsum stay as untargeted fallback.
 - **Overlay style** — the visual treatment for all overlays:
@@ -150,7 +170,8 @@ stay live). State lives in `~/.local/state/wallpaper-rotator/config`, read by
 
 It binds to `127.0.0.1` only (no network exposure, no auth — localhost trust),
 needs `python3`, and the page auto-refreshes every 30s (cron also regenerates it
-each tick). No always-on process — it runs only while `wallpaper-web` is up.
+each tick). It runs always-on under the `wallpaper-web` systemd user service
+(above); after pulling a code update, `systemctl --user restart wallpaper-web`.
 Change the port via `WEB_PORT` in `install.sh`.
 
 ---
@@ -208,13 +229,14 @@ wallpaper-rotator/
 │   ├── wallpaper-web.py                      # status + control server (serve, POST /set) (templated)
 │   └── wallpaper-web.sh                     # launcher: execs the Python server (templated)
 ├── cron/wallpaper.cron                     # download + prune + rotate (templated)
+├── systemd/user/wallpaper-web.service       # always-on web UI as a user service (templated)
 ├── autostart/random-login-bg.desktop       # refresh login image at login
 ├── sudoers.d/random-login-bg               # passwordless sudo for the login generator
 └── greeter/lightdm-gtk-greeter.conf.snippet
 ```
 
 Templated files use `@@POOL@@`, `@@SETWP@@`, `@@FETCH@@`, `@@GENSTATUS@@`,
-`@@PYBIN@@`, `@@LOG@@`, `@@WEBDIR@@`, `@@PORT@@`, `@@CONFIG@@`, `@@INTERVAL@@`,
+`@@PYBIN@@`, `@@WEB_BIN@@`, `@@LOG@@`, `@@WEBDIR@@`, `@@PORT@@`, `@@CONFIG@@`, `@@INTERVAL@@`,
 `@@RES@@`, `@@SOURCES@@`, `@@LOCALDIR@@`, `@@TARGET@@`, `@@RESOLUTION@@`,
 `@@USER@@` placeholders that `install.sh` substitutes per-machine. (The scripts
 guard the un-substituted form with split literals like `"@@POOL""@@"` so the

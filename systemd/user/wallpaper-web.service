@@ -1,0 +1,19 @@
+[Unit]
+Description=wallpaper-rotator status + control web UI (localhost:8787)
+Documentation=https://github.com/pyfd/wallpaper-rotator
+# Prefer to start once the graphical session is up, but don't require it — the
+# UI is localhost-only and harmless to start early. With linger enabled it can
+# run before any login (see README "Always-on").
+After=graphical-session.target
+
+[Service]
+Type=simple
+# @@WEB_BIN@@ is substituted by install.sh -> /usr/local/bin/wallpaper-web,
+# which execs the Python server. This unit is only installed via install.sh, so
+# the placeholder is always resolved by the time systemd reads it.
+ExecStart=@@WEB_BIN@@
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

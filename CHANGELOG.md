@@ -2,6 +2,70 @@
 
 All notable changes to wallpaper-rotator are recorded here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
+Entry headers carry the date + local time + machine the change was made on
+(`## YYYY-MM-DD HH:MM TZ — <host>`).
+
+## 2026-06-03 05:35 BST — Fam3
+
+### Fixed
+- **Overlays could overlap each other** (weather=north ran into stats=northeast —
+  both anchored to the top edge, since each overlay was positioned independently
+  with no awareness of the others). Added a collision-avoidance pass: after a
+  block's anchor position is computed it's nudged along its anchored axis
+  (North*/centre → down, South* → up) until it clears every already-placed block,
+  tracked in a `PLACED` rectangle list. Footprint padding (36px) covers the
+  largest style panel so frosted/chips panels clear too, not just the text. The
+  later-emitted block yields (weather drops below stats); generic — works for any
+  position combination, not just this pairing.
+
+## 2026-06-03 05:28 BST — Fam3
+
+### Added
+- **Weather overlay icons, with a UI toggle** (`OVERLAY_WEATHER_ICON`, new "icon"
+  checkbox next to the weather location). Prepends a monochrome glyph mapped from
+  the wttr.in condition — `☀` clear, `☁` cloud/overcast/fog, `☼` partly, `☔` rain,
+  `❄` snow, `⚡` thunder. Glyphs are restricted to ones the overlay font (DejaVu
+  Sans) actually contains — verified by render-test; `⛅` (partly-cloudy) is NOT in
+  DejaVu and renders as tofu, so partly uses `☼`.
+
+### Changed
+- **Weather location is now title-cased** ("shoreham" → "Shoreham", "new york" →
+  "New York"). wttr.in echoes `%l` in the case it was queried (lowercase); the
+  overlay now capitalises it. The weather cache changed to structured fields
+  (`loc|condition|metrics`) so location-casing and the icon toggle apply at render
+  time without re-fetching; a legacy single-line cache is shown verbatim until it
+  refreshes. Also trims the trailing space wttr's `%C` carries.
+- **Quotes no longer render in Title Case.** Root cause was the source data, not
+  our pipeline: the `dummyjson` API ships some quotes pre-mangled in Title Case
+  (tell-tale `Can'T`). `fetch-quotes.sh` now (a) prefers the well-cased sources
+  (`zenquotes`, then `quotable`) over `dummyjson`, and (b) runs a conservative
+  normaliser that de-Title-Cases only fully title-cased quotes (≥80% of words
+  capitalised) into sentence case, preserving ALL-CAPS acronyms and leaving
+  properly-cased quotes (incl. proper nouns like "Bay of Bengal") untouched.
+
+### Fixed
+- **Font dropdown only ever showed "default".** A pre-existing pipefail bug in
+  `gen-status.sh`: the font-availability check was `printf … | grep -qx "$fc"`, and
+  under `set -o pipefail` grep -q's early exit SIGPIPEs printf (exit 141), so the
+  pipeline reported failure even on a match — every candidate font was rejected.
+  Switched to a here-string (`grep -qxF -- "$fc" <<<"$avail_fonts"`); all installed
+  fonts (DejaVu/Liberation/Free families) now populate the dropdown.
+
+## 2026-06-03 05:15 BST — Fam3
+
+### Added
+- **Web UI is now always-on via a systemd user service** (`wallpaper-web.service`).
+  Previously the status + control page only existed while you kept `wallpaper-web`
+  running in a terminal. `install.sh` now installs a templated `--user` unit to
+  `~/.config/systemd/user/wallpaper-web.service` (substituting `@@WEB_BIN@@` →
+  `/usr/local/bin/wallpaper-web`) and runs `systemctl --user enable --now`, so the
+  page auto-starts at every login and restarts on crash — `http://127.0.0.1:8787`
+  is just always there. A per-user localhost daemon is the natural fit for a
+  `--user` unit (mirrors the box's existing `battery-warn` user units). The
+  ad-hoc `wallpaper-web` launcher still works for boxes with no systemd user
+  session. Optional `loginctl enable-linger` documented for pre-login/boot start.
+  Install gracefully degrades (prints the manual `systemctl --user enable` command)
+  when run without an active user session.
 
 ## 2026-06-02
 
