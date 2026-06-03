@@ -39,14 +39,16 @@ ALLOWED_FONT = {"default", "DejaVu-Sans", "DejaVu-Serif", "DejaVu-Sans-Mono",
                 "Liberation-Sans", "Liberation-Serif", "FreeSans", "FreeSerif"}
 ALLOWED_BGTHEME = {"", "nature", "landscape", "minimal", "space", "city", "abstract",
                    "cars", "animals", "dark", "forest", "ocean"}
+ALLOWED_OVERLAY_STYLE = {"scrim", "frosted", "editorial", "chips"}
 CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
-            "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS", "WEATHER_LOCATION", "THEME")
+            "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
+            "WEATHER_LOCATION", "THEME")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "dark", "OVERLAY_FONT": "default",
-                "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0", "WEATHER_POS": "north",
-                "WEATHER_LOCATION": "", "THEME": ""}
+                "OVERLAY_STYLE": "scrim", "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0",
+                "WEATHER_POS": "north", "WEATHER_LOCATION": "", "THEME": ""}
 
 
 def read_config():
@@ -142,6 +144,7 @@ class Handler(BaseHTTPRequestHandler):
         cfg["OVERLAY_SIZE"]  = pick("size", ALLOWED_SIZE, "medium")
         cfg["OVERLAY_THEME"] = pick("overlay_theme", ALLOWED_THEME, "dark")
         cfg["OVERLAY_FONT"]  = pick("font", ALLOWED_FONT, "default")
+        cfg["OVERLAY_STYLE"] = pick("overlay_style", ALLOWED_OVERLAY_STYLE, "scrim")
         cfg["THEME"]         = pick("theme", ALLOWED_BGTHEME, "")
         wl = form.get("weather_location", [""])[0].strip()
         cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", wl)[:40]

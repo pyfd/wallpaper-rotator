@@ -26,6 +26,7 @@ CONFIG="@@CONFIG@@"
 OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast
 OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
+OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0
 OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=
 THEME=
@@ -153,33 +154,108 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
   # and the overlays get pushed off-screen.
   if { [ -n "$RES" ] && convert "$IMG" -resize "${RES}^" -gravity center -extent "$RES" "$RENDER" 2>>"$LOG"; } \
        || cp "$IMG" "$RENDER" 2>>"$LOG"; then
-    # Style from config: size -> pointsize, theme -> fill + undercolor, font.
-    case "$OVERLAY_SIZE" in small) PS=18;; large) PS=34;; *) PS=24;; esac
-    case "$OVERLAY_THEME" in
-      light)  FILL=black;     UNDER='#ffffffaa';;
-      accent) FILL='#6cb6ff'; UNDER='#000000aa';;
-      *)      FILL=white;     UNDER='#000000aa';;   # dark
+    # OVERLAY_STYLE selects the visual treatment; the per-overlay enable toggles,
+    # positions (QUOTE_POS/STATS_POS/WEATHER_POS), OVERLAY_SIZE, OVERLAY_THEME
+    # (text colour) and OVERLAY_FONT (override) still apply. Styles:
+    #   scrim     - gradient wash top/bottom + drop-shadowed text (no box)
+    #   frosted   - blurred "glass" rounded card behind each block + hairline border
+    #   editorial - bottom gradient + bold left-aligned text + accent bar, shadow
+    #   chips     - flat translucent rounded chip behind each block
+    STYLE="${OVERLAY_STYLE:-scrim}"
+    ACCENT='#7cc4ff'
+    case "$OVERLAY_SIZE" in small) BASEPS=20;; large) BASEPS=34;; *) BASEPS=27;; esac
+    case "$OVERLAY_THEME" in light) TXT=black;; accent) TXT="$ACCENT";; *) TXT=white;; esac
+    CW=$(identify -format '%w' "$RENDER" 2>/dev/null); [ -n "$CW" ] || CW="${RES%x*}"
+    CH=$(identify -format '%h' "$RENDER" 2>/dev/null); [ -n "$CH" ] || CH="${RES#*x}"
+    FONT_OVERRIDE=""
+    [ "${OVERLAY_FONT:-default}" != default ] && [ -n "${OVERLAY_FONT:-}" ] \
+      && convert -list font 2>/dev/null | grep -q "Font: ${OVERLAY_FONT}$" && FONT_OVERRIDE="$OVERLAY_FONT"
+
+    role_font() {  # $1=role -> font; style picks the aesthetic unless user overrode
+      if [ -n "$FONT_OVERRIDE" ]; then printf '%s' "$FONT_OVERRIDE"; return; fi
+      case "$STYLE:$1" in
+        frosted:quote) echo FreeSerif-Italic;;
+        editorial:*)   echo DejaVu-Sans-Bold;;
+        *:stats)       echo DejaVu-Sans-Mono;;
+        *)             echo DejaVu-Sans;;
+      esac
+    }
+    # Absolute top-left of a WxH block at an IM gravity, inset from the edges.
+    coords() {  # $1=gravity $2=w $3=h -> sets OX OY
+      local g="$1" bw="$2" bh="$3" ins=44 mb=72
+      case "$g" in *East) OX=$((CW-bw-ins));; *West) OX=$ins;; *) OX=$(((CW-bw)/2));; esac
+      case "$g" in South*) OY=$((CH-bh-mb));; North*) OY=$ins;; *) OY=$(((CH-bh)/2));; esac
+      [ "$OX" -lt 0 ] && OX=0; [ "$OY" -lt 0 ] && OY=0
+    }
+    mktext() {  # out font ps fill width align text -> wrapped transparent PNG
+      convert -background none -font "$2" -pointsize "$3" -fill "$4" -size "${5}x" \
+        -gravity "$6" caption:"$7" "$1" 2>>"$LOG"
+    }
+    emit() {  # $1=gravity $2=role $3=text  -> composite a styled block onto RENDER
+      local g="$1" role="$2" txt="$3" f ps align maxw t bw bh PX PY PW PH rad
+      f="$(role_font "$role")"
+      case "$role" in quote) ps=$BASEPS;; *) ps=$(( BASEPS * 3 / 4 ));; esac
+      case "$STYLE" in
+        editorial) align=West;;
+        scrim) case "$g" in *East) align=East;; *West) align=West;; *) align=Center;; esac;;
+        *) align=West;;
+      esac
+      if [ "$role" = quote ]; then maxw=$(( CW * 60 / 100 )); else maxw=$(( CW * 44 / 100 )); fi
+      t="$STATEDIR/_ovl.$$.png"
+      mktext "$t" "$f" "$ps" "$TXT" "$maxw" "$align" "$txt" || { rm -f "$t"; return 1; }
+      bw=$(identify -format '%w' "$t" 2>/dev/null); bh=$(identify -format '%h' "$t" 2>/dev/null)
+      [ -n "$bw" ] && [ -n "$bh" ] || { rm -f "$t"; return 1; }
+      coords "$g" "$bw" "$bh"
+      case "$STYLE" in
+        frosted)
+          PX=$((OX-34)); PY=$((OY-22)); PW=$((bw+68)); PH=$((bh+44))
+          [ "$PX" -lt 0 ] && PX=0; [ "$PY" -lt 0 ] && PY=0
+          [ $((PX+PW)) -gt "$CW" ] && PW=$((CW-PX)); [ $((PY+PH)) -gt "$CH" ] && PH=$((CH-PY))
+          convert "$RENDER" -crop ${PW}x${PH}+${PX}+${PY} +repage -colorspace sRGB -type TrueColor \
+            -blur 0x14 -brightness-contrast -42x4 "$STATEDIR/_cb.png" 2>>"$LOG"
+          convert -size ${PW}x${PH} xc:none -draw "roundrectangle 0,0,$((PW-1)),$((PH-1)),24,24" "$STATEDIR/_cm.png" 2>>"$LOG"
+          convert "$STATEDIR/_cb.png" "$STATEDIR/_cm.png" -alpha off -compose CopyOpacity -composite \
+            -fill "rgba(0,0,0,0.46)" -draw "roundrectangle 0,0,$((PW-1)),$((PH-1)),24,24" "$STATEDIR/_cd.png" 2>>"$LOG"
+          convert "$RENDER" "$STATEDIR/_cd.png" -geometry +${PX}+${PY} -composite \
+            -fill none -stroke "rgba(255,255,255,0.26)" -strokewidth 1 \
+            -draw "roundrectangle ${PX},${PY},$((PX+PW-1)),$((PY+PH-1)),24,24" \
+            "$t" -geometry +${OX}+${OY} -composite "$RENDER" 2>>"$LOG"
+          rm -f "$STATEDIR/_cb.png" "$STATEDIR/_cm.png" "$STATEDIR/_cd.png"
+          ;;
+        chips)
+          PX=$((OX-32)); PY=$((OY-20)); PW=$((bw+64)); PH=$((bh+40)); rad=18
+          [ "$PX" -lt 0 ] && PX=0; [ "$PY" -lt 0 ] && PY=0
+          [ "$role" = weather ] && rad=$((PH/2))
+          convert "$RENDER" \( -size ${PW}x${PH} xc:none -fill "rgba(18,22,30,0.62)" \
+            -draw "roundrectangle 0,0,$((PW-1)),$((PH-1)),${rad},${rad}" \) -geometry +${PX}+${PY} -composite \
+            "$t" -geometry +${OX}+${OY} -composite "$RENDER" 2>>"$LOG"
+          ;;
+        editorial)
+          convert "$t" -fill black -colorize 100 -channel A -blur 0x3 +channel "$STATEDIR/_sh.png" 2>>"$LOG"
+          convert "$RENDER" "$STATEDIR/_sh.png" -geometry +$((OX+2))+$((OY+2)) -composite \
+            "$t" -geometry +${OX}+${OY} -composite \
+            -fill "$ACCENT" -draw "roundrectangle $((OX-22)),${OY} $((OX-16)),$((OY+bh)) 3,3" "$RENDER" 2>>"$LOG"
+          rm -f "$STATEDIR/_sh.png"
+          ;;
+        *)  # scrim
+          convert "$t" -fill black -colorize 100 -channel A -blur 0x4 +channel "$STATEDIR/_sh.png" 2>>"$LOG"
+          convert "$RENDER" "$STATEDIR/_sh.png" -geometry +$((OX+2))+$((OY+2)) -composite \
+            "$t" -geometry +${OX}+${OY} -composite "$RENDER" 2>>"$LOG"
+          rm -f "$STATEDIR/_sh.png"
+          ;;
+      esac
+      rm -f "$t"
+    }
+
+    # Global gradient wash so edge text reads: scrim washes top+bottom, editorial
+    # just the bottom. frosted/chips carry their own panels, so no global wash.
+    case "$STYLE" in
+      scrim)
+        convert "$RENDER" \( -size ${CW}x$((CH*42/100)) gradient:none-black \) -gravity south -composite \
+                          \( -size ${CW}x$((CH*22/100)) gradient:black-none \) -gravity north -composite "$RENDER" 2>>"$LOG" ;;
+      editorial)
+        convert "$RENDER" \( -size ${CW}x$((CH*38/100)) gradient:none-black \) -gravity south -composite "$RENDER" 2>>"$LOG" ;;
     esac
-    FONTARG=()
-    if [ "${OVERLAY_FONT:-default}" != default ] && [ -n "${OVERLAY_FONT:-}" ] \
-         && convert -list font 2>/dev/null | grep -q "Font: ${OVERLAY_FONT}$"; then
-      FONTARG=(-font "$OVERLAY_FONT")
-    fi
-    # Offset from the chosen gravity: corners/edges inset 30px; centred edges get
-    # x=0; dead-centre gets y=0 too.
-    # Offset from gravity: 30px inset; bottom edge insets further (80px) to clear
-    # a desktop panel/taskbar; dead-centre sits at 0,0.
-    place() {
-      gx=30; gy=30
-      case "$1" in North|South|Center) gx=0;; esac
-      case "$1" in South*) gy=80;; esac
-      case "$1" in Center) gy=0;; esac
-    }
-    draw() {  # $1=position token  $2=default gravity  $3=text
-      local g; g="$(imgrav "$1" "$2")"; place "$g"
-      convert "$RENDER" "${FONTARG[@]}" -gravity "$g" -pointsize "$PS" -fill "$FILL" \
-        -undercolor "$UNDER" -annotate "+${gx}+${gy}" "$3 " "$RENDER" 2>>"$LOG"
-    }
 
     if [ "${OVERLAY_STATS:-0}" = 1 ]; then
       load3="$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"
@@ -200,15 +276,15 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         "load ${load3}${lspark}" \
         "mem ${memhr}${mspark}" \
         "disk $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}')")"
-      draw "${STATS_POS:-northeast}" NorthEast "$stats" && OVERLAYS="stats"
+      emit "$(imgrav "${STATS_POS:-northeast}" NorthEast)" stats "$stats" && OVERLAYS="stats"
     fi
     if [ "${OVERLAY_QUOTE:-0}" = 1 ]; then
-      quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}" | fold -s -w 52)"
-      draw "${QUOTE_POS:-south}" South "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
+      quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}")"
+      emit "$(imgrav "${QUOTE_POS:-south}" South)" quote "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
     fi
     if [ "${OVERLAY_WEATHER:-0}" = 1 ]; then
-      weather="$(weather_line | fold -s -w 60)"
-      [ -n "$weather" ] && draw "${WEATHER_POS:-north}" North "$weather" \
+      weather="$(weather_line)"
+      [ -n "$weather" ] && emit "$(imgrav "${WEATHER_POS:-north}" North)" weather "$weather" \
         && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
     fi
     IMG="$RENDER"

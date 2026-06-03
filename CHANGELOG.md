@@ -20,6 +20,21 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   the actual `$CFG_INTERVAL`.
 
 ### Changed
+- **Overlays completely restyled, with a style chooser.** Replaced the old
+  per-line `-undercolor` boxes (ragged, unstyled, clunky) with four polished
+  treatments selectable from the web UI ("Overlay style" → `OVERLAY_STYLE`,
+  default `scrim`):
+  - **scrim** — top/bottom gradient wash + drop-shadowed text, no boxes (default).
+  - **frosted** — blurred "glass" rounded card behind each block + hairline
+    border; serif-italic quotes.
+  - **editorial** — bottom gradient + bold left-aligned text with an accent bar.
+  - **chips** — flat translucent rounded panels.
+  Text is now rendered via wrapped `caption:` with a soft drop shadow (or a real
+  rounded/blurred panel) instead of opaque per-line rectangles. Each style still
+  honours the enable toggles, positions, size, text colour (the old "Style"
+  dark/light/accent control, relabelled "Text") and font override. Threaded
+  through `set-wallpaper.sh`, `gen-status.sh`, `wallpaper-web.py` and the install
+  default config.
 - **Rotation no longer repeats the last image back-to-back.** The random pick now
   drops the previously-applied original (tracked in `current`) from the candidate
   list before shuffling, so consecutive ticks always change the picture when the

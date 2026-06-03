@@ -21,6 +21,7 @@ CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
 INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
+OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -90,6 +91,7 @@ spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
 wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
 theme_opts=$(opts_for "${OVERLAY_THEME:-dark}" dark light accent)
+style_opts=$(opts_for "${OVERLAY_STYLE:-scrim}" scrim frosted editorial chips)
 # Background theme select: "any" (empty) + presets.
 bg_cur="${THEME:-}"; bg_sel=""; [ -z "$bg_cur" ] && bg_sel=" selected"
 bgtheme_opts="<option value=\"\"$bg_sel>any</option>"
@@ -168,8 +170,9 @@ cat >> "$WEBDIR/index.html" <<HTML
   <label>at <select name=weather_pos>${wpos_opts}</select></label>
   <label>loc <input type=text name=weather_location value="${wloc_val}" placeholder="Brighton" size=12></label>
   <label>Background theme <select name=theme>${bgtheme_opts}</select></label>
+  <label>Overlay style <select name=overlay_style>${style_opts}</select></label>
   <label>Size <select name=size>${size_opts}</select></label>
-  <label>Style <select name=overlay_theme>${theme_opts}</select></label>
+  <label>Text <select name=overlay_theme>${theme_opts}</select></label>
   <label>Font <select name=font>${font_opts}</select></label>
   <button type=submit>Apply</button>
 </form>

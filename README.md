@@ -134,9 +134,15 @@ applies immediately):
 - **Weather** — a local-weather overlay (wttr.in, no key) with a location field.
 - **Background theme** — bias the image sources to a theme (Wallhaven `q=`);
   Bing/Picsum stay as untargeted fallback.
+- **Overlay style** — the visual treatment for all overlays:
+  - **scrim** *(default)* — top/bottom gradient wash + drop-shadowed text, no boxes.
+  - **frosted** — blurred "glass" rounded card behind each block + hairline border;
+    serif-italic quotes.
+  - **editorial** — bottom gradient + bold left-aligned text with an accent bar.
+  - **chips** — flat translucent rounded panels.
 - **Position** — place each overlay at any corner/edge/centre (per-overlay).
-- **Size / Theme / Font** — text size (small/medium/large), theme (dark / light /
-  accent), and font (any installed ImageMagick font from a common set).
+- **Size / Text / Font** — text size (small/medium/large), text colour (dark /
+  light / accent), and font (any installed ImageMagick font from a common set).
 
 Overlays are rendered onto a *copy* each tick (pool originals stay clean; stats
 stay live). State lives in `~/.local/state/wallpaper-rotator/config`, read by
