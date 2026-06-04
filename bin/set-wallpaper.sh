@@ -35,7 +35,7 @@ OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
 OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
 CLOCK_FACE=classic
-OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."; PULSE_TTL=5
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -736,7 +736,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       # lines with PULSE_JQ. file:// URLs work too (curl), so a local script
       # can feed it. Cached ~5 min so renders don't hammer the endpoint.
       pcache="$STATEDIR/pulse.txt"
-      if [ ! -f "$pcache" ] || find "$pcache" -mmin +5 2>/dev/null | grep -q .; then
+      if [ ! -f "$pcache" ] || find "$pcache" -mmin +"${PULSE_TTL:-5}" 2>/dev/null | grep -q .; then
         curl -fsL --max-time 6 "$PULSE_URL" 2>>"$LOG" | jq -r "${PULSE_JQ:-.}" > "$pcache.tmp" 2>>"$LOG"
         if [ -s "$pcache.tmp" ]; then mv "$pcache.tmp" "$pcache"; else rm -f "$pcache.tmp"; fi
       fi

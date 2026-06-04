@@ -25,7 +25,7 @@ OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0; THEME=
 CLOCK_FACE=classic; AI_WALLPAPER=0; AI_PROMPT=
-OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.; PULSE_TTL=5
 WEB_BIND=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -124,6 +124,14 @@ spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
 wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
 cpos_opts=$(opts_for "${CLOCK_POS:-northwest}" $POSNS)
 ppos_opts=$(opts_for "${PULSE_POS:-east}" $POSNS)
+pttl_opts=""
+for n in 1 5 15 30; do
+  s=""; [ "${PULSE_TTL:-5}" = "$n" ] && s=" selected"
+  pttl_opts="${pttl_opts}<option value=\"$n\"$s>${n} min</option>"
+done
+# Current cached pulse lines (what the overlay is actually showing right now)
+pulse_now=""
+[ -s "$(dirname "$LOG")/pulse.txt" ] && pulse_now="$(head -8 "$(dirname "$LOG")/pulse.txt" | sed 's/&/\&amp;/g; s/</\&lt;/g')"
 cstyle_opts=$(opts_for "${CLOCK_STYLE:-digital}" digital analogue)
 cface_opts=$(opts_for "${CLOCK_FACE:-classic}" classic minimal dots numbers)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
@@ -226,6 +234,8 @@ form.controls{background:#1c1f26;border:1px solid #262a33;border-radius:12px;pad
 .ctl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
 /* odd group count: let the last (Appearance) span the row instead of orphaning */
 .ctl-grid>.ctl-grp:last-child{grid-column:1/-1}
+.ctl-grid>.ctl-wide{grid-column:1/-1}
+.pulse-pre{flex:1;background:#0f1115;border:1px solid #23272f;border-radius:8px;padding:8px 12px;font-size:12px;margin:0;min-height:34px;max-height:140px;overflow:auto;color:#9fb4cc}
 .ctl-grp{background:#15181e;border:1px solid #23272f;border-radius:10px;padding:12px 14px}
 .ctl-lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7c828c;margin:0 0 9px}
 .ctl-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
@@ -350,13 +360,20 @@ cat >> "$WEBDIR/index.html" <<HTML
       <input type=text name=ai_prompt value="${aip_val}" placeholder="extra style words (optional)" size=22>
       <span class=muted>generates images from live context (time, season, weather, theme) — ~30s each</span>
     </div></div>
-  <div class=ctl-grp data-feat=pulse><div class=ctl-hd><span class=ctl-lbl>Pulse</span>
+  <div class="ctl-grp ctl-wide" data-feat=pulse><div class=ctl-hd><span class=ctl-lbl>Pulse &mdash; live JSON on the wallpaper</span>
       <label class=tgl><input type=checkbox name=pulse value=1${plschk}><span class=sw></span></label></div>
-    <div class=ctl-row>
+    <div class=ctl-row style="margin-bottom:8px">
       <span class=fld><span class=muted>at</span><select name=pulse_pos>${ppos_opts}</select></span>
-      <input type=text name=pulse_url value="${purl_val}" placeholder="https://… or file://… JSON endpoint" size=24>
-      <input type=text name=pulse_jq value="${pjq_val}" placeholder="jq template" size=16>
-      <span class=muted>any JSON + a jq template &rarr; overlay lines, cached 5 min</span>
+      <span class=fld><span class=muted>refresh every</span><select name=pulse_ttl>${pttl_opts}</select></span>
+      <span class=muted>any JSON endpoint (http/https/file) + a jq template &rarr; one overlay line per output line (max 8)</span>
+    </div>
+    <div class=ctl-row style="margin-bottom:8px">
+      <span class=fld style="flex:1"><span class=muted>URL</span><input type=text name=pulse_url value="${purl_val}" placeholder="https://host:3000/api/pulse or file:///path/data.json" style="flex:1;min-width:260px"></span>
+      <span class=fld style="flex:1"><span class=muted>template</span><input type=text name=pulse_jq value="${pjq_val}" placeholder='.lines[]  or  "jobs \(.jobs)","mail \(.mail)"' style="flex:1;min-width:200px"></span>
+      <button type=button class=act id=pulse-test style="min-width:70px">Test</button>
+    </div>
+    <div class=ctl-row>
+      <pre id=pulse-preview class=pulse-pre>${pulse_now:-（press Test to preview, or Apply to go live）}</pre>
     </div></div>
   <div class=ctl-grp data-feat=remote><div class=ctl-hd><span class=ctl-lbl>Remote access</span>
       <label class=tgl><input type=checkbox name=web_bind value=1${wbchk}><span class=sw></span></label></div>
@@ -434,8 +451,24 @@ cat >> "$WEBDIR/index.html" <<HTML
   function refresh(){fetch('/').then(function(r){return r.text();}).then(swapStatus).catch(function(){});}
   setInterval(refresh,30000);   // soft update — replaces the old meta-refresh full reload
 
+  // Pulse "Test": dry-run the URL + template server-side, show the lines.
+  var pt=document.getElementById('pulse-test');
+  if(pt)pt.addEventListener('click',function(){
+    var f=document.querySelector('form.controls');
+    var pv=document.getElementById('pulse-preview'); if(!f||!pv)return;
+    var body=new URLSearchParams();
+    body.set('url',(f.elements.pulse_url&&f.elements.pulse_url.value)||'');
+    body.set('jq',(f.elements.pulse_jq&&f.elements.pulse_jq.value)||'.');
+    pt.disabled=true;pv.textContent='testing…';
+    fetch('/pulse_test',{method:'POST',body:body})
+      .then(function(r){return r.text();})
+      .then(function(t){pv.textContent=t;})
+      .catch(function(){pv.textContent='test failed (network)';})
+      .then(function(){pt.disabled=false;});
+  });
+
   // Curation buttons (Next/Keep/Ban): POST the action, swap fresh status in.
-  var acts=document.querySelectorAll('.act');
+  var acts=document.querySelectorAll('.act[data-act]');
   acts.forEach(function(b){
     b.addEventListener('click',function(){
       acts.forEach(function(x){x.disabled=true;});

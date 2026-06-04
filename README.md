@@ -183,8 +183,12 @@ applies immediately):
   background themes — plus optional style words. Normal sources remain the
   fallback whenever generation is slow or down.
 - **Pulse** — point a URL at ANY JSON endpoint (http/https/`file://`) and shape
-  it with a jq template; each output line renders as a stats-style overlay line
-  (cached 5 min). Business dashboard, CI status, home automation — your call.
+  it with a jq template; each output line renders as a stats-style overlay line.
+  Business dashboard, CI status, home automation — your call. The full-width
+  control section has a refresh-interval select (1-30 min), a **Test** button
+  that dry-runs the URL + template and previews the lines before you Apply,
+  and shows what the overlay is currently displaying. Tip: if your endpoint
+  returns `{"lines": ["…", "…"]}`, the template is just `.lines[]`.
 - **Position** — place each overlay at any corner/edge/centre (per-overlay), or
   **auto**: the renderer ranks the image's 9 anchor regions by visual busyness
   and gives each auto overlay the calmest remaining spot (explicit positions

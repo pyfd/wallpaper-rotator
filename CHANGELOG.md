@@ -5,6 +5,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 06:57 BST — Fam1
+
+### Changed
+- **Pulse gets a full-width control section** in the form: position + refresh
+  interval (1/5/15/30 min, new `PULSE_TTL`), wide URL + jq-template fields, a
+  **Test button** that dry-runs the URL + template server-side (new
+  `/pulse_test` endpoint) and previews the lines without applying, and a live
+  view of what the overlay is currently showing. Changing the URL/template
+  also drops the cached lines so the Apply re-render fetches fresh.
+
 ## 2026-06-04 06:49 BST — Fam1
 
 ### Fixed

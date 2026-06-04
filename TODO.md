@@ -3,7 +3,9 @@
 ## Done (2026-06-04, second batch)
 - ✅ AI-dreamed wallpapers (AI Horde, anonymous; context-built prompt; optional
   pollinations AI_TOKEN fast path) with UI toggle + style-words field.
-- ✅ Pulse overlay: any JSON endpoint (+jq template) -> overlay lines; UI card.
+- ✅ Pulse overlay: any JSON endpoint (+jq template) -> overlay lines; full-width
+  UI section with refresh-interval select, Test/preview button (`/pulse_test`),
+  and current-lines view.
 - ✅ Auto overlay placement ("auto" in every position select; busyness-ranked,
   cached per image, explicit positions reserved).
 - ✅ Remote-access GUI: tailnet toggle (self-restarting bind), URL shown in

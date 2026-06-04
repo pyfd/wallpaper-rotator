@@ -46,6 +46,7 @@ ALLOWED_BGTHEME = {"", "nature", "landscape", "minimal", "space", "city", "abstr
 ALLOWED_OVERLAY_STYLE = {"scrim", "frosted", "editorial", "chips"}
 ALLOWED_CLOCK_STYLE = {"digital", "analogue"}
 ALLOWED_CLOCK_FACE = {"classic", "minimal", "dots", "numbers"}
+ALLOWED_PULSE_TTL = {"1", "5", "15", "30"}
 CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
             "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
@@ -53,7 +54,8 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_ST
             "OVERLAY_WEATHER_FORECAST",
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN",
-            "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "WEB_BIND")
+            "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
+            "WEB_BIND")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
@@ -68,7 +70,7 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 # pollinations.ai token for the fast generation path
                 "AI_WALLPAPER": "0", "AI_PROMPT": "", "AI_TOKEN": "",
                 "OVERLAY_PULSE": "0", "PULSE_POS": "east",
-                "PULSE_URL": "", "PULSE_JQ": ".",
+                "PULSE_URL": "", "PULSE_JQ": ".", "PULSE_TTL": "5",
                 # not a form field — set in the config file, needs a service
                 # restart: "" = localhost only, "tailscale" = + tailnet IP,
                 # or an explicit extra IP to bind
@@ -252,6 +254,21 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
             self._done(); return
+        if path == "/pulse_test":                # dry-run a pulse URL + template
+            ln = int(self.headers.get("Content-Length") or 0)
+            form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
+            url = form.get("url", [""])[0].strip()
+            jqf = form.get("jq", ["."])[0].replace("\n", " ").replace("\r", "").strip()[:200] or "."
+            if not re.match(r"^(https?|file)://[^\s\"'<>]+$", url):
+                self._send(400, "text/plain; charset=utf-8", b"invalid URL"); return
+            try:
+                p = subprocess.run(
+                    ["bash", "-c", 'curl -fsL --max-time 6 "$1" | jq -r "$2"', "_", url, jqf],
+                    capture_output=True, text=True, timeout=15)
+                out = p.stdout.strip() or p.stderr.strip() or "(empty result)"
+            except Exception as e:
+                out = "test failed: %s" % e
+            self._send(200, "text/plain; charset=utf-8", out[:2000].encode("utf-8")); return
         if path != "/set":
             self._send(404, "text/plain", b"not found"); return
         ln = int(self.headers.get("Content-Length") or 0)
@@ -260,6 +277,8 @@ class Handler(BaseHTTPRequestHandler):
         old_theme = cfg.get("THEME", "")
         old_ai = cfg.get("AI_WALLPAPER", "0")
         old_bind = cfg.get("WEB_BIND", "")
+        old_pulse_url = cfg.get("PULSE_URL", "")
+        old_pulse_jq = cfg.get("PULSE_JQ", ".")
         iv = form.get("interval", ["10"])[0]
         if iv in ALLOWED_INTERVALS:
             cfg["INTERVAL_MIN"] = iv
@@ -310,6 +329,14 @@ class Handler(BaseHTTPRequestHandler):
         cfg["PULSE_URL"] = pu if re.match(r"^(https?|file)://[^\s\"'<>]+$", pu) else ""
         pj = form.get("pulse_jq", ["."])[0].replace("\n", " ").replace("\r", "").strip()
         cfg["PULSE_JQ"] = pj[:200] or "."
+        cfg["PULSE_TTL"] = pick("pulse_ttl", ALLOWED_PULSE_TTL, "5")
+        # Pulse settings changed -> drop the cached lines so the re-render that
+        # follows this Apply fetches fresh with the new URL/template.
+        if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old_pulse_url, old_pulse_jq):
+            try:
+                os.remove(os.path.join(os.path.dirname(CONFIG), "pulse.txt"))
+            except Exception:
+                pass
         write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
         if cfg["WEB_BIND"] != old_bind:
