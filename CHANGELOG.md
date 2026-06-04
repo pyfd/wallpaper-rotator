@@ -5,6 +5,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 07:42 BST — Fam1
+
+### Fixed
+- **Minute clock-refresh cron silently died after the config switched to
+  single-quote escaping** (06:26): the cron line matched `OVERLAY_CLOCK="1"`
+  literally, so once an Apply rewrote the config as `'1'` the every-minute
+  re-render stopped (clock could lag up to the rotate interval). The match is
+  now quote-agnostic (`=.?1`).
+
 ## 2026-06-04 07:37 BST — Fam1
 
 ### Changed
