@@ -636,6 +636,15 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       stat_label "$RD/2.png" "load ${load3}"                            "$sf" "$sps" "$slh"
       stat_label "$RD/3.png" "mem ${memhr}"                             "$sf" "$sps" "$slh"
       stat_label "$RD/4.png" "disk $(df -h / 2>/dev/null | awk 'NR==2{print $3"/"$2}')" "$sf" "$sps" "$slh"
+      slines=("$RD/0.png" "$RD/1.png" "$RD/2.png" "$RD/3.png" "$RD/4.png")
+      # Battery (laptops): first BAT* under /sys/class/power_supply; desktops have
+      # none and Termux can't read it, so the line just doesn't appear there.
+      bat="$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1)"
+      if [ -n "$bat" ] && [ -r "$bat/capacity" ]; then
+        bst="$(tr '[:upper:]' '[:lower:]' < "$bat/status" 2>/dev/null)"
+        stat_label "$RD/5.png" "bat $(cat "$bat/capacity")% ${bst}" "$sf" "$sps" "$slh"
+        slines+=("$RD/5.png")
+      fi
       if [ "${STATS_SPARKLINE:-0}" = 1 ]; then
         # Roll a small history (last 30 samples) and draw sparklines from it.
         M="$STATEDIR/metrics.csv"
@@ -650,7 +659,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         fi
       fi
       block="$STATEDIR/_stats.$$.png"
-      if convert "$RD/0.png" "$RD/1.png" "$RD/2.png" "$RD/3.png" "$RD/4.png" \
+      if convert "${slines[@]}" \
            -background none -gravity West -append "$block" 2>>"$LOG"; then
         pick_grav "${STATS_POS:-northeast}" NorthEast
         style_block "$PG" stats "$block" && OVERLAYS="stats"

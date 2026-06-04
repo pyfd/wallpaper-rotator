@@ -5,6 +5,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 20:25 BST — Fam3
+
+### Added
+- **Battery line in the stats overlay** — `bat 76% discharging` (capacity +
+  status from the first `/sys/class/power_supply/BAT*`) appended under the
+  disk line. Machines with no readable battery (desktops, Termux) skip the
+  line entirely; the panel build now uses a file array instead of the fixed
+  0–4 list so optional lines can join.
+
+### Fixed
+- Removed a stray root-level `set-wallpaper.sh` duplicate that the 14:08
+  mirror committed to the standalone repo (the real script lives in `bin/`).
+
 ## 2026-06-04 14:08 BST — paul-HP-ProDesk-400-G4-SFF
 
 ### Changed
