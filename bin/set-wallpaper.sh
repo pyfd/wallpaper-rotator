@@ -116,7 +116,9 @@ pick_quote() {
     tail -n +2 "$bag" > "$bag.tmp" 2>/dev/null && mv "$bag.tmp" "$bag" 2>/dev/null
     if [ -n "$line" ]; then                         # record as seen (by text), bounded to recent history
       printf '%s\n' "${line%%|*}" >> "$seen"
-      tail -n 1000 "$seen" > "$seen.tmp" 2>/dev/null && mv "$seen.tmp" "$seen" 2>/dev/null
+      # bound must exceed the seeded cache (fetch-quotes --seed, ~30k) or the
+      # history would wrap mid-cycle and let early quotes repeat
+      tail -n 60000 "$seen" > "$seen.tmp" 2>/dev/null && mv "$seen.tmp" "$seen" 2>/dev/null
     fi
   fi
   if [ -z "$line" ]; then

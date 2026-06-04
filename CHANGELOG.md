@@ -5,6 +5,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 20:50 BST — Fam3
+
+### Added
+- **Bulk quote seeding (`fetch-quotes.sh --seed`)** — answers "the ~1450-quote
+  pool will exhaust eventually": samples 30k length-filtered quotes from the
+  Quotes-500K dataset (HuggingFace mirror, 144MB CSV, python3-parsed; fallback
+  ~9k from dwyl/JamesFT/quotable GitHub sets), merged into the cache. Cache cap
+  raised 500 → 50k, seen-history bound 1k → 60k to match. install.sh
+  auto-seeds in the background when the cache is unseeded (<2000 lines).
+  ~2 months of 3-min rotations with zero repeats; daily refreshes merge on
+  top, and a future exhausted bag tops up before any history reset.
+
 ## 2026-06-04 20:41 BST — Fam3
 
 ### Fixed

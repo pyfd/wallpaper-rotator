@@ -244,6 +244,12 @@ sed -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/fetch-quotes.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$FETCHQ_BIN"
 rm -f "$TMP"
 "$FETCHQ_BIN" >/dev/null 2>&1 || true   # seed the quote cache once
+# Bulk-seed the quote pool (one-time, ~30k quotes) when the cache looks
+# unseeded — background: the Quotes-500K download is ~144MB.
+if [ "$(wc -l < "$LOG_DIR/quotes.cache" 2>/dev/null || echo 0)" -lt 2000 ]; then
+  echo "    seeding bulk quote pool in background (~30k quotes, one-time)"
+  nohup "$FETCHQ_BIN" --seed >/dev/null 2>&1 &
+fi
 
 # --- 5b. local status + control web UI ----------------------------------
 echo "==> installing status web UI ($WEB_BIN)"
