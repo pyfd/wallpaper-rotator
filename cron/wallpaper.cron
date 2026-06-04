@@ -1,8 +1,8 @@
 # >>> wallpaper-rotator >>>  (managed block — do not edit by hand; re-run install.sh)
 # Every 10 min: fetch a fresh wallpaper into the pool (multi-source + fallback; fetch-wallpaper.sh logs ok/miss/fail to @@LOG@@).
 */10 * * * * @@FETCH@@ >/dev/null 2>&1
-# Hourly: keep only the 30 newest images in the pool; log how many were pruned.
-5 * * * * N=$(ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | wc -l); ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +31 | xargs -r rm --; [ "$N" -gt 0 ] && echo "$(date '+\%F \%T') [prune] removed=$N" >> @@LOG@@
+# Hourly: keep only the 60 newest images in the pool; log how many were pruned.
+5 * * * * N=$(ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +61 | wc -l); ls -tp @@POOL@@/*.jpg 2>/dev/null | tail -n +61 | xargs -r rm --; [ "$N" -gt 0 ] && echo "$(date '+\%F \%T') [prune] removed=$N" >> @@LOG@@
 # Every @@INTERVAL@@ min: rotate the desktop wallpaper to a random pool image (DE-aware; logs internally to @@LOG@@). Interval set via the web UI.
 */@@INTERVAL@@ * * * * @@SETWP@@ >/dev/null 2>&1
 # Every 1 min: when the clock overlay is on, re-render the CURRENT image (no shuffle) so the baked-in clock (and weather/stats) stay current. No-op when the clock is off.

@@ -5,6 +5,20 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 14:08 BST — paul-HP-ProDesk-400-G4-SFF
+
+### Changed
+- **No-repeat image rotation (shuffle-bag)** — the 5-min rotate now draws from
+  a shuffled queue (`images.bag` + `images.seen`, the same mechanism the quote
+  overlay uses) so no image repeats until every pool image has shown once,
+  then the cycle reshuffles. Replaces the plain `shuf -n1` pick, which
+  produced obvious deja vu well inside a cycle. Pruned files are skipped at
+  pop time; new downloads join at the next bag rebuild; single-image pools
+  degrade gracefully.
+- **Pool ceiling raised 30 → 60** (hourly prune keeps the 60 newest) — paired
+  with the bag this gives a ~5-hour no-repeat cycle at the default 5-min
+  rotation. Disk cost ~25 MB.
+
 ## 2026-06-04 11:51 BST — paul-HP-ProDesk-400-G4-SFF
 
 ### Fixed

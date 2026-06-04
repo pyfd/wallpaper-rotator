@@ -48,7 +48,7 @@ LOCALDIR="$USER_HOME/Pictures/Wallpapers"
 # How many images to download up front on a FIRST install, so random rotation has
 # variety from the very first tick instead of repeating one image until cron fills
 # the pool. Only runs when the pool is empty; re-installs don't re-seed. Kept under
-# the keep-30 prune ceiling.
+# the keep-60 prune ceiling.
 SEED_COUNT=15
 # Activity log + web status dir (XDG state dir). Shared by the cron jobs, the
 # setter, and the login generator. Created user-owned so the root-run login
