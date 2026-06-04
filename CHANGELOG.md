@@ -5,6 +5,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 20:41 BST — Fam3
+
+### Fixed
+- **Quote repetition (round 2)** — the shuffle-bag was sound but the refetch
+  path defeated it: `fetch-quotes.sh` OVERWROTE the cache with each batch, and
+  both fallback sources serve near-static batches (dummyjson without `skip` is
+  literally the same 30 every call; zenquotes' free endpoint returned an
+  identical 50 twice in a row when tested). A batch fully covered by the seen
+  history emptied the bag and triggered the run-dry history reset — hence
+  visible repeats. Now: dummyjson random-pages (`skip=$((RANDOM%1400))`) and
+  refreshes MERGE into the cache (dedupe by text, newest first, cap 500), so
+  the known pool grows toward hundreds and the no-repeat cycle stretches with it.
+
 ## 2026-06-04 20:37 BST — Fam3
 
 ### Changed

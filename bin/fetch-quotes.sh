@@ -17,7 +17,11 @@ TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
 
 fetch() {  # $1 = source name -> emit "text|author||" lines on stdout
   case "$1" in
-    dummyjson) curl -fsL --max-time 15 "https://dummyjson.com/quotes?limit=30" 2>>"$LOG" \
+    # dummyjson is DETERMINISTIC without skip (same first 30 every call) — that
+    # made every fallback refresh re-serve one fixed batch, exhaust the seen
+    # filter and reset the history (= visible repetition). Random-page over its
+    # ~1450-quote pool instead.
+    dummyjson) curl -fsL --max-time 15 "https://dummyjson.com/quotes?limit=30&skip=$((RANDOM % 1400))" 2>>"$LOG" \
                  | jq -r '.quotes[]? | "\(.quote)|\(.author)||"' 2>/dev/null ;;
     zenquotes) curl -fsL --max-time 15 "https://zenquotes.io/api/quotes" 2>>"$LOG" \
                  | jq -r '.[]? | "\(.q)|\(.a)||"' 2>/dev/null ;;
@@ -54,8 +58,14 @@ for src in zenquotes quotable dummyjson; do
   # keep only well-formed, non-empty lines, then de-Title-Case any mangled ones
   fetch "$src" | grep -vE '^\|' | grep -E '.\|.' | normalize > "$TMP" 2>/dev/null || true
   if [ "$(wc -l < "$TMP")" -ge 5 ]; then
-    mv "$TMP" "$CACHE"
-    log "[quotes] refreshed from $src ($(wc -l < "$CACHE") quotes)"
+    # MERGE into the cache (dedupe by text, newest first, cap 500) instead of
+    # overwriting. Overwriting shrank the "known set" to one batch, so a batch
+    # that overlapped the seen history emptied the shuffle-bag and reset the
+    # history — quotes repeated long before the pool was exhausted. A growing
+    # pool keeps the no-repeat cycle at hundreds of quotes.
+    cat "$TMP" "$CACHE" 2>/dev/null | awk -F'|' 'NF && !s[$1]++' | head -n 500 > "$TMP.merged" \
+      && mv "$TMP.merged" "$CACHE"
+    log "[quotes] refreshed from $src ($(wc -l < "$TMP") new batch -> cache $(wc -l < "$CACHE"))"
     exit 0
   fi
 done
