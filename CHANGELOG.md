@@ -5,6 +5,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:47 BST — Fam1
+
+### Changed
+- **Two-column layout alignment polish**: controls panel now sits flush with
+  the thumbnail top (heading hidden on wide screens), status cards render a
+  neat 3+3 instead of auto-fit's ragged 4+2, and the odd-count Appearance
+  group spans the full row instead of leaving an orphan gap.
+
+## 2026-06-04 05:45 BST — Fam1
+
+### Fixed
+- **"Date" had no effect with the analogue clock** — it was only implemented
+  for the digital style; the analogue branch silently ignored `CLOCK_DATE`.
+  The analogue face now gets the same small date line underneath
+  (`Thu 4 Jun`), sized to the face diameter.
+
 ## 2026-06-04 05:42 BST — Fam1
 
 ### Changed

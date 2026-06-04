@@ -630,6 +630,16 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       if [ "${CLOCK_STYLE:-digital}" = analogue ]; then
         case "$OVERLAY_SIZE" in small) cd=104;; large) cd=176;; *) cd=136;; esac
         if draw_clock "$cblock" "$cd" "$(date +%-H)" "$(date +%-M)"; then
+          if [ "${CLOCK_DATE:-0}" = 1 ]; then
+            # date under the face — same secondary treatment as the digital style
+            # (was silently ignored for analogue, caught on Fam1 2026-06-04)
+            dps=$(( cd / 6 )); [ "$dps" -lt 14 ] && dps=14
+            cf="$(role_font clock)"; cdp="$STATEDIR/_cld.$$.png"
+            if convert -background none -font "$cf" -pointsize "$dps" -fill "$TXT" label:"$(date +'%a %-d %b')" -trim +repage "$cdp" 2>>"$LOG" && [ -s "$cdp" ]; then
+              convert "$cblock" \( -size 1x6 xc:none \) "$cdp" -background none -gravity center -append "$cblock" 2>>"$LOG"
+            fi
+            rm -f "$cdp"
+          fi
           style_block "$cgrav" clock "$cblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}clock"
         fi
       else

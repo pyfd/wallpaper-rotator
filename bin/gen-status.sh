@@ -153,7 +153,10 @@ body{margin:0;background:#14161a;color:#e6e8ec;font:14px/1.5 system-ui,sans-seri
   .col-status{grid-column:1;grid-row:1}
   .col-ctl{grid-column:2;grid-row:1/span 2}
   .col-extra{grid-column:1;grid-row:2}
-  .col-ctl>h2:first-child{margin-top:0}
+  /* drop the heading so the panel top aligns flush with the thumbnail top */
+  .col-ctl>h2:first-child{display:none}
+  /* 6 status cards as a neat 3+3 instead of auto-fit's ragged 4+2 */
+  .col-status .grid{grid-template-columns:repeat(3,1fr)}
 }
 h1{font-size:20px;margin:0 0 2px} .sub{color:#8a909a;font-size:12px;margin-bottom:20px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
@@ -170,6 +173,8 @@ pre{background:#0f1115;border:1px solid #262a33;border-radius:10px;padding:12px;
 .foot{color:#5a606a;font-size:11px;margin-top:24px}
 form.controls{background:#1c1f26;border:1px solid #262a33;border-radius:12px;padding:18px}
 .ctl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+/* odd group count: let the last (Appearance) span the row instead of orphaning */
+.ctl-grid>.ctl-grp:last-child{grid-column:1/-1}
 .ctl-grp{background:#15181e;border:1px solid #23272f;border-radius:10px;padding:12px 14px}
 .ctl-lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7c828c;margin:0 0 9px}
 .ctl-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
