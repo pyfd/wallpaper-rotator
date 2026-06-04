@@ -759,6 +759,17 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         rm -rf "$PD"
       fi
     fi
+    # AI-dreamed images (named *.ai.jpg by fetch-wallpaper) get a subtle
+    # signature: tiny, ~40% opacity, tucked into the bottom-right edge.
+    case "$ORIG" in *.ai.jpg)
+      sig="$STATEDIR/_sig.$$.png"
+      if convert -background none -font DejaVu-Sans -pointsize 13 -fill white \
+           label:"✦ dreamed" -trim +repage -channel A -evaluate multiply 0.4 +channel \
+           "$sig" 2>>"$LOG" && [ -s "$sig" ]; then
+        convert "$RENDER" "$sig" -gravity SouthEast -geometry +12+8 -composite "$RENDER" 2>>"$LOG"
+      fi
+      rm -f "$sig"
+    ;; esac
     IMG="$RENDER"
     # Keep only the newest few rendered frames.
     ls -t "$RDIR"/*.jpg 2>/dev/null | tail -n +4 | xargs -r rm -- 2>/dev/null

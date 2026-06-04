@@ -5,6 +5,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 07:29 BST — Fam1
+
+### Added
+- **Subtle "✦ dreamed" signature on AI-generated wallpapers** — tiny, ~40%
+  opacity, bottom-right edge. AI fetches are now named `*.ai.jpg` so
+  provenance travels with the file (including into `favourites/`) with no
+  manifest; the GUI's Current-image card also tags them "✦ AI dreamed".
+
 ## 2026-06-04 06:57 BST — Fam1
 
 ### Changed

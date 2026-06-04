@@ -157,7 +157,11 @@ fi
 for src in $ORDER; do
   : > "$TMP"
   if "fetch_$src" 2>>"$LOG" && valid_image "$TMP"; then
-    DEST="$POOL/$(date +%s).$$.jpg"
+    # AI generations carry provenance in the filename (.ai.jpg) so the
+    # renderer can mark them subtly and the GUI can tag them — survives
+    # moves to favourites/ with no manifest to maintain.
+    ext="jpg"; [ "$src" = ai ] && ext="ai.jpg"
+    DEST="$POOL/$(date +%s).$$.$ext"
     mv "$TMP" "$DEST"
     log "[download] src=$src ok img=$(basename "$DEST")"
     exit 0

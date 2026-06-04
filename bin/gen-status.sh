@@ -57,6 +57,7 @@ done
 last_rotate=$(grep '\[rotate\]' "$LOG" 2>/dev/null | tail -1)
 last_dl=$(grep '\[download\] src=.* ok' "$LOG" 2>/dev/null | tail -1)
 cur_img=$(printf '%s' "$last_rotate" | grep -oP 'img=\K\S+' || true)
+cur_ai_tag=""; case "${cur_img:-}" in *.ai.jpg) cur_ai_tag=" <small style=color:#7cc4ff>&#10038; AI dreamed</small>";; esac
 backend=$(printf '%s' "$last_rotate" | grep -oP 'backend=\K\S+' || true)
 de=$(printf '%s' "$last_rotate" | grep -oP 'de=\K\S+' || true)
 rotate_when=$(printf '%s' "$last_rotate" | grep -oP '^\S+ \S+' || true)
@@ -310,7 +311,7 @@ HTML
 cat >> "$WEBDIR/index.html" <<HTML
 <div class=grid id=status-cards>
   <div class=card><div class=k>Pool</div><div class=v>${pool_count} <small>images · ${pool_size:-?}${fav_bit}</small></div></div>
-  <div class=card><div class=k>Current image</div><div class=v style=font-size:14px>${cur_img:-none}</div></div>
+  <div class=card><div class=k>Current image</div><div class=v style=font-size:14px>${cur_img:-none}${cur_ai_tag}</div></div>
   <div class=card><div class=k>Last rotate</div><div class=v style=font-size:14px>${rotate_when:-never}</div></div>
   <div class=card><div class=k>Last download</div><div class=v style=font-size:14px>${dl_when:-never}</div></div>
   <div class=card><div class=k>Pruned (total)</div><div class=v>${pruned_total:-0}</div></div>
