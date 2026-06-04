@@ -340,14 +340,38 @@ cat >> "$WEBDIR/index.html" <<HTML
   // NB: this block sits inside gen-status.sh's UNQUOTED heredoc — no backticks,
   // no template literals, no dollar signs anywhere in the JS.
 
+  // Form-drift guard: fields the user has TOUCHED are left alone, but every
+  // untouched field self-syncs to the saved config on each soft refresh —
+  // otherwise a long-open tab's Apply silently reverts settings changed from
+  // another tab/machine (clock-date flip-flop, Fam1 2026-06-04).
+  var dirty={};
+  document.addEventListener('input',function(e){
+    if(e.target.name&&e.target.closest('form.controls'))dirty[e.target.name]=1;
+  });
+  function syncForm(d){
+    var lf=document.querySelector('form.controls'),nf=d.querySelector('form.controls');
+    if(!lf||!nf)return;
+    lf.querySelectorAll('input,select').forEach(function(el){
+      if(!el.name||dirty[el.name])return;
+      var cands=nf.querySelectorAll('[name="'+el.name+'"]');
+      if(el.type==='checkbox'){
+        var match=null;
+        cands.forEach(function(c){if(c.value===el.value)match=c;});
+        el.checked=!!(match&&match.checked);
+      } else if(cands[0]){ el.value=cands[0].value; }
+    });
+    sync();   // re-apply the card on/off accents to the synced state
+  }
+
   // Pull fresh status out of a fetched copy of this page and swap it in place.
-  // The form itself is never touched, so in-progress edits survive a refresh.
+  // In-progress form edits survive a refresh (see the drift guard above).
   function swapStatus(html){
     var d=new DOMParser().parseFromString(html,'text/html');
     ['page-sub','status-cards','src-table','recent-pre','fav-count','fav-grid'].forEach(function(id){
       var n=d.getElementById(id),o=document.getElementById(id);
       if(n&&o)o.innerHTML=n.innerHTML;
     });
+    syncForm(d);
     // Only reload the thumbnail when the underlying image actually changed
     // (the src cache-buster differs every regen and would flicker otherwise).
     var ni=d.getElementById('cur-img'),oi=document.getElementById('cur-img');
@@ -399,6 +423,7 @@ cat >> "$WEBDIR/index.html" <<HTML
     fetch('/set',{method:'POST',body:new URLSearchParams(new FormData(form))})
       .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text();})
       .then(function(html){          // POST redirects to /, so this IS the fresh page
+        dirty={};                    // server state now matches the form
         swapStatus(html);
         btn.classList.remove('busy');btn.classList.add('done');btn.textContent='Applied ✓';
         setTimeout(function(){btn.classList.remove('done');btn.textContent=idle;btn.disabled=false;},1600);

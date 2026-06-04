@@ -5,6 +5,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 06:14 BST — Fam1
+
+### Fixed
+- **Stale-tab Apply no longer reverts settings changed elsewhere.** The form in
+  an open tab never updated (soft refresh deliberately leaves it alone), so an
+  Apply from a long-open tab silently submitted old state over newer config.
+  Untouched fields now self-sync to the saved config on every soft refresh;
+  fields the user has actually edited stay put (and count as in-sync again
+  after a successful Apply).
+
 ## 2026-06-04 06:09 BST — Fam1
 
 ### Added
