@@ -104,7 +104,14 @@ wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
 cpos_opts=$(opts_for "${CLOCK_POS:-northwest}" $POSNS)
 cstyle_opts=$(opts_for "${CLOCK_STYLE:-digital}" digital analogue)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
-theme_opts=$(opts_for "${OVERLAY_THEME:-light}" light dark accent)
+# Stored values stay dark/light/accent (config + server allow-list compat);
+# the DISPLAYED labels are the actual colours so the control can't mislead.
+theme_opts=""
+for pair in "light:white" "dark:black" "accent:accent"; do
+  v="${pair%%:*}"; lbl="${pair#*:}"
+  s=""; [ "${OVERLAY_THEME:-light}" = "$v" ] && s=" selected"
+  theme_opts="$theme_opts<option value=\"$v\"$s>$lbl</option>"
+done
 style_opts=$(opts_for "${OVERLAY_STYLE:-scrim}" scrim frosted editorial chips)
 # Background theme select: "any" (empty) + presets.
 bg_cur="${THEME:-}"; bg_sel=""; [ -z "$bg_cur" ] && bg_sel=" selected"
@@ -267,7 +274,7 @@ cat >> "$WEBDIR/index.html" <<HTML
     <div class=ctl-row>
       <span class=fld><span class=muted>Style</span><select name=overlay_style>${style_opts}</select></span>
       <span class=fld><span class=muted>Size</span><select name=size>${size_opts}</select></span>
-      <span class=fld><span class=muted>Text</span><select name=overlay_theme>${theme_opts}</select></span>
+      <span class=fld><span class=muted>Text colour</span><select name=overlay_theme>${theme_opts}</select></span>
       <span class=fld><span class=muted>Font</span><select name=font>${font_opts}</select></span>
     </div></div>
 </div>

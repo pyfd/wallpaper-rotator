@@ -5,6 +5,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:54 BST — Fam1
+
+### Changed
+- **"Text" select relabelled "Text colour"** with options displayed as
+  **white / black / accent** (stored values stay `light`/`dark`/`accent` for
+  config + allow-list compat) — the theme-flavoured words were still easy to
+  misread even after the inversion fix.
+
 ## 2026-06-04 05:52 BST — Fam1
 
 ### Fixed
