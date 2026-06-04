@@ -5,6 +5,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 11:34 BST — paul-HP-ProDesk-400-G4-SFF
+
+### Fixed
+- **KDE desktop frozen: cron runs misdetected the DE as GNOME** — with no
+  `XDG_CURRENT_DESKTOP` under cron, the process-sniff fallback's bare
+  `pgrep -f 'gnome-session'` matched **`at-spi2-registryd --use-gnome-session`**
+  (the accessibility daemon, present on every desktop) and GNOME was checked
+  before plasma — so on a KDE box every cron rotate set gsettings keys Plasma
+  never reads, logging `status=ok` while the visible wallpaper never changed
+  (875 such runs on paul-HP; only env-carrying manual/web-UI runs worked).
+  Detection now checks the unambiguous sessions first (xfce, cinnamon, mate,
+  plasma) and GNOME last with an anchored `(^|/)gnome-session` pattern that
+  can't match the at-spi2 flag. Same fix applied to install.sh's cosmetic
+  detection. (Surfaced as "rotator stopped working" right after the Pulse
+  overlay was saved — coincidental; Pulse also needed a `PULSE_URL`.)
+
 ## 2026-06-04 07:42 BST — Fam1
 
 ### Fixed

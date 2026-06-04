@@ -793,11 +793,17 @@ if [ -z "$DE" ]; then            # fall back to process sniffing (cron context)
   # GNOME runs `gnome-session-binary --session=zorin`, so `pgrep -x gnome-session`
   # misses and we'd wrongly fall through to feh). Map to a clean DE keyword the
   # case below matches (*gnome*/*xfce*/…).
-  if   pgrep -f 'xfce4-session'    >/dev/null 2>&1; then DE="xfce"
-  elif pgrep -f 'gnome-session'    >/dev/null 2>&1; then DE="gnome"
-  elif pgrep -f 'cinnamon-session' >/dev/null 2>&1; then DE="cinnamon"
-  elif pgrep -f 'mate-session'     >/dev/null 2>&1; then DE="mate"
-  elif pgrep -f 'plasmashell'      >/dev/null 2>&1; then DE="plasma"
+  # GNOME is checked LAST with an anchored pattern: at-spi2-registryd runs as
+  # `--use-gnome-session` on EVERY desktop, so a bare `pgrep -f gnome-session`
+  # matched it and misdetected KDE/cinnamon/mate boxes as GNOME — cron runs
+  # (no XDG env) then set gsettings keys Plasma never reads, freezing the
+  # desktop wallpaper while logging status=ok (paul-HP, 2026-06-04). The
+  # `(^|/)` anchor requires gnome-session* as the executable itself.
+  if   pgrep -f 'xfce4-session'        >/dev/null 2>&1; then DE="xfce"
+  elif pgrep -f 'cinnamon-session'     >/dev/null 2>&1; then DE="cinnamon"
+  elif pgrep -f 'mate-session'         >/dev/null 2>&1; then DE="mate"
+  elif pgrep -f 'plasmashell'          >/dev/null 2>&1; then DE="plasma"
+  elif pgrep -f '(^|/)gnome-session'   >/dev/null 2>&1; then DE="gnome"
   fi
 fi
 

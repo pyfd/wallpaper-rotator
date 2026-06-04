@@ -79,11 +79,14 @@ DE="$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')"
 if [ -z "$DE" ]; then
   # Match full cmdline (pgrep -f), not the 15-char-truncated comm: e.g. Zorin/
   # GNOME runs `gnome-session-binary`, which `pgrep -x gnome-session` misses.
-  if   pgrep -f 'xfce4-session'    >/dev/null 2>&1; then DE="xfce"
-  elif pgrep -f 'gnome-session'    >/dev/null 2>&1; then DE="gnome"
-  elif pgrep -f 'cinnamon-session' >/dev/null 2>&1; then DE="cinnamon"
-  elif pgrep -f 'mate-session'     >/dev/null 2>&1; then DE="mate"
-  elif pgrep -f 'plasmashell'      >/dev/null 2>&1; then DE="plasma"
+  # GNOME last + anchored: at-spi2-registryd's `--use-gnome-session` flag runs
+  # on every desktop and a bare match misdetected KDE as GNOME (see
+  # set-wallpaper.sh detection comment, 2026-06-04).
+  if   pgrep -f 'xfce4-session'        >/dev/null 2>&1; then DE="xfce"
+  elif pgrep -f 'cinnamon-session'     >/dev/null 2>&1; then DE="cinnamon"
+  elif pgrep -f 'mate-session'         >/dev/null 2>&1; then DE="mate"
+  elif pgrep -f 'plasmashell'          >/dev/null 2>&1; then DE="plasma"
+  elif pgrep -f '(^|/)gnome-session'   >/dev/null 2>&1; then DE="gnome"
   fi
 fi
 echo "    desktop: ${DE:-<unknown — will use feh fallback>}"
