@@ -34,6 +34,7 @@ STATS_SPARKLINE=0
 OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
 OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
+CLOCK_FACE=classic
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -395,22 +396,44 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         label:"$2" -trim +repage -background none -gravity West -extent "x$5" "$1" 2>>"$LOG"
     }
     # Analogue clock face -> transparent PNG at $1, diameter $2, for time $3:$4
-    # (H M). Ring + 12 ticks + hour/minute hands in TXT, accent centre pin. Built
-    # as one MVG -draw program (colours single-quoted so '#' isn't an MVG comment).
+    # (H M). CLOCK_FACE picks the face: classic (ring + 12 ticks), minimal
+    # (quarter ticks only), dots (12 dots, larger at quarters), numbers
+    # (12/3/6/9 numerals, ticks elsewhere). Hands + accent centre pin are
+    # common to all. Built as one MVG -draw program (colours single-quoted so
+    # '#' isn't an MVG comment; gravity is reset to NorthWest after the
+    # numeral placement so the hands' absolute coords stay top-left-relative).
     draw_clock() {  # $1=out $2=diameter $3=hour $4=min
-      local out="$1" d="$2" H="$3" M="$4" prog
-      prog="$(awk -v d="$d" -v H="$H" -v M="$M" -v col="$TXT" -v acc="$ACCENT" 'BEGIN{
+      local out="$1" d="$2" H="$3" M="$4" face="${CLOCK_FACE:-classic}" prog
+      prog="$(awk -v d="$d" -v H="$H" -v M="$M" -v col="$TXT" -v acc="$ACCENT" -v face="$face" 'BEGIN{
         pi=3.14159265; cx=d/2; cy=d/2; R=cx-3;
-        printf "stroke %c%s%c fill none stroke-width 2 ", 39,col,39;
+        printf "stroke-linecap round stroke %c%s%c fill none stroke-width 2 ", 39,col,39;
         printf "circle %.1f,%.1f %.1f,%.1f ", cx,cy, cx, cy-R;
-        for(i=0;i<12;i++){a=i/12*2*pi-pi/2; printf "line %.1f,%.1f %.1f,%.1f ",
-          cx+0.86*R*cos(a),cy+0.86*R*sin(a), cx+0.97*R*cos(a),cy+0.97*R*sin(a)}
+        if(face=="minimal"){
+          for(i=0;i<12;i+=3){a=i/12*2*pi-pi/2; printf "line %.1f,%.1f %.1f,%.1f ",
+            cx+0.88*R*cos(a),cy+0.88*R*sin(a), cx+0.97*R*cos(a),cy+0.97*R*sin(a)}
+        } else if(face=="dots"){
+          printf "stroke none fill %c%s%c ", 39,col,39;
+          for(i=0;i<12;i++){a=i/12*2*pi-pi/2; r=(i%3==0)?0.055*R:0.032*R; if(r<1.6)r=1.6;
+            px=cx+0.90*R*cos(a); py=cy+0.90*R*sin(a);
+            printf "circle %.1f,%.1f %.1f,%.1f ", px,py, px,py+r}
+          printf "stroke %c%s%c fill none ", 39,col,39;
+        } else if(face=="numbers"){
+          for(i=0;i<12;i++){ if(i%3==0) continue; a=i/12*2*pi-pi/2; printf "line %.1f,%.1f %.1f,%.1f ",
+            cx+0.90*R*cos(a),cy+0.90*R*sin(a), cx+0.97*R*cos(a),cy+0.97*R*sin(a)}
+          printf "stroke none fill %c%s%c ", 39,col,39;
+          printf "gravity North text 0,%.1f %c12%c gravity South text 0,%.1f %c6%c ", 0.055*d,39,39, 0.055*d,39,39;
+          printf "gravity East text %.1f,0 %c3%c gravity West text %.1f,0 %c9%c ", 0.055*d,39,39, 0.055*d,39,39;
+          printf "gravity NorthWest stroke %c%s%c fill none ", 39,col,39;
+        } else {
+          for(i=0;i<12;i++){a=i/12*2*pi-pi/2; printf "line %.1f,%.1f %.1f,%.1f ",
+            cx+0.86*R*cos(a),cy+0.86*R*sin(a), cx+0.97*R*cos(a),cy+0.97*R*sin(a)}
+        }
         ha=((H%12)+M/60)/12*2*pi-pi/2; printf "stroke-width 3 line %.1f,%.1f %.1f,%.1f ",
           cx,cy, cx+0.50*R*cos(ha),cy+0.50*R*sin(ha);
         ma=(M/60)*2*pi-pi/2; printf "stroke-width 2 line %.1f,%.1f %.1f,%.1f ",
           cx,cy, cx+0.74*R*cos(ma),cy+0.74*R*sin(ma);
         printf "stroke none fill %c%s%c circle %.1f,%.1f %.1f,%.1f", 39,acc,39, cx,cy, cx,cy+3.2 }')"
-      convert -size "${d}x${d}" xc:none -draw "$prog" "$out" 2>>"$LOG"
+      convert -size "${d}x${d}" xc:none -font DejaVu-Sans -pointsize "$(( d / 7 ))" -draw "$prog" "$out" 2>>"$LOG"
     }
     # Compose the forecast line PNG from the structured cache so each day's glyph
     # can take its CONDITION COLOUR (when OVERLAY_WEATHER_ICON_COLOR=1; else the

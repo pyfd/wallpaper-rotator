@@ -5,6 +5,36 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 06:09 BST — Fam1
+
+### Added
+- **Curation buttons** under the web UI thumbnail: **⏭ Next** (rotate now),
+  **★ Keep** (move to `favourites/` — stays in rotation forever: the pool
+  subdir is found by set-wallpaper's recursive pick but every pruner globs
+  only the top level), **🚫 Ban** (delete from pool + rotate; a replacement
+  fetch tops the pool back up in the background). Pool card shows `★ N kept`.
+- **Favourites gallery** in the web UI (collapsible, open by default):
+  thumbnails of everything kept — click one to set it as the wallpaper,
+  ✕ to move it back to the prunable pool. Served via the new `/fav/<name>`
+  route; `/use` and `/unfav` endpoints.
+- **Tailnet remote access**: new `WEB_BIND` config key (not in the form;
+  service restart to apply). `WEB_BIND="tailscale"` also binds this machine's
+  tailnet IP — control any machine's wallpaper from a phone; an explicit IP
+  works too; default stays localhost-only. No auth — only open it to networks
+  where everyone may control the wallpaper.
+- **Multi-theme rotation**: the Background theme select is now a row of
+  checkbox chips — tick several (e.g. forest + ocean + space) and each fetch
+  picks one at random, so the pool converges to a mix. `THEME` becomes a
+  space-separated list; none checked = any.
+- **Analogue clock faces**: new `face` select in the Clock card —
+  **classic** (12 ticks), **minimal** (quarter ticks), **dots** (12 dots,
+  larger at quarters), **numbers** (12/3/6/9 numerals). `CLOCK_FACE` config
+  key, default classic.
+
+### Changed
+- **Recent activity is collapsed by default** behind a chevron (native
+  `<details>`); click to expand.
+
 ## 2026-06-04 05:54 BST — Fam1
 
 ### Changed

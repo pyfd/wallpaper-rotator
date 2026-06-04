@@ -1,5 +1,16 @@
 # wallpaper-rotator — TODO / roadmap
 
+## Done (2026-06-04)
+- ✅ Curation buttons (Next / ★ Keep / 🚫 Ban) + favourites gallery in the web UI;
+  `favourites/` pool subdir is rotation-included but prune-exempt.
+- ✅ Tailnet remote access (`WEB_BIND="tailscale"` config key, dual bind).
+- ✅ Multi-theme rotation (checkbox chips; THEME = space-separated list).
+- ✅ Analogue clock face styles (classic / minimal / dots / numbers).
+- ✅ Smooth AJAX Apply + soft 30s status refresh (no full-page reloads).
+- ✅ Two-column wide-screen layout; Recent activity collapsed by default.
+- ✅ Forecast day labels resolved at render time (wttr.in pre-rollover lag).
+- ✅ Clock date line for the analogue style; Text-colour select de-inverted.
+
 ## Done (2026-06-03)
 - ✅ Web UI always-on via a systemd user service (`wallpaper-web.service`).
 - ✅ Weather icons (DejaVu-safe glyph set) with a UI toggle; location title-cased.

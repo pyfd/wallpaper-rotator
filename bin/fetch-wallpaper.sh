@@ -32,6 +32,9 @@ CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
 THEME=""
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
+# THEME may be a space-separated list (multi-theme rotation): each fetch picks
+# one at random, so the pool converges to a MIX of the selected themes.
+if [ -n "${THEME:-}" ]; then THEME="$(printf '%s\n' $THEME | shuf -n1)"; fi
 
 mkdir -p "$POOL" "$(dirname "$LOG")" 2>/dev/null
 log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/null; }

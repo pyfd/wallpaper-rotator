@@ -37,6 +37,17 @@ VERFILE="$(dirname "$LOG")/version"
 # --- gather stats -----------------------------------------------------------
 pool_count=$(ls "$POOL"/*.jpg "$POOL"/*.jpeg "$POOL"/*.png 2>/dev/null | wc -l)
 pool_size=$(du -sh "$POOL" 2>/dev/null | cut -f1)
+fav_count=$(ls "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png 2>/dev/null | wc -l)
+fav_bit=""; [ "${fav_count:-0}" -gt 0 ] && fav_bit=" · ★ ${fav_count} kept"
+# Favourites gallery: thumbnails served by the web server's /fav/ route.
+# Click = set as wallpaper, ✕ = move back to the (prunable) pool.
+fav_html=""
+for f in "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png; do
+  [ -f "$f" ] || continue
+  fb="$(basename "$f")"
+  fav_html="$fav_html<div class=fav><img src=\"fav/$fb\" loading=lazy data-img=\"$fb\" title=\"Set as wallpaper\"><button type=button class=unfav data-img=\"$fb\" title=\"Remove from favourites\">&#10005;</button></div>"
+done
+[ -z "$fav_html" ] && fav_html="<span class=muted style=font-size:12px>none yet — &#9733; Keep the current wallpaper to start a collection</span>"
 last_rotate=$(grep '\[rotate\]' "$LOG" 2>/dev/null | tail -1)
 last_dl=$(grep '\[download\] src=.* ok' "$LOG" 2>/dev/null | tail -1)
 cur_img=$(printf '%s' "$last_rotate" | grep -oP 'img=\K\S+' || true)
@@ -103,6 +114,7 @@ spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
 wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
 cpos_opts=$(opts_for "${CLOCK_POS:-northwest}" $POSNS)
 cstyle_opts=$(opts_for "${CLOCK_STYLE:-digital}" digital analogue)
+cface_opts=$(opts_for "${CLOCK_FACE:-classic}" classic minimal dots numbers)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
 # Stored values stay dark/light/accent (config + server allow-list compat);
 # the DISPLAYED labels are the actual colours so the control can't mislead.
@@ -113,12 +125,13 @@ for pair in "light:white" "dark:black" "accent:accent"; do
   theme_opts="$theme_opts<option value=\"$v\"$s>$lbl</option>"
 done
 style_opts=$(opts_for "${OVERLAY_STYLE:-scrim}" scrim frosted editorial chips)
-# Background theme select: "any" (empty) + presets.
-bg_cur="${THEME:-}"; bg_sel=""; [ -z "$bg_cur" ] && bg_sel=" selected"
-bgtheme_opts="<option value=\"\"$bg_sel>any</option>"
+# Background themes: multi-select chips (THEME is a space-separated list;
+# none checked = any). Each fetch picks one of the checked themes at random.
+bg_cur=" ${THEME:-} "
+bgtheme_opts=""
 for t in nature landscape minimal space city abstract cars cycling animals dark forest ocean; do
-  s=""; [ "$bg_cur" = "$t" ] && s=" selected"
-  bgtheme_opts="$bgtheme_opts<option value=\"$t\"$s>$t</option>"
+  s=""; case "$bg_cur" in *" $t "*) s=" checked";; esac
+  bgtheme_opts="$bgtheme_opts<label class=chip><input type=checkbox name=theme value=\"$t\"$s>$t</label>"
 done
 wloc_val=$(printf '%s' "${WEATHER_LOCATION:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
 # Font dropdown: "default" + any of a common set that ImageMagick actually has.
@@ -214,6 +227,28 @@ form.controls input[type=checkbox]{accent-color:#3a6df0;width:15px;height:15px;m
 .ctl-grp.on{border-color:#34508f;background:#171b22}
 .ctl-grp [disabled]{opacity:.38;cursor:not-allowed}
 .ctl-grp.off .ctl-row{opacity:.55}
+/* curation buttons under the thumbnail */
+.cur-actions{display:flex;gap:10px;margin:10px 0 2px}
+.act{background:#1c1f26;color:#e6e8ec;border:1px solid #2a2f39;border-radius:8px;padding:7px 16px;min-width:96px;cursor:pointer;font-size:13px;font-weight:600;transition:border-color .15s,background .15s}
+.act:hover{border-color:#3a6df0}
+.act.danger:hover{border-color:#b5544f;color:#e8a9a5}
+.act:disabled{opacity:.45;cursor:progress}
+/* background-theme chips */
+.chip{background:#0f1115;border:1px solid #2a2f39;border-radius:999px;padding:3px 10px;font-size:12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:#cfd3da}
+.chip input{accent-color:#3a6df0;width:13px;height:13px;margin:0}
+.chip:has(input:checked){border-color:#3a6df0;background:#1b2536}
+/* favourites gallery */
+.favs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+.fav{position:relative}
+.fav img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;border:1px solid #262a33;display:block;cursor:pointer;transition:border-color .15s}
+.fav img:hover{border-color:#3a6df0}
+.fav .unfav{position:absolute;top:4px;right:4px;width:20px;height:20px;line-height:1;background:rgba(0,0,0,.55);color:#e6e8ec;border:0;border-radius:6px;cursor:pointer;font-size:11px;transition:background .15s}
+.fav .unfav:hover{background:#b5544f}
+/* collapsed-by-default recent activity with a chevron */
+details.ra summary{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a909a;margin:24px 0 8px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;user-select:none}
+details.ra summary::-webkit-details-marker{display:none}
+details.ra summary::before{content:"";width:7px;height:7px;border-right:2px solid #8a909a;border-bottom:2px solid #8a909a;transform:rotate(-45deg);transition:transform .15s;flex:none}
+details.ra[open] summary::before{transform:rotate(45deg)}
 </style></head><body><div class=wrap>
 <h1>🖼️ wallpaper-rotator</h1>
 <div class=sub id=page-sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
@@ -223,10 +258,17 @@ HTML
 if [ "$have_thumb" = 1 ]; then
   echo "<img class=cur id=cur-img data-img=\"${cur_img:-}\" src=\"current.jpg?$(date +%s)\" alt=\"current wallpaper\">" >> "$WEBDIR/index.html"
 fi
+cat >> "$WEBDIR/index.html" <<'HTML'
+<div class=cur-actions>
+<button type=button class=act data-act=next title="Rotate to another wallpaper now">&#9197; Next</button>
+<button type=button class=act data-act=keep title="Move to favourites — stays in rotation, never pruned">&#9733; Keep</button>
+<button type=button class="act danger" data-act=ban title="Delete this image from the pool and rotate">&#128683; Ban</button>
+</div>
+HTML
 
 cat >> "$WEBDIR/index.html" <<HTML
 <div class=grid id=status-cards>
-  <div class=card><div class=k>Pool</div><div class=v>${pool_count} <small>images · ${pool_size:-?}</small></div></div>
+  <div class=card><div class=k>Pool</div><div class=v>${pool_count} <small>images · ${pool_size:-?}${fav_bit}</small></div></div>
   <div class=card><div class=k>Current image</div><div class=v style=font-size:14px>${cur_img:-none}</div></div>
   <div class=card><div class=k>Last rotate</div><div class=v style=font-size:14px>${rotate_when:-never}</div></div>
   <div class=card><div class=k>Last download</div><div class=v style=font-size:14px>${dl_when:-never}</div></div>
@@ -264,12 +306,13 @@ cat >> "$WEBDIR/index.html" <<HTML
       <label class=tgl><input type=checkbox name=clock value=1${clkchk}><span class=sw></span></label></div>
     <div class=ctl-row>
       <select name=clock_style>${cstyle_opts}</select>
+      <span class=fld><span class=muted>face</span><select name=clock_face>${cface_opts}</select></span>
       <span class=fld><span class=muted>at</span><select name=clock_pos>${cpos_opts}</select></span>
       <label><input type=checkbox name=clock_24h value=1${c24chk}> 24h</label>
       <label><input type=checkbox name=clock_date value=1${cdchk}> Date</label>
     </div></div>
-  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Background</span></div>
-    <div class=ctl-row><span class=fld><span class=muted>Theme</span><select name=theme>${bgtheme_opts}</select></span></div></div>
+  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Background themes</span><span class=muted style=font-size:11px>none = any</span></div>
+    <div class=ctl-row style="gap:6px">${bgtheme_opts}</div></div>
   <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Appearance</span></div>
     <div class=ctl-row>
       <span class=fld><span class=muted>Style</span><select name=overlay_style>${style_opts}</select></span>
@@ -301,7 +344,7 @@ cat >> "$WEBDIR/index.html" <<HTML
   // The form itself is never touched, so in-progress edits survive a refresh.
   function swapStatus(html){
     var d=new DOMParser().parseFromString(html,'text/html');
-    ['page-sub','status-cards','src-table','recent-pre'].forEach(function(id){
+    ['page-sub','status-cards','src-table','recent-pre','fav-count','fav-grid'].forEach(function(id){
       var n=d.getElementById(id),o=document.getElementById(id);
       if(n&&o)o.innerHTML=n.innerHTML;
     });
@@ -315,6 +358,34 @@ cat >> "$WEBDIR/index.html" <<HTML
   }
   function refresh(){fetch('/').then(function(r){return r.text();}).then(swapStatus).catch(function(){});}
   setInterval(refresh,30000);   // soft update — replaces the old meta-refresh full reload
+
+  // Curation buttons (Next/Keep/Ban): POST the action, swap fresh status in.
+  var acts=document.querySelectorAll('.act');
+  acts.forEach(function(b){
+    b.addEventListener('click',function(){
+      acts.forEach(function(x){x.disabled=true;});
+      var t0=b.textContent;b.textContent='working…';
+      fetch('/'+b.getAttribute('data-act'),{method:'POST'})
+        .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text();})
+        .then(swapStatus).catch(function(){})
+        .then(function(){b.textContent=t0;acts.forEach(function(x){x.disabled=false;});});
+    });
+  });
+
+  // Favourites gallery: click a thumb = set as wallpaper, ✕ = unfavourite.
+  // Delegated — the grid's innerHTML is replaced by status swaps.
+  document.addEventListener('click',function(e){
+    var un=e.target.closest('.unfav');
+    var im=un?null:e.target.closest('.fav img');
+    var el=un||im; if(!el)return;
+    var name=el.getAttribute('data-img'); if(!name)return;
+    var body=new URLSearchParams(); body.set('img',name);
+    el.style.opacity='.4';
+    fetch(un?'/unfav':'/use',{method:'POST',body:body})
+      .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text();})
+      .then(swapStatus).catch(function(){})
+      .then(function(){el.style.opacity='';});
+  });
 
   // AJAX Apply: stay on the page, show progress on the button itself.
   var form=document.querySelector('form.controls');
@@ -340,10 +411,14 @@ cat >> "$WEBDIR/index.html" <<HTML
 })();
 </script>
 </div><div class=col-extra>
+<details class=ra open><summary>Favourites (<span id=fav-count>${fav_count}</span>)</summary>
+<div class=favs id=fav-grid>${fav_html}</div>
+</details>
 <h2>Downloads by source</h2>
 <table id=src-table>${src_rows}</table>
-<h2>Recent activity</h2>
+<details class=ra><summary>Recent activity</summary>
 <pre id=recent-pre>${recent:-（no activity logged yet）}</pre>
+</details>
 </div></div>
 <div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · status auto-updates every 30s</div>
 </div></body></html>

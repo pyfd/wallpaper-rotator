@@ -161,14 +161,16 @@ applies immediately):
   toggle adds a second, smaller line with a compact 3-day outlook
   (`Today ☀ 24/14 · Thu ☀ 24/16 · Fri ☀ 24/17`, hi/lo °C, cached ~3h).
 - **Clock** — **digital** (big time, optional date, 12/24h) or **analogue** (drawn
-  dial with ticks + hands). Since the wallpaper is a static render, a 1-minute cron
+  dial with a choice of **faces**: classic ticks, minimal quarter-ticks, dots, or
+  12/3/6/9 numerals). Since the wallpaper is a static render, a 1-minute cron
   re-renders the *current* image while the clock is on, so it stays accurate to the
   minute (also keeps weather/stats fresh); no extra render churn when it's off.
-- **Background theme** — bias new downloads to a theme (nature, city, cars,
-  cycling, …). Only Wallhaven is theme-aware (`q=`), so when a theme is set it's
-  tried **first** (Bing/Picsum are untargeted fallback). Changing the theme fetches
-  a matching image immediately and tops up + trims the pool in the background, so
-  the rotation converges to the theme instead of staying mostly untargeted.
+- **Background themes** — bias new downloads to one or MORE themes (checkbox
+  chips: nature, city, cars, cycling, …); each fetch picks one of the ticked
+  themes at random so the pool converges to a mix. Only Wallhaven is theme-aware
+  (`q=`), so when themes are set it's tried **first** (Bing/Picsum are untargeted
+  fallback). Changing themes fetches a matching image immediately and tops up +
+  trims the pool in the background.
 - **Overlay style** — the visual treatment for all overlays:
   - **scrim** *(default)* — top/bottom gradient wash + drop-shadowed text, no boxes.
   - **frosted** — blurred "glass" rounded card behind each block + hairline border;
@@ -178,6 +180,13 @@ applies immediately):
 - **Position** — place each overlay at any corner/edge/centre (per-overlay).
 - **Size / Text / Font** — text size (small/medium/large), text colour (dark /
   light / accent), and font (any installed ImageMagick font from a common set).
+
+**Curation** — three buttons under the thumbnail: **⏭ Next** rotates immediately,
+**★ Keep** moves the current image to `favourites/` (a pool subdir that stays in
+rotation but is exempt from every pruner, so kept images never age out), and
+**🚫 Ban** deletes it and rotates (a replacement is fetched in the background).
+A **Favourites** gallery lists everything kept — click a thumbnail to set it as
+the wallpaper, ✕ to return it to the prunable pool.
 
 Overlays are rendered onto a *copy* each tick (pool originals stay clean; stats
 stay live). State lives in `~/.local/state/wallpaper-rotator/config`, read by
@@ -190,11 +199,18 @@ CHANGELOG** (the newest `## YYYY-MM-DD HH:MM TZ — host` entry), stamped into
 entry auto-bumps it and each machine's page tells you what it's running. Query it
 from the shell with `set-wallpaper.sh --version`.
 
-It binds to `127.0.0.1` only (no network exposure, no auth — localhost trust),
-needs `python3`, and the page auto-refreshes every 30s (cron also regenerates it
-each tick). It runs always-on under the `wallpaper-web` systemd user service
-(above); after pulling a code update, `systemctl --user restart wallpaper-web`.
-Change the port via `WEB_PORT` in `install.sh`.
+It binds to `127.0.0.1` by default (no network exposure, no auth — localhost
+trust), needs `python3`, and the page soft-refreshes its status every 30s (no
+full reload; form edits survive). It runs always-on under the `wallpaper-web`
+systemd user service (above); after pulling a code update,
+`systemctl --user restart wallpaper-web`. Change the port via `WEB_PORT` in
+`install.sh`.
+
+**Remote access (optional)** — add `WEB_BIND="tailscale"` to
+`~/.local/state/wallpaper-rotator/config` and restart the service to ALSO bind
+this machine's Tailscale IP, so you can curate from a phone on your tailnet
+(`http://<tailnet-ip>:8787`). Any explicit IP works too. There's still no auth —
+only open it to networks where everyone is allowed to control the wallpaper.
 
 ---
 

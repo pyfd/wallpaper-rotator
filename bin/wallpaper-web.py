@@ -11,7 +11,7 @@
 # @@...@@ placeholders are substituted by install.sh; falls back to XDG defaults
 # when run from a raw checkout (guarded by the "@@" prefix check, which the
 # substitution can't reproduce).
-import os, re, subprocess, urllib.parse
+import os, re, shutil, subprocess, threading, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WEBDIR    = "@@WEBDIR@@"
@@ -45,13 +45,14 @@ ALLOWED_BGTHEME = {"", "nature", "landscape", "minimal", "space", "city", "abstr
                    "cars", "cycling", "animals", "dark", "forest", "ocean"}
 ALLOWED_OVERLAY_STYLE = {"scrim", "frosted", "editorial", "chips"}
 ALLOWED_CLOCK_STYLE = {"digital", "analogue"}
+ALLOWED_CLOCK_FACE = {"classic", "minimal", "dots", "numbers"}
 CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
             "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
             "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "OVERLAY_WEATHER_ICON_COLOR",
             "OVERLAY_WEATHER_FORECAST",
-            "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_POS", "CLOCK_24H", "CLOCK_DATE",
-            "THEME")
+            "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
+            "CLOCK_DATE", "THEME", "WEB_BIND")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
@@ -59,8 +60,13 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 "WEATHER_POS": "north", "WEATHER_LOCATION": "", "OVERLAY_WEATHER_ICON": "0",
                 "OVERLAY_WEATHER_ICON_COLOR": "0", "OVERLAY_WEATHER_FORECAST": "0",
                 "OVERLAY_CLOCK": "0",
-                "CLOCK_STYLE": "digital", "CLOCK_POS": "northwest", "CLOCK_24H": "1",
-                "CLOCK_DATE": "0", "THEME": ""}
+                "CLOCK_STYLE": "digital", "CLOCK_FACE": "classic",
+                "CLOCK_POS": "northwest", "CLOCK_24H": "1",
+                "CLOCK_DATE": "0", "THEME": "",
+                # not a form field — set in the config file, needs a service
+                # restart: "" = localhost only, "tailscale" = + tailnet IP,
+                # or an explicit extra IP to bind
+                "WEB_BIND": ""}
 
 
 def read_config():
@@ -113,6 +119,23 @@ def regen():
         pass
 
 
+def current_image():
+    """Path of the original behind the wallpaper on screen (state file), or ''."""
+    try:
+        with open(os.path.join(os.path.dirname(CONFIG), "current")) as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+
+def under_pool(path):
+    """True only if path resolves to a file inside the pool (delete/move guard)."""
+    if not path:
+        return False
+    real = os.path.realpath(path)
+    return real.startswith(os.path.realpath(POOL) + os.sep) and os.path.isfile(real)
+
+
 def newest_pool_image():
     """Most-recently-modified image in the pool (the just-fetched one), or ''."""
     try:
@@ -138,6 +161,12 @@ class Handler(BaseHTTPRequestHandler):
             fn, ctype = os.path.join(WEBDIR, "index.html"), "text/html; charset=utf-8"
         elif path == "/current.jpg":
             fn, ctype = os.path.join(WEBDIR, "current.jpg"), "image/jpeg"
+        elif path.startswith("/fav/"):
+            name = urllib.parse.unquote(path[5:])
+            if "/" in name or name.startswith("."):
+                self._send(404, "text/plain", b"not found"); return
+            fn = os.path.join(POOL, "favourites", name)
+            ctype = "image/png" if name.lower().endswith(".png") else "image/jpeg"
         else:
             self._send(404, "text/plain", b"not found"); return
         try:
@@ -146,8 +175,74 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self._send(404, "text/plain", b"not generated yet")
 
+    def _done(self):
+        """Regenerate the page and bounce to / (fetch() follows and gets fresh HTML)."""
+        regen()
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.end_headers()
+
+    def _setwp(self, arg=None):
+        try:
+            subprocess.run([SETWP, arg] if arg else [SETWP], timeout=30)
+        except Exception:
+            pass
+
     def do_POST(self):
-        if self.path.split("?")[0] != "/set":
+        path = self.path.split("?")[0]
+        if path == "/next":                       # rotate now
+            self._setwp()
+            self._done(); return
+        if path == "/ban":                        # delete current image + rotate
+            cur = current_image()
+            if under_pool(cur):
+                try:
+                    os.remove(os.path.realpath(cur))
+                except Exception:
+                    pass
+                # replace the banned image in the background so the pool stays topped up
+                try:
+                    subprocess.Popen([FETCH], start_new_session=True,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
+            self._setwp()
+            self._done(); return
+        if path == "/keep":                       # move current image to favourites/
+            cur = current_image()
+            fav = os.path.join(POOL, "favourites")
+            # favourites/ sits inside the pool so rotation still picks it up
+            # (set-wallpaper's find recurses) but every pruner globs only the
+            # pool's top level, so kept images are never aged out.
+            if under_pool(cur) and os.path.dirname(os.path.realpath(cur)) != os.path.realpath(fav):
+                try:
+                    os.makedirs(fav, exist_ok=True)
+                    dest = os.path.join(fav, os.path.basename(cur))
+                    shutil.move(os.path.realpath(cur), dest)
+                    with open(os.path.join(os.path.dirname(CONFIG), "current"), "w") as f:
+                        f.write(dest + "\n")
+                except Exception:
+                    pass
+            self._done(); return
+        if path in ("/use", "/unfav"):           # act on a named favourite
+            ln = int(self.headers.get("Content-Length") or 0)
+            form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
+            name = form.get("img", [""])[0]
+            fav = os.path.join(POOL, "favourites", name)
+            if name and "/" not in name and not name.startswith(".") and os.path.isfile(fav):
+                if path == "/use":               # set this favourite as the wallpaper
+                    self._setwp(fav)
+                else:                            # back to the (prunable) pool
+                    try:
+                        dest = os.path.join(POOL, name)
+                        shutil.move(fav, dest)
+                        if current_image() == fav:
+                            with open(os.path.join(os.path.dirname(CONFIG), "current"), "w") as f:
+                                f.write(dest + "\n")
+                    except Exception:
+                        pass
+            self._done(); return
+        if path != "/set":
             self._send(404, "text/plain", b"not found"); return
         ln = int(self.headers.get("Content-Length") or 0)
         form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
@@ -179,13 +274,17 @@ class Handler(BaseHTTPRequestHandler):
         cfg["OVERLAY_FONT"]  = pick("font", ALLOWED_FONT, "default")
         cfg["OVERLAY_STYLE"] = pick("overlay_style", ALLOWED_OVERLAY_STYLE, "scrim")
         cfg["CLOCK_STYLE"]   = pick("clock_style", ALLOWED_CLOCK_STYLE, "digital")
+        cfg["CLOCK_FACE"]    = pick("clock_face", ALLOWED_CLOCK_FACE, "classic")
         cfg["CLOCK_POS"]     = pick("clock_pos", ALLOWED_POS, "northwest")
-        cfg["THEME"]         = pick("theme", ALLOWED_BGTHEME, "")
+        # THEME is multi-select: checked boxes arrive as repeated theme=...
+        # fields; store as a space-separated list (none checked = "" = any).
+        themes = [t for t in form.get("theme", []) if t and t in ALLOWED_BGTHEME]
+        cfg["THEME"] = " ".join(dict.fromkeys(themes))
         wl = form.get("weather_location", [""])[0].strip()
         cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", wl)[:40]
         write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
-        if cfg["THEME"] != old_theme:
+        if set(cfg["THEME"].split()) != set(old_theme.split()):
             # Theme changed: only wallhaven honours the theme and the pool is mostly
             # theme-blind, so a plain re-render shows nothing new. Fetch a themed
             # image NOW and display it (instant feedback), then top up with more
@@ -225,21 +324,47 @@ class Handler(BaseHTTPRequestHandler):
                 subprocess.run(cmd, timeout=30)
             except Exception:
                 pass
-        regen()
-        self.send_response(303)
-        self.send_header("Location", "/")
-        self.end_headers()
+        self._done()
 
     def log_message(self, *a):                     # keep the console quiet
         pass
 
 
+def bind_addresses():
+    """127.0.0.1 always; WEB_BIND in the config adds more (restart to apply):
+    "tailscale" resolves this machine's tailnet IP, anything else is used
+    verbatim as an extra address. Localhost trust model still applies — only
+    open this up on networks where everyone may control the wallpaper."""
+    addrs = ["127.0.0.1"]
+    wb = read_config().get("WEB_BIND", "").strip()
+    if wb == "tailscale":
+        try:
+            out = subprocess.run(["tailscale", "ip", "-4"], capture_output=True,
+                                 text=True, timeout=10).stdout.strip().splitlines()
+            if out and out[0]:
+                addrs.append(out[0])
+        except Exception:
+            print("WARNING: WEB_BIND=tailscale but no tailscale IP — localhost only")
+    elif wb:
+        addrs.append(wb)
+    return addrs
+
+
 if __name__ == "__main__":
     os.makedirs(WEBDIR, exist_ok=True)
     regen()
-    print("Serving wallpaper-rotator status + controls at http://127.0.0.1:%d" % PORT)
+    servers = []
+    for addr in bind_addresses():
+        try:
+            servers.append(ThreadingHTTPServer((addr, PORT), Handler))
+            print("Serving wallpaper-rotator status + controls at http://%s:%d" % (addr, PORT))
+        except OSError as e:
+            print("WARNING: could not bind %s:%d (%s)" % (addr, PORT, e))
     print("(Ctrl-C to stop)")
     try:
-        ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+        for srv in servers[1:]:
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+        if servers:
+            servers[0].serve_forever()
     except KeyboardInterrupt:
         pass
