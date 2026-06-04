@@ -5,6 +5,35 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 06:26 BST — Fam1
+
+### Added
+- **AI-dreamed wallpapers**: an `AI dreamed` toggle makes every new download try
+  image *generation* first (normal sources stay as fallback). The prompt builds
+  itself from live context — time of day, season, today's weather from the
+  forecast cache, the picked background theme — plus optional user style words.
+  Backend is **AI Horde** (stablehorde.net): free, anonymous, ~30s-few-minutes
+  per image (pollinations.ai was tried first but its anonymous tier is
+  rate-limited away; set `AI_TOKEN` in the config to use it as a fast path).
+  Turning the toggle on fetches + shows one immediately, then tops up in the
+  background.
+- **Pulse overlay**: point `PULSE_URL` at ANY JSON endpoint (http/https/file://)
+  and shape it with a `PULSE_JQ` template — each output line renders as a
+  stats-style overlay line (max 8, cached 5 min). Business dashboards, CI
+  status, home automation — whatever JSON you have.
+- **Auto overlay placement**: every position select gains **auto** — the
+  renderer ranks the 9 anchor regions of the current image by visual busyness
+  (grayscale std-dev, cached per image) and gives each auto overlay the calmest
+  remaining spot, reserving explicitly-placed overlays first. Text stops
+  landing on busy detail.
+- **Remote access controls in the GUI**: a `Remote access` toggle binds/unbinds
+  the tailnet IP (config `WEB_BIND`; applying a change self-restarts the
+  server), and the page + footer show the reachable tailnet URL when active.
+
+### Changed
+- Config is now written with single-quote shell escaping so jq templates,
+  quotes and `$` in values survive sourcing verbatim.
+
 ## 2026-06-04 06:14 BST — Fam1
 
 ### Fixed

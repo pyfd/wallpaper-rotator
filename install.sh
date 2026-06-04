@@ -279,6 +279,7 @@ fi
 TMP="$(mktemp)"
 sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@WEBDIR@@#${WEBDIR}#g" \
     -e "s#@@RES@@#${RES}#g" -e "s#@@SOURCES@@#${SOURCES}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" \
+    -e "s#@@PORT@@#${WEB_PORT}#g" \
     "$REPO_DIR/bin/gen-status.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$GENSTATUS_BIN"
 rm -f "$TMP"

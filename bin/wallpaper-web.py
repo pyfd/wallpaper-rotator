@@ -35,7 +35,7 @@ if POOL.startswith("@@"):      POOL      = os.path.join(HOME, "Pictures/online-w
 PORT = int(PORT)
 
 ALLOWED_INTERVALS = {"3", "5", "10", "15", "30", "60"}
-ALLOWED_POS = {"northwest", "north", "northeast", "west", "center", "east",
+ALLOWED_POS = {"auto", "northwest", "north", "northeast", "west", "center", "east",
                "southwest", "south", "southeast"}
 ALLOWED_SIZE = {"small", "medium", "large"}
 ALLOWED_THEME = {"dark", "light", "accent"}
@@ -52,7 +52,8 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_ST
             "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "OVERLAY_WEATHER_ICON_COLOR",
             "OVERLAY_WEATHER_FORECAST",
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
-            "CLOCK_DATE", "THEME", "WEB_BIND")
+            "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN",
+            "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "WEB_BIND")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
@@ -63,6 +64,11 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 "CLOCK_STYLE": "digital", "CLOCK_FACE": "classic",
                 "CLOCK_POS": "northwest", "CLOCK_24H": "1",
                 "CLOCK_DATE": "0", "THEME": "",
+                # AI_TOKEN: config-file only (not a form field) — optional
+                # pollinations.ai token for the fast generation path
+                "AI_WALLPAPER": "0", "AI_PROMPT": "", "AI_TOKEN": "",
+                "OVERLAY_PULSE": "0", "PULSE_POS": "east",
+                "PULSE_URL": "", "PULSE_JQ": ".",
                 # not a form field — set in the config file, needs a service
                 # restart: "" = localhost only, "tailscale" = + tailnet IP,
                 # or an explicit extra IP to bind
@@ -77,7 +83,10 @@ def read_config():
                 line = line.strip()
                 if "=" in line and not line.startswith("#"):
                     k, v = line.split("=", 1)
-                    cfg[k.strip()] = v.strip().strip('"')
+                    v = v.strip()
+                    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                        v = v[1:-1]
+                    cfg[k.strip()] = v
     except FileNotFoundError:
         pass
     return cfg
@@ -88,9 +97,10 @@ def write_config(cfg):
     with open(CONFIG, "w") as f:
         f.write("# wallpaper-rotator config (managed by wallpaper-web)\n")
         for k in CFG_KEYS:
-            # Quote values so spaces (e.g. WEATHER_LOCATION="New York") survive
-            # `. config` sourcing in the shell scripts.
-            f.write('%s="%s"\n' % (k, cfg.get(k, CFG_DEFAULTS[k])))
+            # Single-quote + escape so any value (spaces, double quotes in jq
+            # templates, $ signs) survives `. config` sourcing verbatim.
+            v = str(cfg.get(k, CFG_DEFAULTS[k]))
+            f.write("%s='%s'\n" % (k, v.replace("'", "'\\''")))
 
 
 def set_cron_interval(n):
@@ -248,6 +258,8 @@ class Handler(BaseHTTPRequestHandler):
         form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
         cfg = read_config()
         old_theme = cfg.get("THEME", "")
+        old_ai = cfg.get("AI_WALLPAPER", "0")
+        old_bind = cfg.get("WEB_BIND", "")
         iv = form.get("interval", ["10"])[0]
         if iv in ALLOWED_INTERVALS:
             cfg["INTERVAL_MIN"] = iv
@@ -262,6 +274,15 @@ class Handler(BaseHTTPRequestHandler):
         cfg["OVERLAY_CLOCK"] = "1" if form.get("clock") else "0"
         cfg["CLOCK_24H"] = "1" if form.get("clock_24h") else "0"
         cfg["CLOCK_DATE"] = "1" if form.get("clock_date") else "0"
+        cfg["AI_WALLPAPER"] = "1" if form.get("ai") else "0"
+        cfg["OVERLAY_PULSE"] = "1" if form.get("pulse") else "0"
+        # Tailnet toggle: ON keeps an existing explicit value (advanced users may
+        # have set an IP); OFF clears. A change needs a server restart to rebind —
+        # scheduled detached below, after the response has gone out.
+        if form.get("web_bind"):
+            cfg["WEB_BIND"] = old_bind or "tailscale"
+        else:
+            cfg["WEB_BIND"] = ""
 
         def pick(field, allowed, default):
             v = form.get(field, [default])[0]
@@ -282,16 +303,31 @@ class Handler(BaseHTTPRequestHandler):
         cfg["THEME"] = " ".join(dict.fromkeys(themes))
         wl = form.get("weather_location", [""])[0].strip()
         cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", wl)[:40]
+        cfg["PULSE_POS"] = pick("pulse_pos", ALLOWED_POS, "east")
+        ap = form.get("ai_prompt", [""])[0].strip()
+        cfg["AI_PROMPT"] = re.sub(r"[^A-Za-z0-9 ,.\-']", "", ap)[:100]
+        pu = form.get("pulse_url", [""])[0].strip()
+        cfg["PULSE_URL"] = pu if re.match(r"^(https?|file)://[^\s\"'<>]+$", pu) else ""
+        pj = form.get("pulse_jq", ["."])[0].replace("\n", " ").replace("\r", "").strip()
+        cfg["PULSE_JQ"] = pj[:200] or "."
         write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
-        if set(cfg["THEME"].split()) != set(old_theme.split()):
+        if cfg["WEB_BIND"] != old_bind:
+            try:
+                subprocess.Popen(["bash", "-c", "sleep 1; systemctl --user restart wallpaper-web"],
+                                 start_new_session=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+        ai_turned_on = cfg["AI_WALLPAPER"] == "1" and old_ai != "1"
+        if set(cfg["THEME"].split()) != set(old_theme.split()) or ai_turned_on:
             # Theme changed: only wallhaven honours the theme and the pool is mostly
             # theme-blind, so a plain re-render shows nothing new. Fetch a themed
             # image NOW and display it (instant feedback), then top up with more
             # themed images + prune the oldest in the background so rotation
             # converges to the theme without blocking this response.
             try:
-                subprocess.run([FETCH], timeout=45)
+                subprocess.run([FETCH], timeout=120)   # AI generation can take ~a minute
             except Exception:
                 pass
             newest = newest_pool_image()

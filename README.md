@@ -177,7 +177,18 @@ applies immediately):
     serif-italic quotes.
   - **editorial** — bottom gradient + bold left-aligned text with an accent bar.
   - **chips** — flat translucent rounded panels.
-- **Position** — place each overlay at any corner/edge/centre (per-overlay).
+- **AI dreamed** — new downloads are AI-*generated* (AI Horde, free + anonymous;
+  add `AI_TOKEN` to the config for pollinations.ai as a faster path). The prompt
+  builds itself from live context — time of day, season, today's weather, your
+  background themes — plus optional style words. Normal sources remain the
+  fallback whenever generation is slow or down.
+- **Pulse** — point a URL at ANY JSON endpoint (http/https/`file://`) and shape
+  it with a jq template; each output line renders as a stats-style overlay line
+  (cached 5 min). Business dashboard, CI status, home automation — your call.
+- **Position** — place each overlay at any corner/edge/centre (per-overlay), or
+  **auto**: the renderer ranks the image's 9 anchor regions by visual busyness
+  and gives each auto overlay the calmest remaining spot (explicit positions
+  are reserved first), so text never sits on busy detail.
 - **Size / Text / Font** — text size (small/medium/large), text colour (dark /
   light / accent), and font (any installed ImageMagick font from a common set).
 
@@ -206,11 +217,13 @@ systemd user service (above); after pulling a code update,
 `systemctl --user restart wallpaper-web`. Change the port via `WEB_PORT` in
 `install.sh`.
 
-**Remote access (optional)** — add `WEB_BIND="tailscale"` to
-`~/.local/state/wallpaper-rotator/config` and restart the service to ALSO bind
-this machine's Tailscale IP, so you can curate from a phone on your tailnet
-(`http://<tailnet-ip>:8787`). Any explicit IP works too. There's still no auth —
-only open it to networks where everyone is allowed to control the wallpaper.
+**Remote access (optional)** — flip the **Remote access** toggle in the
+controls (or set `WEB_BIND="tailscale"` in the config) to ALSO bind this
+machine's Tailscale IP, so you can curate from a phone on your tailnet — the
+page and footer show the reachable URL. Applying the toggle restarts the
+server (back in ~2s). Any explicit IP works too via the config. There's still
+no auth — only open it to networks where everyone is allowed to control the
+wallpaper.
 
 ---
 

@@ -24,7 +24,13 @@ QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; O
 OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0; THEME=
+CLOCK_FACE=classic; AI_WALLPAPER=0; AI_PROMPT=
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.
+WEB_BIND=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
+
+PORT="@@PORT@@"
+[ "$PORT" = "@@PORT""@@" ] && PORT=8787
 
 mkdir -p "$WEBDIR"
 [ -f "$LOG" ] || : > "$LOG"
@@ -78,7 +84,7 @@ esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
 
 # Per-source download tallies -> HTML rows.
 src_rows=""
-for s in $SOURCES; do
+for s in $SOURCES ai; do
   n=$(grep -c "\[download\] src=$s ok" "$LOG" 2>/dev/null); n=${n:-0}
   src_rows="${src_rows}<tr><td>${s}</td><td class=num>${n}</td></tr>"
 done
@@ -103,16 +109,21 @@ schk="";  [ "${OVERLAY_STATS:-0}" = 1 ]        && schk=" checked"
 spchk=""; [ "${STATS_SPARKLINE:-0}" = 1 ]      && spchk=" checked"
 wchk="";  [ "${OVERLAY_WEATHER:-0}" = 1 ]      && wchk=" checked"
 wichk=""; [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && wichk=" checked"
+aichk=""; [ "${AI_WALLPAPER:-0}" = 1 ]         && aichk=" checked"
+plschk="";[ "${OVERLAY_PULSE:-0}" = 1 ]        && plschk=" checked"
+wbchk=""; [ -n "${WEB_BIND:-}" ]               && wbchk=" checked"
 wicchk="";[ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ] && wicchk=" checked"
 wfchk=""; [ "${OVERLAY_WEATHER_FORECAST:-0}" = 1 ] && wfchk=" checked"
 clkchk="";[ "${OVERLAY_CLOCK:-0}" = 1 ]        && clkchk=" checked"
 c24chk="";[ "${CLOCK_24H:-1}" = 1 ]            && c24chk=" checked"
 cdchk=""; [ "${CLOCK_DATE:-0}" = 1 ]           && cdchk=" checked"
-POSNS="northwest north northeast west center east southwest south southeast"
+# "auto" lets the renderer pick the calmest region of each image per overlay.
+POSNS="auto northwest north northeast west center east southwest south southeast"
 qpos_opts=$(opts_for "${QUOTE_POS:-south}" $POSNS)
 spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
 wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
 cpos_opts=$(opts_for "${CLOCK_POS:-northwest}" $POSNS)
+ppos_opts=$(opts_for "${PULSE_POS:-east}" $POSNS)
 cstyle_opts=$(opts_for "${CLOCK_STYLE:-digital}" digital analogue)
 cface_opts=$(opts_for "${CLOCK_FACE:-classic}" classic minimal dots numbers)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
@@ -134,6 +145,26 @@ for t in nature landscape minimal space city abstract cars cycling animals dark 
   bgtheme_opts="$bgtheme_opts<label class=chip><input type=checkbox name=theme value=\"$t\"$s>$t</label>"
 done
 wloc_val=$(printf '%s' "${WEATHER_LOCATION:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
+aip_val=$(printf '%s' "${AI_PROMPT:-}"   | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
+purl_val=$(printf '%s' "${PULSE_URL:-}"  | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
+pjq_val=$(printf '%s' "${PULSE_JQ:-.}"   | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
+# Remote-access line: resolve the URL actually reachable from the tailnet.
+remote_url=""
+if [ -n "${WEB_BIND:-}" ]; then
+  if [ "$WEB_BIND" = tailscale ]; then
+    ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
+  else
+    ts_ip="$WEB_BIND"
+  fi
+  [ -n "$ts_ip" ] && remote_url="http://${ts_ip}:${PORT}"
+fi
+# Pre-built snippets: quotes inside a ${var:+...} expansion would be consumed
+# by the shell (quote removal applies within parameter expansions).
+remote_card=""; remote_foot=""
+if [ -n "$remote_url" ]; then
+  remote_card="<span class=fld><a href=\"$remote_url\" style=\"color:#7cc4ff\">$remote_url</a></span>"
+  remote_foot="<br>Remote (tailnet): <a href=\"$remote_url\" style=\"color:#7cc4ff\">$remote_url</a>"
+fi
 # Font dropdown: "default" + any of a common set that ImageMagick actually has.
 # NB: match via here-string, NOT `printf ... | grep -qx`. Under `set -o pipefail`
 # grep -q's early exit SIGPIPEs printf (exit 141), so the pipeline reports failure
@@ -313,6 +344,26 @@ cat >> "$WEBDIR/index.html" <<HTML
     </div></div>
   <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Background themes</span><span class=muted style=font-size:11px>none = any</span></div>
     <div class=ctl-row style="gap:6px">${bgtheme_opts}</div></div>
+  <div class=ctl-grp data-feat=ai><div class=ctl-hd><span class=ctl-lbl>AI dreamed</span>
+      <label class=tgl><input type=checkbox name=ai value=1${aichk}><span class=sw></span></label></div>
+    <div class=ctl-row>
+      <input type=text name=ai_prompt value="${aip_val}" placeholder="extra style words (optional)" size=22>
+      <span class=muted>generates images from live context (time, season, weather, theme) — ~30s each</span>
+    </div></div>
+  <div class=ctl-grp data-feat=pulse><div class=ctl-hd><span class=ctl-lbl>Pulse</span>
+      <label class=tgl><input type=checkbox name=pulse value=1${plschk}><span class=sw></span></label></div>
+    <div class=ctl-row>
+      <span class=fld><span class=muted>at</span><select name=pulse_pos>${ppos_opts}</select></span>
+      <input type=text name=pulse_url value="${purl_val}" placeholder="https://… or file://… JSON endpoint" size=24>
+      <input type=text name=pulse_jq value="${pjq_val}" placeholder="jq template" size=16>
+      <span class=muted>any JSON + a jq template &rarr; overlay lines, cached 5 min</span>
+    </div></div>
+  <div class=ctl-grp data-feat=remote><div class=ctl-hd><span class=ctl-lbl>Remote access</span>
+      <label class=tgl><input type=checkbox name=web_bind value=1${wbchk}><span class=sw></span></label></div>
+    <div class=ctl-row>
+      ${remote_card}
+      <span class=muted>binds the tailnet IP (no auth &mdash; trusted networks only); applying a change restarts the server, page back in ~2s</span>
+    </div></div>
   <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Appearance</span></div>
     <div class=ctl-row>
       <span class=fld><span class=muted>Style</span><select name=overlay_style>${style_opts}</select></span>
@@ -445,6 +496,6 @@ cat >> "$WEBDIR/index.html" <<HTML
 <pre id=recent-pre>${recent:-（no activity logged yet）}</pre>
 </details>
 </div></div>
-<div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · status auto-updates every 30s</div>
+<div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · status auto-updates every 30s${remote_foot}</div>
 </div></body></html>
 HTML

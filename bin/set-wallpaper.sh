@@ -35,6 +35,7 @@ OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
 OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
 CLOCK_FACE=classic
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -545,6 +546,47 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       style_block "$g" "$role" "$t"
     }
 
+    # "auto" overlay position: rank the 9 anchor regions of the frame by visual
+    # busyness (grayscale std-dev of a 34% corner crop) and give each auto-
+    # positioned overlay the CALMEST remaining spot, so text never sits on top
+    # of detail. Explicit positions of enabled overlays are reserved up front
+    # so auto never lands on one. The ranking is cached per source image — the
+    # 1-min clock re-render reuses it instead of re-analysing.
+    calm_rank() {
+      local g v
+      for g in northwest north northeast west center east southwest south southeast; do
+        v="$(convert "$RENDER" -gravity "$(imgrav "$g" Center)" -crop 34%x34%+0+0 +repage \
+              -colorspace Gray -resize 64x64 -format '%[fx:standard_deviation]' info: 2>>"$LOG")"
+        printf '%s %s\n' "${v:-1}" "$g"
+      done | sort -n | awk '{printf "%s ",$2}'
+    }
+    AUTO_RANK=""; AUTO_USED=" "
+    for _p in "${OVERLAY_QUOTE:-0}:${QUOTE_POS:-south}" "${OVERLAY_STATS:-0}:${STATS_POS:-northeast}" \
+              "${OVERLAY_WEATHER:-0}:${WEATHER_POS:-north}" "${OVERLAY_CLOCK:-0}:${CLOCK_POS:-northwest}" \
+              "${OVERLAY_PULSE:-0}:${PULSE_POS:-east}"; do
+      [ "${_p%%:*}" = 1 ] && [ "${_p#*:}" != auto ] && AUTO_USED="$AUTO_USED${_p#*:} "
+    done
+    pick_grav() {  # $1=configured pos $2=IM fallback -> sets PG (no subshell: state!)
+      local pos="$1" fb="$2" g cache key
+      if [ "$pos" != auto ]; then PG="$(imgrav "$pos" "$fb")"; return; fi
+      if [ -z "$AUTO_RANK" ]; then
+        cache="$STATEDIR/calm.cache"
+        key="$IMG $(stat -c%Y "$IMG" 2>/dev/null) $STYLE"
+        if [ -f "$cache" ] && [ "$(head -1 "$cache" 2>/dev/null)" = "$key" ]; then
+          AUTO_RANK="$(tail -1 "$cache")"
+        else
+          AUTO_RANK="$(calm_rank)"
+          printf '%s\n%s\n' "$key" "$AUTO_RANK" > "$cache" 2>/dev/null
+        fi
+      fi
+      for g in $AUTO_RANK; do
+        case "$AUTO_USED" in *" $g "*) continue;; esac
+        AUTO_USED="$AUTO_USED$g "
+        PG="$(imgrav "$g" "$fb")"; return
+      done
+      PG="$(imgrav "$fb" "$fb")"
+    }
+
     # Global gradient wash so edge text reads: scrim washes top+bottom, editorial
     # just the bottom. frosted/chips carry their own panels, so no global wash.
     case "$STYLE" in
@@ -583,7 +625,8 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       block="$STATEDIR/_stats.$$.png"
       if convert "$RD/0.png" "$RD/1.png" "$RD/2.png" "$RD/3.png" "$RD/4.png" \
            -background none -gravity West -append "$block" 2>>"$LOG"; then
-        style_block "$(imgrav "${STATS_POS:-northeast}" NorthEast)" stats "$block" && OVERLAYS="stats"
+        pick_grav "${STATS_POS:-northeast}" NorthEast
+        style_block "$PG" stats "$block" && OVERLAYS="stats"
       fi
       rm -rf "$RD"
     fi
@@ -602,13 +645,14 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         quote="$(pick_quote "${OVERLAY_QUOTE_DETAIL:-0}")"
         { printf '%s\x1f%s\n' "$ORIG" "${OVERLAY_QUOTE_DETAIL:-0}"; printf '%s' "$quote"; } > "$qcache"
       fi
-      emit "$(imgrav "${QUOTE_POS:-south}" South)" quote "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
+      pick_grav "${QUOTE_POS:-south}" South
+      emit "$PG" quote "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
     fi
     if [ "${OVERLAY_WEATHER:-0}" = 1 ]; then
       # weather_line emits "glyph<TAB>colour<TAB>text" (glyph/colour empty if icon off)
       IFS=$'\t' read -r wicon wcolor wtext < <(weather_line)
       if [ -n "$wtext" ]; then
-        wgrav="$(imgrav "${WEATHER_POS:-north}" North)"
+        pick_grav "${WEATHER_POS:-north}" North; wgrav="$PG"
         fcast=""; [ "${OVERLAY_WEATHER_FORECAST:-0}" = 1 ] && fcast="$(weather_forecast)"
         if [ -z "$fcast" ]; then
           # single current-conditions line (unchanged path)
@@ -651,7 +695,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       fi
     fi
     if [ "${OVERLAY_CLOCK:-0}" = 1 ]; then
-      cgrav="$(imgrav "${CLOCK_POS:-northwest}" NorthWest)"
+      pick_grav "${CLOCK_POS:-northwest}" NorthWest; cgrav="$PG"
       cblock="$STATEDIR/_clock.$$.png"
       if [ "${CLOCK_STYLE:-digital}" = analogue ]; then
         case "$OVERLAY_SIZE" in small) cd=104;; large) cd=176;; *) cd=136;; esac
@@ -683,6 +727,36 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         fi
         rm -rf "$CRD"
         [ -s "$cblock" ] && style_block "$cgrav" clock "$cblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}clock"
+      fi
+    fi
+    if [ "${OVERLAY_PULSE:-0}" = 1 ] && [ -n "${PULSE_URL:-}" ] && command -v jq >/dev/null 2>&1; then
+      # "Pulse" overlay: any JSON endpoint + a jq template -> a stats-style text
+      # block (one rendered line per output line, max 8). Generic on purpose —
+      # point PULSE_URL at a business/home-automation/CI endpoint and shape the
+      # lines with PULSE_JQ. file:// URLs work too (curl), so a local script
+      # can feed it. Cached ~5 min so renders don't hammer the endpoint.
+      pcache="$STATEDIR/pulse.txt"
+      if [ ! -f "$pcache" ] || find "$pcache" -mmin +5 2>/dev/null | grep -q .; then
+        curl -fsL --max-time 6 "$PULSE_URL" 2>>"$LOG" | jq -r "${PULSE_JQ:-.}" > "$pcache.tmp" 2>>"$LOG"
+        if [ -s "$pcache.tmp" ]; then mv "$pcache.tmp" "$pcache"; else rm -f "$pcache.tmp"; fi
+      fi
+      if [ -s "$pcache" ]; then
+        pf="$(role_font stats)"; pps=$(( BASEPS * 3 / 4 )); plh=$(( pps * 6 / 5 ))
+        PD="$STATEDIR/_pl.$$"; mkdir -p "$PD"; pn=0
+        while IFS= read -r pline; do
+          [ -n "$pline" ] || continue
+          stat_label "$PD/$pn.png" "$pline" "$pf" "$pps" "$plh"
+          pn=$((pn+1)); [ "$pn" -ge 8 ] && break
+        done < "$pcache"
+        if [ "$pn" -gt 0 ]; then
+          pblock="$STATEDIR/_pulse.$$.png"
+          pargs=(); pi=0; while [ "$pi" -lt "$pn" ]; do pargs+=("$PD/$pi.png"); pi=$((pi+1)); done
+          if convert "${pargs[@]}" -background none -gravity West -append "$pblock" 2>>"$LOG"; then
+            pick_grav "${PULSE_POS:-east}" East
+            style_block "$PG" pulse "$pblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}pulse"
+          fi
+        fi
+        rm -rf "$PD"
       fi
     fi
     IMG="$RENDER"

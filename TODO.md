@@ -1,5 +1,15 @@
 # wallpaper-rotator — TODO / roadmap
 
+## Done (2026-06-04, second batch)
+- ✅ AI-dreamed wallpapers (AI Horde, anonymous; context-built prompt; optional
+  pollinations AI_TOKEN fast path) with UI toggle + style-words field.
+- ✅ Pulse overlay: any JSON endpoint (+jq template) -> overlay lines; UI card.
+- ✅ Auto overlay placement ("auto" in every position select; busyness-ranked,
+  cached per image, explicit positions reserved).
+- ✅ Remote-access GUI: tailnet toggle (self-restarting bind), URL shown in
+  Remote card + footer.
+- ✅ Form-drift guard (untouched fields self-sync on soft refresh).
+
 ## Done (2026-06-04)
 - ✅ Curation buttons (Next / ★ Keep / 🚫 Ban) + favourites gallery in the web UI;
   `favourites/` pool subdir is rotation-included but prune-exempt.
