@@ -5,6 +5,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:52 BST — Fam1
+
+### Fixed
+- **"Text" colour select was inverted**: `OVERLAY_THEME` carried UI-theme
+  semantics (dark theme → white text), so picking "dark" gave light text and
+  vice versa. It now names the text colour itself — dark = black text,
+  light = white text — and the shipped default flips from `dark` to `light`
+  so the out-of-box look (white text) is unchanged. **Note for existing
+  installs**: a saved `OVERLAY_THEME="dark"` now renders black text — re-pick
+  in the web UI (or edit the config) if you want to stay white.
+
 ## 2026-06-04 05:47 BST — Fam1
 
 ### Changed

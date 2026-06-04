@@ -28,7 +28,7 @@ FETCHQ="@@FETCHQ@@"
 # Overlay defaults (the web UI overwrites these in the config).
 OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast
-OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
+OVERLAY_SIZE=medium; OVERLAY_THEME=light; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0
 OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
@@ -308,7 +308,10 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     STYLE="${OVERLAY_STYLE:-scrim}"
     ACCENT='#7cc4ff'
     case "$OVERLAY_SIZE" in small) BASEPS=20;; large) BASEPS=34;; *) BASEPS=27;; esac
-    case "$OVERLAY_THEME" in light) TXT=black;; accent) TXT="$ACCENT";; *) TXT=white;; esac
+    # OVERLAY_THEME names the TEXT colour (the control is labelled "Text"):
+    # dark = black text, light = white text. It used to mean the UI-theme sense
+    # (dark theme -> white text), which read backwards in the GUI (Fam1 2026-06-04).
+    case "$OVERLAY_THEME" in dark) TXT=black;; accent) TXT="$ACCENT";; *) TXT=white;; esac
     CW=$(identify -format '%w' "$RENDER" 2>/dev/null); [ -n "$CW" ] || CW="${RES%x*}"
     CH=$(identify -format '%h' "$RENDER" 2>/dev/null); [ -n "$CH" ] || CH="${RES#*x}"
     FONT_OVERRIDE=""

@@ -104,7 +104,7 @@ wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
 cpos_opts=$(opts_for "${CLOCK_POS:-northwest}" $POSNS)
 cstyle_opts=$(opts_for "${CLOCK_STYLE:-digital}" digital analogue)
 size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
-theme_opts=$(opts_for "${OVERLAY_THEME:-dark}" dark light accent)
+theme_opts=$(opts_for "${OVERLAY_THEME:-light}" light dark accent)
 style_opts=$(opts_for "${OVERLAY_STYLE:-scrim}" scrim frosted editorial chips)
 # Background theme select: "any" (empty) + presets.
 bg_cur="${THEME:-}"; bg_sel=""; [ -z "$bg_cur" ] && bg_sel=" selected"

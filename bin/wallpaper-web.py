@@ -54,7 +54,7 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_ST
             "THEME")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
-                "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "dark", "OVERLAY_FONT": "default",
+                "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
                 "OVERLAY_STYLE": "scrim", "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0",
                 "WEATHER_POS": "north", "WEATHER_LOCATION": "", "OVERLAY_WEATHER_ICON": "0",
                 "OVERLAY_WEATHER_ICON_COLOR": "0", "OVERLAY_WEATHER_FORECAST": "0",
@@ -175,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
         cfg["STATS_POS"]     = pick("stats_pos", ALLOWED_POS, "northeast")
         cfg["WEATHER_POS"]   = pick("weather_pos", ALLOWED_POS, "north")
         cfg["OVERLAY_SIZE"]  = pick("size", ALLOWED_SIZE, "medium")
-        cfg["OVERLAY_THEME"] = pick("overlay_theme", ALLOWED_THEME, "dark")
+        cfg["OVERLAY_THEME"] = pick("overlay_theme", ALLOWED_THEME, "light")
         cfg["OVERLAY_FONT"]  = pick("font", ALLOWED_FONT, "default")
         cfg["OVERLAY_STYLE"] = pick("overlay_style", ALLOWED_OVERLAY_STYLE, "scrim")
         cfg["CLOCK_STYLE"]   = pick("clock_style", ALLOWED_CLOCK_STYLE, "digital")
