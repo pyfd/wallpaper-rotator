@@ -5,6 +5,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 11:51 BST — paul-HP-ProDesk-400-G4-SFF
+
+### Fixed
+- **"✦ dreamed" badge hidden behind the desktop panel** — it composited
+  +12+8 from the image's bottom-right, and KDE/Cinnamon taskbars (~44-48px)
+  cover exactly that strip, so on panel-at-bottom desktops the signature was
+  never visible. Raised to +14+50 (clears typical panels, still tucked under
+  the southeast clock).
+
 ## 2026-06-04 11:34 BST — paul-HP-ProDesk-400-G4-SFF
 
 ### Fixed

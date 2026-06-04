@@ -760,13 +760,16 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       fi
     fi
     # AI-dreamed images (named *.ai.jpg by fetch-wallpaper) get a subtle
-    # signature: tiny, ~40% opacity, tucked into the bottom-right edge.
+    # signature: tiny, ~40% opacity, tucked into the bottom-right corner.
+    # 50px up from the bottom edge, NOT 8: desktop panels/taskbars (~44-48px
+    # on KDE/Cinnamon) sit over the bottom strip of the wallpaper, and at +8
+    # the badge was invisible behind them (paul-HP, 2026-06-04).
     case "$ORIG" in *.ai.jpg)
       sig="$STATEDIR/_sig.$$.png"
       if convert -background none -font DejaVu-Sans -pointsize 13 -fill white \
            label:"✦ dreamed" -trim +repage -channel A -evaluate multiply 0.4 +channel \
            "$sig" 2>>"$LOG" && [ -s "$sig" ]; then
-        convert "$RENDER" "$sig" -gravity SouthEast -geometry +12+8 -composite "$RENDER" 2>>"$LOG"
+        convert "$RENDER" "$sig" -gravity SouthEast -geometry +14+50 -composite "$RENDER" 2>>"$LOG"
       fi
       rm -f "$sig"
     ;; esac
