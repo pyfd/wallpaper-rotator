@@ -5,6 +5,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:35 BST — Fam1
+
+### Fixed
+- **Forecast day labels off by one** ("Today Thu Fri" shown on a Thursday):
+  wttr.in's `weather[0]` can still be *yesterday* early in the morning (its data
+  generation lags), and "Today" was baked into the 3h cache at fetch time so it
+  also went stale across midnight. The raw API dates are now cached instead and
+  labels are resolved at render time — each day's real date is compared to the
+  current date: past days are dropped, today's labelled "Today", the rest get
+  their weekday name.
+
 ## 2026-06-04 05:28 BST — Fam1
 
 ### Changed

@@ -235,21 +235,28 @@ weather_line() {
 weather_forecast() {
   local cache="$STATEDIR/forecast.struct" raw="$STATEDIR/forecast.raw" loc="${WEATHER_LOCATION:-}"
   command -v jq >/dev/null 2>&1 || return 0
-  if [ ! -f "$cache" ] || find "$cache" -mmin +180 2>/dev/null | grep -q .; then
+  # raw holds "date|hi|lo|condition" straight from the API, cached ~3h
+  if [ ! -f "$raw" ] || find "$raw" -mmin +180 2>/dev/null | grep -q .; then
     if curl -fsL --max-time 15 "https://wttr.in/${loc// /+}?format=j1" -o "$cache.json" 2>>"$LOG" && [ -s "$cache.json" ]; then
-      # date|maxC|minC|midday-condition for the next up-to-3 days
-      jq -r '.weather[0:3][] | "\(.date)|\(.maxtempC)|\(.mintempC)|\(.hourly[4].weatherDesc[0].value)"' "$cache.json" 2>/dev/null > "$raw"
-      local d hi lo desc dn i=0
-      while IFS='|' read -r d hi lo desc; do
-        [ -n "$d" ] || continue
-        if [ "$i" -eq 0 ]; then dn="Today"; else dn="$(date -d "$d" +%a 2>/dev/null || echo "$d")"; fi
-        printf '%s\t%s\t%s\t%s\n' "$dn" "$desc" "$hi" "$lo"
-        i=$((i+1))
-      done < "$raw" > "$cache.tmp"
-      [ -s "$cache.tmp" ] && mv "$cache.tmp" "$cache"
+      jq -r '.weather[0:3][] | "\(.date)|\(.maxtempC)|\(.mintempC)|\(.hourly[4].weatherDesc[0].value)"' "$cache.json" 2>/dev/null > "$raw.tmp"
+      [ -s "$raw.tmp" ] && mv "$raw.tmp" "$raw"
     fi
-    rm -f "$cache.json" "$raw" "$cache.tmp"
+    rm -f "$cache.json" "$raw.tmp"
   fi
+  # Label at RENDER time, not fetch time: wttr.in's weather[0] can still be
+  # YESTERDAY early in the morning (its data generation lags), and a "Today"
+  # baked into a 3h cache goes stale across midnight. Compare each day's real
+  # date to the current date — past days are DROPPED, today gets "Today",
+  # the rest get their weekday name. (Caught on Fam1 2026-06-04: showed
+  # "Today Thu Fri" on a Thursday.)
+  local d hi lo desc dn today; today="$(date +%F)"
+  while IFS='|' read -r d hi lo desc; do
+    [ -n "$d" ] || continue
+    [[ "$d" < "$today" ]] && continue
+    if [ "$d" = "$today" ]; then dn="Today"; else dn="$(date -d "$d" +%a 2>/dev/null || echo "$d")"; fi
+    printf '%s\t%s\t%s\t%s\n' "$dn" "$desc" "$hi" "$lo"
+  done < "$raw" 2>/dev/null > "$cache.tmp"
+  if [ -s "$cache.tmp" ]; then mv "$cache.tmp" "$cache"; else rm -f "$cache.tmp"; fi
   cat "$cache" 2>/dev/null
 }
 
