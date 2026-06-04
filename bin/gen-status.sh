@@ -106,6 +106,7 @@ for n in 3 5 10 15 30 60; do
 done
 qchk="";  [ "${OVERLAY_QUOTE:-0}" = 1 ]        && qchk=" checked"
 qdchk=""; [ "${OVERLAY_QUOTE_DETAIL:-0}" = 1 ] && qdchk=" checked"
+qmchk=""; [ "${QUOTE_MATCH_IMAGE:-0}" = 1 ]    && qmchk=" checked"
 schk="";  [ "${OVERLAY_STATS:-0}" = 1 ]        && schk=" checked"
 spchk=""; [ "${STATS_SPARKLINE:-0}" = 1 ]      && spchk=" checked"
 wchk="";  [ "${OVERLAY_WEATHER:-0}" = 1 ]      && wchk=" checked"
@@ -337,7 +338,8 @@ cat >> "$WEBDIR/index.html" <<HTML
       <label><input type=checkbox name=quote_detail value=1${qdchk}> Attribution</label>
       <span class=fld><span class=muted>at</span><select name=quote_pos>${qpos_opts}</select></span>
       <span class=fld><span class=muted>theme</span><select name=quote_theme>${qtheme_opts}</select></span>
-      <span class=muted>theme filters the bulk quote pool by topic</span>
+      <label><input type=checkbox name=quote_match value=1${qmchk}> Match image to quote</label>
+      <span class=muted>theme filters the bulk quote pool by topic; match makes AI-dreamed images illustrate their quote</span>
     </div></div>
   <div class=ctl-grp data-feat=stats><div class=ctl-hd><span class=ctl-lbl>System stats</span>
       <label class=tgl><input type=checkbox name=stats value=1${schk}><span class=sw></span></label></div>

@@ -42,18 +42,14 @@
 
 ## Open
 
-- [ ] **Option to link the image to the quote** (added 2026-06-04, Paul; design
-  discussion in dotfiles CHANGELOG 4 Jun). Make the wallpaper relate to the
-  quote being shown. Sketch: (a) **AI-dreamed pairing** — fetch-wallpaper
-  pre-draws the NEXT quote from the shuffle-bag, builds the gen prompt from it
-  ("an evocative scene inspired by: <quote>"), saves the quote as a sidecar
-  (`<img>.ai.jpg.quote`) beside the pool image; set-wallpaper prefers the
-  sidecar quote when rendering that image (slots into the existing per-image
-  quote cache). (b) **tag-matched sourcing** — map the quote's category tags
-  (5th cache field) to a wallhaven search for non-AI mode; much coarser.
-  GUI: "match image to quote" toggle in the Quote group, AI-mode first.
-  Open questions: gen failures fall back to unlinked pairing; anonymous Horde
-  640x384 res cap; whether linked mode replaces or interleaves the normal pool.
+- [x] **Option to link the image to the quote** — DONE 2026-06-04 (same day):
+  AI-dreamed pairing shipped as sketched (random bag draw → quote-driven
+  prompt → `<img>.quote` sidecar → renderer prefers sidecar, marks seen,
+  de-bags; orphan sidecar sweep; "Match image to quote" toggle in the Quote
+  group). Interleaves with the normal pool; gen failures fall back to
+  unlinked sources. Verified on Fam3 (gratitude quote → golden-meadow gen).
+  Remaining idea: (b) tag-matched wallhaven sourcing for non-AI mode —
+  moved to Ideas/later.
 
 ## Ideas / later
 - Weather: hourly (next-few-slots) forecast variant; the 3-day daily forecast line

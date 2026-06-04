@@ -5,6 +5,28 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 21:22 BST — Fam3
+
+### Added
+- **Quote-linked AI images ("Match image to quote")** — new Quote-group toggle
+  (`QUOTE_MATCH_IMAGE`): each AI generation draws a random quote from the
+  shuffle-bag (cache fallback) and builds its prompt from the quote text
+  instead of THEME ("an evocative, beautiful scene inspired by the quote:
+  ..., no text, no words"); on success the quote is saved as a
+  `<image>.quote` sidecar. The renderer prefers the sidecar when that image
+  is on screen (marks it seen + pulls it from the bag so it doesn't repeat
+  unlinked). Orphaned sidecars swept every fetch (prune/Keep/Ban only touch
+  the jpg). Verified on Fam3: gratitude quote → serene golden-meadow gen.
+- **Kudos-adaptive Horde frame** — registered keys: 704x448 (the KudosUpfront
+  ceiling moved to 705px for registered) or full 1024x576+ when the account
+  holds ≥15 kudos (balance checked per gen via `find_user`); anonymous stays
+  640x384. `AI_HORDE_KEY` set on Fam3 (registered, queue priority).
+
+### Fixed
+- **Tags leaked into quote attribution** — 5-field cache lines spilled the
+  tags field into `year`, rendering "(education, happiness, ...)" after the
+  author. The detail parser now reads the 5th field explicitly.
+
 ## 2026-06-04 21:04 BST — Fam3
 
 ### Fixed

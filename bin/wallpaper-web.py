@@ -51,7 +51,8 @@ ALLOWED_PULSE_TTL = {"1", "5", "15", "30"}
 ALLOWED_QUOTE_THEME = {"", "love", "life", "inspirational", "humor", "philosophy",
                        "wisdom", "happiness", "hope", "success", "romance",
                        "friendship", "science"}
-CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEME", "OVERLAY_STATS",
+CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEME",
+            "QUOTE_MATCH_IMAGE", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
             "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
             "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "OVERLAY_WEATHER_ICON_COLOR",
@@ -61,7 +62,7 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEM
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
             "PULSE_TITLE", "WEB_BIND")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
-                "QUOTE_THEME": "",
+                "QUOTE_THEME": "", "QUOTE_MATCH_IMAGE": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
                 "OVERLAY_STYLE": "scrim", "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0",
@@ -341,6 +342,7 @@ class Handler(BaseHTTPRequestHandler):
         pt = form.get("pulse_title", [""])[0].strip()
         cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", pt)[:40]
         cfg["QUOTE_THEME"] = pick("quote_theme", ALLOWED_QUOTE_THEME, "")
+        cfg["QUOTE_MATCH_IMAGE"] = "1" if form.get("quote_match") else "0"
         # Pulse settings changed -> drop the cached lines so the re-render that
         # follows this Apply fetches fresh with the new URL/template.
         if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old_pulse_url, old_pulse_jq):

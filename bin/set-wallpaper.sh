@@ -115,7 +115,20 @@ pick_quote() {
   # day by chance.)
   local cache="$STATEDIR/quotes.cache" bag="$STATEDIR/quotes.bag" seen="$STATEDIR/quotes.seen" line=""
   local tmark="$STATEDIR/quotes.bag.theme"
-  if [ -s "$cache" ]; then
+  # Quote-linked AI image: fetch-wallpaper generated this image FROM a quote
+  # and left it in a "<image>.quote" sidecar — show that quote, not a bag
+  # draw. Mark it seen and pull it from the bag so it doesn't come round
+  # again as an unlinked repeat.
+  if [ -n "${ORIG:-}" ] && [ -s "$ORIG.quote" ]; then
+    line="$(head -n1 "$ORIG.quote" 2>/dev/null)"
+    if [ -n "$line" ]; then
+      printf '%s\n' "${line%%|*}" >> "$seen"
+      if [ -f "$bag" ] && grep -qF "$line" "$bag" 2>/dev/null; then
+        grep -vF "$line" "$bag" > "$bag.tmp" 2>/dev/null && mv "$bag.tmp" "$bag" 2>/dev/null
+      fi
+    fi
+  fi
+  if [ -z "$line" ] && [ -s "$cache" ]; then
     if [ "$(cat "$tmark" 2>/dev/null)" != "${QUOTE_THEME:-}" ]; then
       printf '%s' "${QUOTE_THEME:-}" > "$tmark"     # theme changed (web UI) -> rebuild bag to match
       build_quote_bag "$cache" "$seen" "$bag"
@@ -142,8 +155,10 @@ pick_quote() {
     line=""
   fi
   if [ -n "$line" ]; then
-    local text author source year
-    IFS='|' read -r text author source year <<< "$line"
+    local text author source year tags
+    # 5th field = category tags (bulk seed) — read it so it can't spill into
+    # year and show up in the attribution
+    IFS='|' read -r text author source year tags <<< "$line"
     if [ "$detail" = 1 ] && [ -n "$author" ]; then
       local attr="$author"; [ -n "$source" ] && attr="$attr, $source"; [ -n "$year" ] && attr="$attr ($year)"
       printf '%s\n— %s' "$text" "$attr"
