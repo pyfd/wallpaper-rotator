@@ -5,6 +5,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:20 BST — Fam1
+
+### Fixed
+- **Re-running install.sh didn't restart a running wallpaper-web**, so the old
+  server kept handling POSTs from the freshly regenerated controls form — new
+  settings it didn't know (e.g. Clock) were silently dropped from the config on
+  every Apply. `systemctl --user enable --now` is a no-op when the unit is
+  already active; install.sh now does `enable` + `restart` so an upgrade always
+  brings the new server code live.
+
 ## 2026-06-03 10:46 BST — paul-HP-ProDesk-400-G4-SFF
 
 ### Changed

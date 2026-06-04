@@ -309,8 +309,12 @@ rm -f "$TMP"
 if command -v systemctl >/dev/null 2>&1 && [ -n "${XDG_RUNTIME_DIR:-}" ] \
    && systemctl --user show-environment >/dev/null 2>&1; then
   systemctl --user daemon-reload 2>/dev/null || true
-  if systemctl --user enable --now wallpaper-web.service 2>/dev/null; then
-    echo "    enabled + started -> http://127.0.0.1:${WEB_PORT}"
+  # enable + restart (NOT enable --now): --now is a no-op when the service is
+  # already running, leaving a stale server handling new-form POSTs after an
+  # upgrade (clock settings silently dropped, Fam1 2026-06-04).
+  if systemctl --user enable wallpaper-web.service 2>/dev/null \
+     && systemctl --user restart wallpaper-web.service 2>/dev/null; then
+    echo "    enabled + (re)started -> http://127.0.0.1:${WEB_PORT}"
     echo "    (starts at each login; for pre-login boot run: sudo loginctl enable-linger $TARGET_USER)"
   else
     echo "    WARNING: could not enable user service. Enable later with:"
