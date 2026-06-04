@@ -5,6 +5,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:28 BST — Fam1
+
+### Changed
+- **Smooth Apply + soft status refresh in the web UI.** "Apply changes" now
+  submits via fetch() and stays on the page: the button shows a spinner +
+  "Applying…" while the server works (a theme change can take a while), then
+  "Applied ✓" (green) or "Failed — try again" (red) — no more jarring full-page
+  POST→redirect→reload. The 30-second `<meta http-equiv=refresh>` full reload is
+  gone too: a background fetch swaps just the status cards / thumbnail /
+  downloads table / recent-activity log in place, never the form, so in-progress
+  edits survive and the thumbnail only reloads when the image actually changed.
+
 ## 2026-06-04 05:20 BST — Fam1
 
 ### Fixed

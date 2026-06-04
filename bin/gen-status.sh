@@ -139,7 +139,6 @@ host="$(hostname 2>/dev/null)"
 cat > "$WEBDIR/index.html" <<HTML
 <!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<meta http-equiv=refresh content=30>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,${favicon_b64}">
 <title>Wallpaper Rotator${host:+ · $host}${pool_count:+ — ${pool_count} imgs}</title>
 <style>
@@ -171,8 +170,14 @@ form.controls select,form.controls input[type=text]{background:#0f1115;color:#e6
 form.controls select:hover{border-color:#37425a}
 form.controls input[type=text]:focus,form.controls select:focus{border-color:#3a6df0}
 form.controls input[type=checkbox]{accent-color:#3a6df0;width:15px;height:15px;margin:0}
-.ctl-apply{margin-top:16px;background:#3a6df0;color:#fff;border:0;border-radius:8px;padding:10px 24px;cursor:pointer;font-weight:600;font-size:14px}
+.ctl-apply{margin-top:16px;background:#3a6df0;color:#fff;border:0;border-radius:8px;padding:10px 24px;cursor:pointer;font-weight:600;font-size:14px;min-width:170px;transition:background .15s}
 .ctl-apply:hover{background:#2f5fd6}
+/* AJAX submit states — colour-only feedback, min-width keeps the button steady */
+.ctl-apply.busy{background:#2a3b66;cursor:progress}
+.ctl-apply.done{background:#2e9e5b}
+.ctl-apply.err{background:#b5544f}
+.ctl-apply .spin{display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:ctlspin .7s linear infinite}
+@keyframes ctlspin{to{transform:rotate(360deg)}}
 /* card header with the feature name + an enable toggle on the right */
 .ctl-hd{display:flex;align-items:center;justify-content:space-between;margin:0 0 9px}
 .ctl-hd .ctl-lbl{margin:0}
@@ -189,15 +194,15 @@ form.controls input[type=checkbox]{accent-color:#3a6df0;width:15px;height:15px;m
 .ctl-grp.off .ctl-row{opacity:.55}
 </style></head><body><div class=wrap>
 <h1>🖼️ wallpaper-rotator</h1>
-<div class=sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
+<div class=sub id=page-sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
 HTML
 
 if [ "$have_thumb" = 1 ]; then
-  echo "<img class=cur src=\"current.jpg?$(date +%s)\" alt=\"current wallpaper\">" >> "$WEBDIR/index.html"
+  echo "<img class=cur id=cur-img data-img=\"${cur_img:-}\" src=\"current.jpg?$(date +%s)\" alt=\"current wallpaper\">" >> "$WEBDIR/index.html"
 fi
 
 cat >> "$WEBDIR/index.html" <<HTML
-<div class=grid>
+<div class=grid id=status-cards>
   <div class=card><div class=k>Pool</div><div class=v>${pool_count} <small>images · ${pool_size:-?}</small></div></div>
   <div class=card><div class=k>Current image</div><div class=v style=font-size:14px>${cur_img:-none}</div></div>
   <div class=card><div class=k>Last rotate</div><div class=v style=font-size:14px>${rotate_when:-never}</div></div>
@@ -264,12 +269,56 @@ cat >> "$WEBDIR/index.html" <<HTML
   }
   document.addEventListener('change',function(e){if(e.target.closest('.tgl'))sync();});
   sync();
+
+  // NB: this block sits inside gen-status.sh's UNQUOTED heredoc — no backticks,
+  // no template literals, no dollar signs anywhere in the JS.
+
+  // Pull fresh status out of a fetched copy of this page and swap it in place.
+  // The form itself is never touched, so in-progress edits survive a refresh.
+  function swapStatus(html){
+    var d=new DOMParser().parseFromString(html,'text/html');
+    ['page-sub','status-cards','src-table','recent-pre'].forEach(function(id){
+      var n=d.getElementById(id),o=document.getElementById(id);
+      if(n&&o)o.innerHTML=n.innerHTML;
+    });
+    // Only reload the thumbnail when the underlying image actually changed
+    // (the src cache-buster differs every regen and would flicker otherwise).
+    var ni=d.getElementById('cur-img'),oi=document.getElementById('cur-img');
+    if(ni&&oi&&ni.getAttribute('data-img')!==oi.getAttribute('data-img')){
+      oi.setAttribute('data-img',ni.getAttribute('data-img')||'');
+      oi.src=ni.getAttribute('src');
+    }
+  }
+  function refresh(){fetch('/').then(function(r){return r.text();}).then(swapStatus).catch(function(){});}
+  setInterval(refresh,30000);   // soft update — replaces the old meta-refresh full reload
+
+  // AJAX Apply: stay on the page, show progress on the button itself.
+  var form=document.querySelector('form.controls');
+  var btn=form&&form.querySelector('.ctl-apply');
+  if(form&&btn)form.addEventListener('submit',function(e){
+    e.preventDefault();
+    if(btn.disabled)return;
+    var idle='Apply changes';
+    btn.disabled=true;btn.classList.add('busy');
+    btn.innerHTML='<span class=spin></span>Applying…';
+    fetch('/set',{method:'POST',body:new URLSearchParams(new FormData(form))})
+      .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text();})
+      .then(function(html){          // POST redirects to /, so this IS the fresh page
+        swapStatus(html);
+        btn.classList.remove('busy');btn.classList.add('done');btn.textContent='Applied ✓';
+        setTimeout(function(){btn.classList.remove('done');btn.textContent=idle;btn.disabled=false;},1600);
+      })
+      .catch(function(){
+        btn.classList.remove('busy');btn.classList.add('err');btn.textContent='Failed — try again';
+        setTimeout(function(){btn.classList.remove('err');btn.textContent=idle;btn.disabled=false;},2600);
+      });
+  });
 })();
 </script>
 <h2>Downloads by source</h2>
-<table>${src_rows}</table>
+<table id=src-table>${src_rows}</table>
 <h2>Recent activity</h2>
-<pre>${recent:-（no activity logged yet）}</pre>
-<div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · auto-refreshes every 30s</div>
+<pre id=recent-pre>${recent:-（no activity logged yet）}</pre>
+<div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · status auto-updates every 30s</div>
 </div></body></html>
 HTML
