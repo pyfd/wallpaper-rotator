@@ -5,6 +5,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 07:37 BST — Fam1
+
+### Changed
+- **AI generation requests are now uncensored** (`nsfw:true, censor_nsfw:false`)
+  per user preference — the worker returns the image as generated instead of
+  substituting the card on a classifier false-positive. The censored-flag
+  rejection stays as a net for workers that force-censor regardless.
+
 ## 2026-06-04 07:36 BST — Fam1
 
 ### Fixed

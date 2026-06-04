@@ -108,8 +108,12 @@ fetch_ai() {  # AI-generated. The prompt builds itself from live context — tim
   # the renderer crop-fills to screen res, so a 16:9 gen upscales fine.
   local w=1024 h=576 body id i img
   [ "${RES%x*}" -ge 2560 ] 2>/dev/null && { w=1536; h=896; }
+  # nsfw:true + censor_nsfw:false = return the image as generated, never the
+  # black "CENSORED" card (worker NSFW classifiers false-positive on plain
+  # landscape prompts). The censored-flag check below stays as a net for
+  # workers configured to force-censor anyway.
   body="$(jq -n --arg p "$prompt" --argjson w "$w" --argjson h "$h" \
-          '{prompt:$p, params:{width:$w, height:$h, steps:25}, nsfw:false}')"
+          '{prompt:$p, params:{width:$w, height:$h, steps:25}, nsfw:true, censor_nsfw:false}')"
   id="$(curl -fsS --max-time 20 -X POST "https://stablehorde.net/api/v2/generate/async" \
         -H "apikey: 0000000000" -H "Content-Type: application/json" \
         -d "$body" 2>>"$LOG" | jq -r '.id // empty')"
