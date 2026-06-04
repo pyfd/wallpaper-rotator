@@ -81,7 +81,9 @@ with open(sys.argv[1], newline='', encoding='utf-8', errors='replace') as f:
             continue
         if not (20 <= len(q) <= 180):
             continue
-        print(f"{q}|{a}||")
+        # 5th field = category tags, drives the QUOTE_THEME filter in the GUI
+        tags = row[2].strip().lower().replace('|', ' ') if len(row) > 2 else ''
+        print(f"{q}|{a}|||{tags}")
 PYEOF
     fi
     rm -f "$BIG"
@@ -97,9 +99,11 @@ PYEOF
     } | grep -vE '^\|' | grep -E '.\|.' | awk -F'|' 'length($1)>=20 && length($1)<=180' | normalize > "$TMP" || true
   fi
   if [ "$(wc -l < "$TMP")" -ge 1000 ]; then
-    cat "$TMP" "$CACHE" 2>/dev/null | awk -F'|' 'NF && !s[$1]++' | head -n "$CAP" > "$TMP.merged" \
+    # `cat missing-cache` exits 1 and pipefail would skip the mv — first-ever
+    # seed (no cache yet) must not fail, hence the `|| true` inner cat
+    { cat "$TMP"; cat "$CACHE" 2>/dev/null || true; } | awk -F'|' 'NF && !s[$1]++' | head -n "$CAP" > "$TMP.merged" \
       && mv "$TMP.merged" "$CACHE"
-    log "[quotes] seeded bulk pool ($(wc -l < "$TMP") fetched -> cache $(wc -l < "$CACHE"))"
+    log "[quotes] seeded bulk pool ($(wc -l < "$TMP") fetched -> cache $(wc -l < "$CACHE" 2>/dev/null))"
     exit 0
   fi
   log "[quotes] seed failed (all bulk sources) — keeping existing cache"
@@ -115,9 +119,9 @@ for src in zenquotes quotable dummyjson; do
     # that overlapped the seen history emptied the shuffle-bag and reset the
     # history — quotes repeated long before the pool was exhausted. A growing
     # pool (+ the --seed bulk import) keeps the no-repeat cycle months long.
-    cat "$TMP" "$CACHE" 2>/dev/null | awk -F'|' 'NF && !s[$1]++' | head -n "$CAP" > "$TMP.merged" \
+    { cat "$TMP"; cat "$CACHE" 2>/dev/null || true; } | awk -F'|' 'NF && !s[$1]++' | head -n "$CAP" > "$TMP.merged" \
       && mv "$TMP.merged" "$CACHE"
-    log "[quotes] refreshed from $src ($(wc -l < "$TMP") new batch -> cache $(wc -l < "$CACHE"))"
+    log "[quotes] refreshed from $src ($(wc -l < "$TMP") new batch -> cache $(wc -l < "$CACHE" 2>/dev/null))"
     exit 0
   fi
 done

@@ -30,7 +30,7 @@ LOCALDIR="@@LOCALDIR@@"       # local image folder (used only if it exists + has
 # without re-running install.sh. Empty = no theme (untargeted).
 CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
-THEME=""; AI_WALLPAPER=0; AI_PROMPT=""; AI_TOKEN=""
+THEME=""; AI_WALLPAPER=0; AI_PROMPT=""; AI_TOKEN=""; AI_HORDE_KEY=""
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 # THEME may be a space-separated list (multi-theme rotation): each fetch picks
 # one at random, so the pool converges to a MIX of the selected themes.
@@ -106,8 +106,13 @@ fetch_ai() {  # AI-generated. The prompt builds itself from live context — tim
   fi
   # AI Horde: async submit -> poll -> download. Dims must be multiples of 64;
   # the renderer crop-fills to screen res, so a 16:9 gen upscales fine.
-  local w=1024 h=576 body id i img
+  local w=1024 h=576 body id i img key="${AI_HORDE_KEY:-0000000000}"
   [ "${RES%x*}" -ge 2560 ] 2>/dev/null && { w=1536; h=896; }
+  # Horde policy (caught 2026-06-04): anonymous keys get 403 KudosUpfront for
+  # any request over 665px — every gen silently missed. Anonymous now uses the
+  # largest allowed 64-multiple frame (the renderer upscales); set AI_HORDE_KEY
+  # (free registration, stablehorde.net) in the config for full-res gens.
+  [ "$key" = "0000000000" ] && { w=640; h=384; }
   # nsfw:true + censor_nsfw:false = return the image as generated, never the
   # black "CENSORED" card (worker NSFW classifiers false-positive on plain
   # landscape prompts). The censored-flag check below stays as a net for
@@ -115,7 +120,7 @@ fetch_ai() {  # AI-generated. The prompt builds itself from live context — tim
   body="$(jq -n --arg p "$prompt" --argjson w "$w" --argjson h "$h" \
           '{prompt:$p, params:{width:$w, height:$h, steps:25}, nsfw:true, censor_nsfw:false}')"
   id="$(curl -fsS --max-time 20 -X POST "https://stablehorde.net/api/v2/generate/async" \
-        -H "apikey: 0000000000" -H "Content-Type: application/json" \
+        -H "apikey: $key" -H "Content-Type: application/json" \
         -d "$body" 2>>"$LOG" | jq -r '.id // empty')"
   [ -n "$id" ] || return 1
   i=0

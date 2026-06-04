@@ -26,7 +26,7 @@ CONFIG="@@CONFIG@@"
 FETCHQ="@@FETCHQ@@"
 [ "$FETCHQ" = "@@FETCHQ""@@" ] && FETCHQ="$(dirname "$0")/fetch-quotes.sh"
 # Overlay defaults (the web UI overwrites these in the config).
-OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
+OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; QUOTE_THEME=""; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast
 OVERLAY_SIZE=medium; OVERLAY_THEME=light; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
@@ -79,16 +79,25 @@ imgrav() {
 # quotes. If everything known has been seen, the history resets so we can cycle
 # again rather than run dry.
 build_quote_bag() {  # $1=cache $2=seen $3=bag
-  local cache="$1" seen="$2" bag="$3"
+  local cache="$1" seen="$2" bag="$3" pool="$cache"
+  # QUOTE_THEME: keep only quotes whose tags field (5th — populated by the
+  # bulk seed from the Quotes-500K categories) mentions the theme. Substring
+  # match, so "inspirational" also catches "inspirational-quotes". Falls back
+  # to the whole cache when nothing matches (e.g. unseeded cache).
+  if [ -n "${QUOTE_THEME:-}" ]; then
+    awk -F'|' -v t="$QUOTE_THEME" 'index(tolower($5), t)' "$cache" > "$bag.pool" 2>/dev/null
+    [ -s "$bag.pool" ] && pool="$bag.pool"
+  fi
   if [ -s "$seen" ]; then
-    awk -F'|' 'NR==FNR{s[$0]=1; next} !($1 in s)' "$seen" "$cache" | shuf > "$bag" 2>/dev/null
+    awk -F'|' 'NR==FNR{s[$0]=1; next} !($1 in s)' "$seen" "$pool" | shuf > "$bag" 2>/dev/null
   else
-    shuf "$cache" > "$bag" 2>/dev/null
+    shuf "$pool" > "$bag" 2>/dev/null
   fi
   if [ ! -s "$bag" ]; then            # every known quote already seen -> reset + cycle
     : > "$seen"
-    shuf "$cache" > "$bag" 2>/dev/null
+    shuf "$pool" > "$bag" 2>/dev/null
   fi
+  rm -f "$bag.pool"
 }
 
 # A quote for the overlay. With detail, append attribution (author, source, year)
@@ -105,8 +114,12 @@ pick_quote() {
   # exhausted, at which point the seen list resets. (Plain `shuf -n1` repeated all
   # day by chance.)
   local cache="$STATEDIR/quotes.cache" bag="$STATEDIR/quotes.bag" seen="$STATEDIR/quotes.seen" line=""
+  local tmark="$STATEDIR/quotes.bag.theme"
   if [ -s "$cache" ]; then
-    if [ ! -e "$bag" ] || [ "$cache" -nt "$bag" ]; then
+    if [ "$(cat "$tmark" 2>/dev/null)" != "${QUOTE_THEME:-}" ]; then
+      printf '%s' "${QUOTE_THEME:-}" > "$tmark"     # theme changed (web UI) -> rebuild bag to match
+      build_quote_bag "$cache" "$seen" "$bag"
+    elif [ ! -e "$bag" ] || [ "$cache" -nt "$bag" ]; then
       build_quote_bag "$cache" "$seen" "$bag"       # first build, or cache refreshed by the daily cron
     elif [ ! -s "$bag" ]; then
       "$FETCHQ" >/dev/null 2>&1 || true             # bag empty = every quote shown -> pull a new batch

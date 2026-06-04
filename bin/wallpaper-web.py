@@ -47,16 +47,21 @@ ALLOWED_OVERLAY_STYLE = {"scrim", "frosted", "editorial", "chips"}
 ALLOWED_CLOCK_STYLE = {"digital", "analogue"}
 ALLOWED_CLOCK_FACE = {"classic", "minimal", "dots", "numbers"}
 ALLOWED_PULSE_TTL = {"1", "5", "15", "30"}
-CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_STATS",
+# Keep in sync with the qtheme_opts list in gen-status.sh
+ALLOWED_QUOTE_THEME = {"", "love", "life", "inspirational", "humor", "philosophy",
+                       "wisdom", "happiness", "hope", "success", "romance",
+                       "friendship", "science"}
+CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEME", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
             "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
             "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "OVERLAY_WEATHER_ICON_COLOR",
             "OVERLAY_WEATHER_FORECAST",
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
-            "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN",
+            "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN", "AI_HORDE_KEY",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
             "PULSE_TITLE", "WEB_BIND")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
+                "QUOTE_THEME": "",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
                 "OVERLAY_STYLE": "scrim", "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0",
@@ -67,8 +72,10 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 "CLOCK_POS": "northwest", "CLOCK_24H": "1",
                 "CLOCK_DATE": "0", "THEME": "",
                 # AI_TOKEN: config-file only (not a form field) — optional
-                # pollinations.ai token for the fast generation path
-                "AI_WALLPAPER": "0", "AI_PROMPT": "", "AI_TOKEN": "",
+                # pollinations.ai token for the fast generation path.
+                # AI_HORDE_KEY: config-file only — registered AI Horde key for
+                # full-res gens (anonymous is capped at 640x384 by Horde policy)
+                "AI_WALLPAPER": "0", "AI_PROMPT": "", "AI_TOKEN": "", "AI_HORDE_KEY": "",
                 "OVERLAY_PULSE": "0", "PULSE_POS": "east",
                 "PULSE_URL": "", "PULSE_JQ": ".", "PULSE_TTL": "5",
                 "PULSE_TITLE": "",
@@ -333,6 +340,7 @@ class Handler(BaseHTTPRequestHandler):
         cfg["PULSE_TTL"] = pick("pulse_ttl", ALLOWED_PULSE_TTL, "5")
         pt = form.get("pulse_title", [""])[0].strip()
         cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", pt)[:40]
+        cfg["QUOTE_THEME"] = pick("quote_theme", ALLOWED_QUOTE_THEME, "")
         # Pulse settings changed -> drop the cached lines so the re-render that
         # follows this Apply fetches fresh with the new URL/template.
         if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old_pulse_url, old_pulse_jq):

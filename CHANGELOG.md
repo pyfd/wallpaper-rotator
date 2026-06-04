@@ -5,6 +5,29 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 21:04 BST — Fam3
+
+### Fixed
+- **AI dreamed gens all silently missing (Horde KudosUpfront)** — AI Horde now
+  403s anonymous requests over 665px ("KudosUpfront" policy), so every
+  1024x576 submit failed in ~1s (`src=ai miss`). Anonymous gens now use
+  640x384 (largest allowed 64-multiple frame; renderer crop-fills up); new
+  optional `AI_HORDE_KEY` config (free stablehorde.net registration) restores
+  full-res. Verified: first-ever `.ai.jpg` landed on Fam3 ~70s after the fix.
+- **First-ever quote seed/refresh failed with no cache file** — the merge
+  began `cat "$TMP" "$CACHE"`; with no cache yet, cat exits 1 and pipefail
+  skipped the `mv`, so no cache was ever written (self-perpetuating). Inner
+  cat now tolerates a missing cache.
+
+### Added
+- **Quote themes in the web UI** — new "theme" select in the Quote group
+  (any / love / life / inspirational / humor / philosophy / wisdom /
+  happiness / hope / success / romance / friendship / science). The bulk seed
+  now keeps each quote's Quotes-500K category tags as a 5th cache field;
+  `QUOTE_THEME` filters the shuffle-bag by tag substring (falls back to the
+  whole pool when nothing matches, e.g. unseeded cache); theme changes
+  rebuild the bag on the next render via a marker file.
+
 ## 2026-06-04 20:50 BST — Fam3
 
 ### Added

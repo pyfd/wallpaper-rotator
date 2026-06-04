@@ -130,6 +130,13 @@ for n in 1 5 15 30; do
   s=""; [ "${PULSE_TTL:-5}" = "$n" ] && s=" selected"
   pttl_opts="${pttl_opts}<option value=\"$n\"$s>${n} min</option>"
 done
+# Quote themes: tag filter over the bulk-seeded pool (Quotes-500K categories).
+# Keep in sync with ALLOWED_QUOTE_THEME in wallpaper-web.py.
+qtheme_opts="<option value=\"\">any</option>"
+for t in love life inspirational humor philosophy wisdom happiness hope success romance friendship science; do
+  s=""; [ "${QUOTE_THEME:-}" = "$t" ] && s=" selected"
+  qtheme_opts="${qtheme_opts}<option value=\"$t\"$s>$t</option>"
+done
 # Current cached pulse lines (what the overlay is actually showing right now)
 pulse_now=""
 [ -s "$(dirname "$LOG")/pulse.txt" ] && pulse_now="$(head -8 "$(dirname "$LOG")/pulse.txt" | sed 's/&/\&amp;/g; s/</\&lt;/g')"
@@ -329,6 +336,8 @@ cat >> "$WEBDIR/index.html" <<HTML
     <div class=ctl-row>
       <label><input type=checkbox name=quote_detail value=1${qdchk}> Attribution</label>
       <span class=fld><span class=muted>at</span><select name=quote_pos>${qpos_opts}</select></span>
+      <span class=fld><span class=muted>theme</span><select name=quote_theme>${qtheme_opts}</select></span>
+      <span class=muted>theme filters the bulk quote pool by topic</span>
     </div></div>
   <div class=ctl-grp data-feat=stats><div class=ctl-hd><span class=ctl-lbl>System stats</span>
       <label class=tgl><input type=checkbox name=stats value=1${schk}><span class=sw></span></label></div>
