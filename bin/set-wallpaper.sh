@@ -35,7 +35,7 @@ OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
 OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
 CLOCK_FACE=classic
-OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."; PULSE_TTL=5
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."; PULSE_TTL=5; PULSE_TITLE=""
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -779,15 +779,71 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       if [ -s "$pcache" ]; then
         pf="$(role_font stats)"; pps=$(( BASEPS * 3 / 4 )); plh=$(( pps * 6 / 5 ))
         PD="$STATEDIR/_pl.$$"; mkdir -p "$PD"; pn=0
+        # Lines containing "|" render as a two-column row — muted label left,
+        # bold ACCENT value right-aligned — so the numbers pop and carry their
+        # context. Plain lines keep the old flat stats-style rendering.
+        pkv=0
         while IFS= read -r pline; do
           [ -n "$pline" ] || continue
-          stat_label "$PD/$pn.png" "$pline" "$pf" "$pps" "$plh"
+          case "$pline" in
+            *"|"*)
+              convert -background none -font "$pf" -pointsize "$pps" -fill "$TXT" \
+                label:"${pline%%|*}" -trim +repage -channel A -evaluate multiply 0.78 +channel \
+                "$PD/$pn.l.png" 2>>"$LOG"
+              convert -background none -font "$pf" -pointsize "$pps" -fill "$ACCENT" \
+                label:"${pline#*|}" -trim +repage "$PD/$pn.v.png" 2>>"$LOG" \
+                || stat_label "$PD/$pn.png" "${pline%%|*} ${pline#*|}" "$pf" "$pps" "$plh"
+              pkv=1 ;;
+            *) stat_label "$PD/$pn.png" "$pline" "$pf" "$pps" "$plh" ;;
+          esac
           pn=$((pn+1)); [ "$pn" -ge 8 ] && break
         done < "$pcache"
         if [ "$pn" -gt 0 ]; then
+          # Column widths: align every label column and right-align every value.
+          pmaxl=0; pmaxv=0
+          if [ "$pkv" = 1 ]; then
+            for f in "$PD"/*.l.png; do [ -f "$f" ] || continue
+              w=$(identify -format '%w' "$f" 2>/dev/null) && [ "$w" -gt "$pmaxl" ] && pmaxl=$w; done
+            for f in "$PD"/*.v.png; do [ -f "$f" ] || continue
+              w=$(identify -format '%w' "$f" 2>/dev/null) && [ "$w" -gt "$pmaxv" ] && pmaxv=$w; done
+          fi
           pblock="$STATEDIR/_pulse.$$.png"
-          pargs=(); pi=0; while [ "$pi" -lt "$pn" ]; do pargs+=("$PD/$pi.png"); pi=$((pi+1)); done
-          if convert "${pargs[@]}" -background none -gravity West -append "$pblock" 2>>"$LOG"; then
+          pargs=(); pi=0
+          while [ "$pi" -lt "$pn" ]; do
+            if [ -f "$PD/$pi.l.png" ] && [ -f "$PD/$pi.v.png" ]; then
+              convert \( "$PD/$pi.l.png" -background none -gravity West -extent "${pmaxl}x$plh" \) \
+                      \( -size $(( pps * 4 / 3 ))x1 xc:none \) \
+                      \( "$PD/$pi.v.png" -background none -gravity East -extent "${pmaxv}x$plh" \) \
+                      -background none -gravity center +append "$PD/$pi.png" 2>>"$LOG"
+            fi
+            [ -f "$PD/$pi.png" ] && pargs+=("$PD/$pi.png")
+            pi=$((pi+1))
+          done
+          if [ "${#pargs[@]}" -gt 0 ] && convert "${pargs[@]}" -background none -gravity West -append "$pblock" 2>>"$LOG"; then
+            # Optional header: PULSE_TITLE + freshness time (cache mtime) over a
+            # thin accent rule — answers "what is this and how current is it?".
+            if [ -n "${PULSE_TITLE:-}" ]; then
+              tps=$(( BASEPS * 7 / 8 ))
+              convert -background none -font "$pf" -pointsize "$tps" -fill "$TXT" \
+                label:"$PULSE_TITLE" -trim +repage "$PD/t.png" 2>>"$LOG"
+              ptime="$(date -r "$pcache" +%H:%M 2>/dev/null)"
+              if [ -n "$ptime" ] && [ -f "$PD/t.png" ]; then
+                convert -background none -font "$pf" -pointsize $(( pps * 4 / 5 )) -fill "$TXT" \
+                  label:"@ $ptime" -trim +repage -channel A -evaluate multiply 0.55 +channel "$PD/tt.png" 2>>"$LOG"
+                [ -f "$PD/tt.png" ] && convert "$PD/t.png" \( -size ${pps}x1 xc:none \) "$PD/tt.png" \
+                  -background none -gravity South +append "$PD/t.png" 2>>"$LOG"
+              fi
+              if [ -f "$PD/t.png" ]; then
+                pbw=$(identify -format '%w' "$pblock" 2>/dev/null); tw=$(identify -format '%w' "$PD/t.png" 2>/dev/null)
+                [ -n "$pbw" ] && [ -n "$tw" ] || pbw=""
+                if [ -n "$pbw" ]; then
+                  [ "$tw" -gt "$pbw" ] && pbw=$tw
+                  convert -size "${pbw}x2" "xc:$ACCENT" -alpha set -channel A -evaluate set 60% +channel "$PD/rule.png" 2>>"$LOG"
+                  convert "$PD/t.png" \( -size 1x5 xc:none \) "$PD/rule.png" \( -size 1x8 xc:none \) "$pblock" \
+                    -background none -gravity West -append "$pblock.tmp" 2>>"$LOG" && mv "$pblock.tmp" "$pblock"
+                fi
+              fi
+            fi
             pick_grav "${PULSE_POS:-east}" East
             style_block "$PG" pulse "$pblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}pulse"
           fi

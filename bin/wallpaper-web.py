@@ -55,7 +55,7 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "OVERLAY_ST
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
-            "WEB_BIND")
+            "PULSE_TITLE", "WEB_BIND")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
@@ -71,6 +71,7 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 "AI_WALLPAPER": "0", "AI_PROMPT": "", "AI_TOKEN": "",
                 "OVERLAY_PULSE": "0", "PULSE_POS": "east",
                 "PULSE_URL": "", "PULSE_JQ": ".", "PULSE_TTL": "5",
+                "PULSE_TITLE": "",
                 # not a form field — set in the config file, needs a service
                 # restart: "" = localhost only, "tailscale" = + tailnet IP,
                 # or an explicit extra IP to bind
@@ -330,6 +331,8 @@ class Handler(BaseHTTPRequestHandler):
         pj = form.get("pulse_jq", ["."])[0].replace("\n", " ").replace("\r", "").strip()
         cfg["PULSE_JQ"] = pj[:200] or "."
         cfg["PULSE_TTL"] = pick("pulse_ttl", ALLOWED_PULSE_TTL, "5")
+        pt = form.get("pulse_title", [""])[0].strip()
+        cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", pt)[:40]
         # Pulse settings changed -> drop the cached lines so the re-render that
         # follows this Apply fetches fresh with the new URL/template.
         if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old_pulse_url, old_pulse_jq):

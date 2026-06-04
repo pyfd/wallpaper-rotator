@@ -5,6 +5,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 20:37 BST — Fam3
+
+### Changed
+- **Pulse overlay restyled** — was 8 flat mono lines ("ready 8"), now: lines
+  containing `|` render as two aligned columns (muted label left, ACCENT
+  value right-aligned) so the numbers pop and carry context; new optional
+  `PULSE_TITLE` config renders a header with a freshness time (cache mtime,
+  `@ HH:MM`) over a thin accent rule. Plain lines unchanged — the overlay
+  stays generic for any JSON endpoint. Web UI gains a Pulse "title" field
+  (persisted via wallpaper-web; gen-status renders it). Pair with
+  workshop-service `/api/pulse` `.lines_kv[]` for the SCB shape.
+
 ## 2026-06-04 20:25 BST — Fam3
 
 ### Added

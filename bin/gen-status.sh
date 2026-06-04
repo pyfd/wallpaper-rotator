@@ -157,6 +157,7 @@ wloc_val=$(printf '%s' "${WEATHER_LOCATION:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/
 aip_val=$(printf '%s' "${AI_PROMPT:-}"   | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
 purl_val=$(printf '%s' "${PULSE_URL:-}"  | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
 pjq_val=$(printf '%s' "${PULSE_JQ:-.}"   | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
+ptitle_val=$(printf '%s' "${PULSE_TITLE:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
 # Remote-access line: resolve the URL actually reachable from the tailnet.
 remote_url=""
 if [ -n "${WEB_BIND:-}" ]; then
@@ -366,7 +367,8 @@ cat >> "$WEBDIR/index.html" <<HTML
     <div class=ctl-row style="margin-bottom:8px">
       <span class=fld><span class=muted>at</span><select name=pulse_pos>${ppos_opts}</select></span>
       <span class=fld><span class=muted>refresh every</span><select name=pulse_ttl>${pttl_opts}</select></span>
-      <span class=muted>any JSON endpoint (http/https/file) + a jq template &rarr; one overlay line per output line (max 8)</span>
+      <span class=fld><span class=muted>title</span><input type=text name=pulse_title value="${ptitle_val}" placeholder="SCB pulse (optional header)" size=18></span>
+      <span class=muted>any JSON endpoint (http/https/file) + a jq template &rarr; one overlay line per output line (max 8); "label|value" lines render as aligned label/value columns</span>
     </div>
     <div class=ctl-row style="margin-bottom:8px">
       <span class=fld style="flex:1"><span class=muted>URL</span><input type=text name=pulse_url value="${purl_val}" placeholder="https://host:3000/api/pulse or file:///path/data.json" style="flex:1;min-width:260px"></span>
