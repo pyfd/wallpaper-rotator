@@ -144,7 +144,17 @@ cat > "$WEBDIR/index.html" <<HTML
 <style>
 :root{color-scheme:dark}
 body{margin:0;background:#14161a;color:#e6e8ec;font:14px/1.5 system-ui,sans-serif}
-.wrap{max-width:860px;margin:0 auto;padding:24px}
+.wrap{max-width:1560px;margin:0 auto;padding:20px 28px}
+/* Wide screens: status (thumb + cards) left, controls right — interactive bits
+   above the fold; downloads/activity diagnostics flow below-left. Narrow
+   screens keep the original single-column stack (source order). */
+@media(min-width:1100px){
+  .cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);column-gap:28px;align-items:start}
+  .col-status{grid-column:1;grid-row:1}
+  .col-ctl{grid-column:2;grid-row:1/span 2}
+  .col-extra{grid-column:1;grid-row:2}
+  .col-ctl>h2:first-child{margin-top:0}
+}
 h1{font-size:20px;margin:0 0 2px} .sub{color:#8a909a;font-size:12px;margin-bottom:20px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
 .card{background:#1c1f26;border:1px solid #262a33;border-radius:10px;padding:14px}
@@ -195,6 +205,7 @@ form.controls input[type=checkbox]{accent-color:#3a6df0;width:15px;height:15px;m
 </style></head><body><div class=wrap>
 <h1>🖼️ wallpaper-rotator</h1>
 <div class=sub id=page-sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
+<div class=cols><div class=col-status>
 HTML
 
 if [ "$have_thumb" = 1 ]; then
@@ -210,6 +221,7 @@ cat >> "$WEBDIR/index.html" <<HTML
   <div class=card><div class=k>Pruned (total)</div><div class=v>${pruned_total:-0}</div></div>
   <div class=card><div class=k>Download misses / fails</div><div class=v>${dl_miss:-0} <small>/ ${dl_fail:-0}</small></div></div>
 </div>
+</div><div class=col-ctl>
 <h2>Controls</h2>
 <form class=controls method=post action="/set">
 <div class=ctl-grid>
@@ -315,10 +327,12 @@ cat >> "$WEBDIR/index.html" <<HTML
   });
 })();
 </script>
+</div><div class=col-extra>
 <h2>Downloads by source</h2>
 <table id=src-table>${src_rows}</table>
 <h2>Recent activity</h2>
 <pre id=recent-pre>${recent:-（no activity logged yet）}</pre>
+</div></div>
 <div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · status auto-updates every 30s</div>
 </div></body></html>
 HTML

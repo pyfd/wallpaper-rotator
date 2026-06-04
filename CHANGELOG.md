@@ -5,6 +5,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:42 BST — Fam1
+
+### Changed
+- **Wide-screen two-column layout for the web UI.** The page was an 860px
+  centre column, pushing Controls below the fold on a desktop monitor. Now up
+  to 1560px wide: ≥1100px viewports get thumbnail + status cards on the left
+  with the Controls form alongside on the right (downloads/recent-activity
+  diagnostics flow below-left); narrow/mobile keeps the single-column stack.
+
 ## 2026-06-04 05:38 BST — Fam1
 
 ### Changed
