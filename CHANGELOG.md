@@ -5,6 +5,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 07:36 BST — Fam1
+
+### Fixed
+- **AI Horde "CENSORED" card no longer saved as a wallpaper.** A worker NSFW
+  false-positive (on a sky prompt!) replaces the generation with a black
+  text card and sets `generations[].censored` — one landed on the desktop.
+  fetch_ai now checks the flag and rejects the card (falling through to the
+  normal sources); the response was otherwise indistinguishable from a valid
+  image.
+
 ## 2026-06-04 07:29 BST — Fam1
 
 ### Added

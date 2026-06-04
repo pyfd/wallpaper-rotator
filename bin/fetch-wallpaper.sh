@@ -121,8 +121,17 @@ fetch_ai() {  # AI-generated. The prompt builds itself from live context — tim
          | jq -r '.done // empty')" = true ] && break
     i=$((i+1))
   done
-  img="$(curl -fsS --max-time 15 "https://stablehorde.net/api/v2/generate/status/$id" 2>>"$LOG" \
-         | jq -r '.generations[0].img // empty')"
+  local stj
+  stj="$(curl -fsS --max-time 15 "https://stablehorde.net/api/v2/generate/status/$id" 2>>"$LOG")"
+  img="$(printf '%s' "$stj" | jq -r '.generations[0].img // empty')"
+  # A worker NSFW false-positive replaces the image with a text "CENSORED"
+  # card and sets generations[].censored — reject it (fall through to the
+  # normal sources) instead of saving the card as a wallpaper (Fam1
+  # 2026-06-04: the card ended up on the desktop).
+  if [ "$(printf '%s' "$stj" | jq -r '.generations[0].censored // false')" = "true" ]; then
+    log "[download] ai censored-card rejected (worker NSFW false-positive)"
+    return 1
+  fi
   [ -n "$img" ] || return 1
   curl -fsL --max-time 60 "$img" -o "$TMP.webp" 2>>"$LOG" || { rm -f "$TMP.webp"; return 1; }
   convert "$TMP.webp" jpg:"$TMP" 2>>"$LOG"               # horde serves webp; pool is jpg
