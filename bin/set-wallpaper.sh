@@ -235,8 +235,13 @@ weather_line() {
 weather_forecast() {
   local cache="$STATEDIR/forecast.struct" raw="$STATEDIR/forecast.raw" loc="${WEATHER_LOCATION:-}"
   command -v jq >/dev/null 2>&1 || return 0
-  # raw holds "date|hi|lo|condition" straight from the API, cached ~3h
-  if [ ! -f "$raw" ] || find "$raw" -mmin +180 2>/dev/null | grep -q .; then
+  # raw holds "date|hi|lo|condition" straight from the API, cached ~3h — but
+  # only ~30min while its first day is already in the past (wttr.in serves
+  # yesterday-led data pre-rollover early in the morning), so the dropped-day
+  # 2-day display recovers to 3 days soon after the API catches up.
+  local ttl=180 today; today="$(date +%F)"
+  [ -f "$raw" ] && [[ "$(head -c10 "$raw" 2>/dev/null)" < "$today" ]] && ttl=30
+  if [ ! -f "$raw" ] || find "$raw" -mmin +$ttl 2>/dev/null | grep -q .; then
     if curl -fsL --max-time 15 "https://wttr.in/${loc// /+}?format=j1" -o "$cache.json" 2>>"$LOG" && [ -s "$cache.json" ]; then
       jq -r '.weather[0:3][] | "\(.date)|\(.maxtempC)|\(.mintempC)|\(.hourly[4].weatherDesc[0].value)"' "$cache.json" 2>/dev/null > "$raw.tmp"
       [ -s "$raw.tmp" ] && mv "$raw.tmp" "$raw"
@@ -249,7 +254,7 @@ weather_forecast() {
   # date to the current date — past days are DROPPED, today gets "Today",
   # the rest get their weekday name. (Caught on Fam1 2026-06-04: showed
   # "Today Thu Fri" on a Thursday.)
-  local d hi lo desc dn today; today="$(date +%F)"
+  local d hi lo desc dn
   while IFS='|' read -r d hi lo desc; do
     [ -n "$d" ] || continue
     [[ "$d" < "$today" ]] && continue

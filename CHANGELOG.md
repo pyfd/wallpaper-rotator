@@ -5,6 +5,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 05:38 BST — Fam1
+
+### Changed
+- **Faster recovery from the 2-day forecast.** While the cached forecast still
+  leads with a past day (wttr.in pre-rollover, so only Today + 1 render after
+  the past-day drop), the raw cache TTL is cut from 3h to 30min — the third day
+  reappears soon after the API catches up instead of waiting out the full cache.
+
 ## 2026-06-04 05:35 BST — Fam1
 
 ### Fixed
