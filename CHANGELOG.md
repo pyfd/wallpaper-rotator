@@ -5,6 +5,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-04 06:49 BST — Fam1
+
+### Fixed
+- **Apply hung on "Applying…" when switching AI dreamed on** — the convergence
+  fetch ran synchronously inside the POST, and an AI generation takes minutes.
+  The AI-on path now converges entirely in the background (generate → show →
+  top up 3 more → prune → regen page); Apply returns immediately and the first
+  dreamed image appears on the desktop when ready (~1-3 min).
+
 ## 2026-06-04 06:26 BST — Fam1
 
 ### Added

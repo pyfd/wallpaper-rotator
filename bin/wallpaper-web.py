@@ -320,7 +320,23 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
         ai_turned_on = cfg["AI_WALLPAPER"] == "1" and old_ai != "1"
-        if set(cfg["THEME"].split()) != set(old_theme.split()) or ai_turned_on:
+        if ai_turned_on:
+            # AI generation takes minutes — converge ENTIRELY in the background
+            # (generate one, show it, top up a few more, prune) so Apply returns
+            # immediately instead of pinning the button on "Applying…".
+            try:
+                subprocess.Popen(
+                    ["bash", "-c",
+                     "%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
+                     "for i in 1 2 3; do %s; done; "
+                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --; %s"
+                     % (FETCH, POOL, SETWP, FETCH, POOL, GENSTATUS)],
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+            self._done(); return
+        if set(cfg["THEME"].split()) != set(old_theme.split()):
             # Theme changed: only wallhaven honours the theme and the pool is mostly
             # theme-blind, so a plain re-render shows nothing new. Fetch a themed
             # image NOW and display it (instant feedback), then top up with more
