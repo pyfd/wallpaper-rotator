@@ -5,6 +5,30 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-05 19:57 BST — Fam3
+
+### Fixed
+- **Image duplication** (Paul: "sooo much duplication with the images — I
+  thought we'd fixed?"). The 06-04 shuffle-bag DID stop pick-repeats, but the
+  duplication was upstream: curated feeds re-serve the same picture for hours
+  (Bing's 8-image daily archive especially — 23 bing fetches today), and every
+  re-download landed as a NEW pool file under a fresh timestamped name. By
+  tonight 13 of 84 pool files were byte-copies of just 4 pictures, so the bag
+  honestly rotated through "different" files showing the same wallpaper.
+  - **fetch-wallpaper.sh now content-hash dedups at accept time**: candidate
+    md5 checked against the whole pool (favourites included); matches are
+    discarded and the fetcher moves to the next source.
+  - **Logging for future verification** (Paul's ask): every discard logs
+    `[download] src=X dup (md5 matches <file>) -- discarded, trying next
+    source` — verified live the same minute (two forced bing fetches both
+    matched + discarded). Health check: `md5sum pool/* | sort | uniq -cd`
+    should stay empty while dup-discard lines appear in the log.
+  - **Rotate log now carries `bag=N/M`** (unseen-in-bag / pool size) so bag
+    resets and pool churn are visible in the history too.
+  - One-time cleanup: the 9 redundant copies deleted from Fam3's pool
+    (84 → 75 files, 0 duplicate hashes; bag self-heals — missing files are
+    skipped at pop time).
+
 ## 2026-06-05 19:33 BST — Fam3
 
 ### Fixed

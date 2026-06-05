@@ -1052,7 +1052,11 @@ esac
 
 tag=""; [ -n "$OVERLAYS" ] && tag=" overlay=$OVERLAYS"
 if [ "$st" -eq 0 ]; then
-  log "[rotate] de=${DE:-unknown} backend=$BACKEND img=$(basename "$ORIG")${tag} status=ok"
+  BAGSTAT=""
+  if [ -f "$STATEDIR/images.bag" ]; then
+    BAGSTAT=" bag=$(wc -l < "$STATEDIR/images.bag" 2>/dev/null || echo '?')/$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | wc -l)"
+  fi
+  log "[rotate] de=${DE:-unknown} backend=$BACKEND img=$(basename "$ORIG")${tag}${BAGSTAT} status=ok"
 else
   log "[rotate] de=${DE:-unknown} backend=$BACKEND img=$(basename "$ORIG")${tag} status=fail:$st"
 fi

@@ -210,6 +210,24 @@ fi
 for src in $ORDER; do
   : > "$TMP"
   if "fetch_$src" 2>>"$LOG" && valid_image "$TMP"; then
+    # Content-hash dedup: curated feeds re-serve the same picture for hours
+    # (bing's 8-image daily archive especially), and every re-download used
+    # to land as a NEW pool file under a fresh timestamped name -- by
+    # 2026-06-05 13 of 84 pool files were byte-copies of just 4 pictures, so
+    # the no-repeat shuffle-bag dutifully showed "different" entries that
+    # were the same wallpaper. Hash the candidate against the existing pool
+    # (favourites included) and discard matches. The "dup ... discarded" log
+    # line is the future-verification hook: a healthy pool logs these often
+    # while `md5sum pool/* | uniq -cd` stays empty.
+    newsum="$(md5sum "$TMP" 2>/dev/null | cut -d' ' -f1)"
+    if [ -n "$newsum" ]; then
+      dupof="$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) -print0 2>/dev/null \
+               | xargs -0 md5sum 2>/dev/null | awk -v s="$newsum" '$1==s{print $2; exit}')"
+      if [ -n "$dupof" ]; then
+        log "[download] src=$src dup (md5 matches $(basename "$dupof")) -- discarded, trying next source"
+        continue
+      fi
+    fi
     # AI generations carry provenance in the filename (.ai.jpg) so the
     # renderer can mark them subtly and the GUI can tag them — survives
     # moves to favourites/ with no manifest to maintain.
