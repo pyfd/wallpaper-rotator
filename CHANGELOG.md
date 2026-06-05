@@ -5,6 +5,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-05 19:33 BST — Fam3
+
+### Fixed
+- **"Next still not working" follow-up** — the 19:14 fix was live server-side
+  but the browser kept running the OLD poll JS: the web server sent no cache
+  headers, so Chrome heuristically cached `index.html` and a plain reload
+  didn't fetch the regenerated page (old 4-tick poll expired before the ~12s
+  render landed → canvas never updated). `_send()` now sets
+  `Cache-Control: no-cache` on everything (it's all server-regenerated), so
+  fixes reach the browser on a normal reload. One last hard refresh
+  (Ctrl+Shift+R) is needed to shed the already-cached copy.
+
 ## 2026-06-05 19:14 BST — Fam3
 
 ### Fixed
