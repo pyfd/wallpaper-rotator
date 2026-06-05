@@ -5,6 +5,20 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-05 05:30 BST — Fam1
+
+### Added
+- **Network info + sparklines in the system-stats overlay** — three new lines
+  under disk/bat: `net <ip> (<iface>)` (primary-route interface + IPv4 from
+  `ip route get`), then `rx <rate>/s` and `tx <rate>/s` computed from
+  `/proc/net/dev` byte-counter deltas between renders (state in
+  `$STATEDIR/net.prev`; rate lines appear from the second render, counter
+  resets after reboot are skipped). With **Sparklines** on, rx/tx each get the
+  same accent line+area trend graph as load/mem — `metrics.csv` grows to 4
+  columns (`load,mem%,rx_Bps,tx_Bps`; old 2-column rows are tolerated).
+  Degrades to no net lines where `ip`/`/proc/net/dev` aren't available
+  (Termux). No new config — rides the existing stats/sparkline toggles.
+
 ## 2026-06-04 21:22 BST — Fam3
 
 ### Added

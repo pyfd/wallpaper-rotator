@@ -151,9 +151,10 @@ applies immediately):
   none repeats until every one has been shown; when the bag empties it downloads a
   fresh batch, and a persistent **seen-list** stops a re-download from re-showing a
   quote you've already had (until the whole known set is exhausted, then it cycles).
-- **System stats** — composites host / uptime / load / mem / disk; **sparklines**
-  toggle adds anti-aliased line + area trend graphs (accent colour) beside
-  load/mem, drawn from a rolling history.
+- **System stats** — composites host / uptime / load / mem / disk / net (primary
+  IP + interface, rx/tx throughput from `/proc/net/dev` deltas between renders);
+  **sparklines** toggle adds anti-aliased line + area trend graphs (accent
+  colour) beside load/mem/rx/tx, drawn from a rolling history.
 - **Weather** — a local-weather overlay (wttr.in, no key) showing **current**
   conditions, with a location field (title-cased on display) and an **icon** toggle
   that prepends a condition glyph (`☀ ☁ ☼ ☔ ❄ ⚡`); a **colour** toggle renders that

@@ -657,6 +657,31 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     if [ "${OVERLAY_STATS:-0}" = 1 ]; then
       load3="$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"
       memhr="$(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')"
+      # Network: primary-route iface + IP from `ip route get`; rx/tx throughput
+      # from /proc/net/dev byte-counter deltas between renders (state in
+      # net.prev: "epoch rx tx"). First render after boot/install has no prev
+      # sample, so the rate lines just don't appear until the next one. Degrades
+      # to no net lines where `ip`/`/proc/net/dev` are unavailable (Termux).
+      NIF=""; NIP=""; NRX=""; NTX=""
+      read -r NIF NIP < <(ip -4 route get 1.1.1.1 2>/dev/null \
+        | awk '{for(i=1;i<NF;i++){if($i=="dev")d=$(i+1);if($i=="src")s=$(i+1)}print d,s;exit}')
+      if [ -n "$NIF" ]; then
+        read -r nrxb ntxb < <(awk -v i="$NIF:" '$1==i{print $2,$10}' /proc/net/dev 2>/dev/null)
+        if [ -n "$nrxb" ]; then
+          nnow="$(date +%s)"; npf="$STATEDIR/net.prev"
+          if IFS=' ' read -r npts nprx nptx < "$npf" 2>/dev/null; then
+            ndt=$((nnow-npts))
+            # Counter reset (reboot/iface change) shows as cur<prev: skip rates.
+            if [ "$ndt" -gt 0 ] && [ "$nrxb" -ge "$nprx" ] && [ "$ntxb" -ge "$nptx" ]; then
+              NRX=$(( (nrxb-nprx)/ndt )); NTX=$(( (ntxb-nptx)/ndt ))
+            fi
+          fi
+          printf '%s %s %s\n' "$nnow" "$nrxb" "$ntxb" > "$npf"
+        fi
+      fi
+      hr_rate() {  # bytes/s -> "1.2M" / "340K" / "12B"
+        awk -v b="$1" 'BEGIN{if(b>=1048576)printf "%.1fM",b/1048576; else if(b>=1024)printf "%.0fK",b/1024; else printf "%dB",b}'
+      }
       # Build the stats panel line-by-line so a drawn (anti-aliased) line+area
       # sparkline can sit beside load/mem instead of blocky unicode chars.
       sf="$(role_font stats)"; sps=$(( BASEPS * 3 / 4 )); slh=$(( sps * 6 / 5 ))
@@ -675,17 +700,39 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         stat_label "$RD/5.png" "bat $(cat "$bat/capacity")% ${bst}" "$sf" "$sps" "$slh"
         slines+=("$RD/5.png")
       fi
+      # Network lines: "net <ip> (<iface>)", then rx/tx rates once a prev sample
+      # exists (sparklines appended below, same pattern as load/mem).
+      if [ -n "$NIF" ]; then
+        stat_label "$RD/6.png" "net ${NIP:-?} (${NIF})" "$sf" "$sps" "$slh"
+        slines+=("$RD/6.png")
+        if [ -n "$NRX" ]; then
+          stat_label "$RD/7.png" "rx $(hr_rate "$NRX")/s" "$sf" "$sps" "$slh"
+          stat_label "$RD/8.png" "tx $(hr_rate "$NTX")/s" "$sf" "$sps" "$slh"
+          slines+=("$RD/7.png" "$RD/8.png")
+        fi
+      fi
       if [ "${STATS_SPARKLINE:-0}" = 1 ]; then
         # Roll a small history (last 30 samples) and draw sparklines from it.
+        # Columns: load,mem%,rx_Bps,tx_Bps (rx/tx blank on pre-net rows/renders;
+        # draw_spark just sees a shorter series).
         M="$STATEDIR/metrics.csv"
-        printf '%s,%s\n' "$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)" \
-          "$(free 2>/dev/null | awk '/^Mem:/{printf "%.0f",$3/$2*100}')" >> "$M"
+        printf '%s,%s,%s,%s\n' "$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)" \
+          "$(free 2>/dev/null | awk '/^Mem:/{printf "%.0f",$3/$2*100}')" \
+          "${NRX:-}" "${NTX:-}" >> "$M"
         tail -n 30 "$M" > "$M.tmp" 2>/dev/null && mv "$M.tmp" "$M"
         if draw_spark "$RD/ls.png" "$(cut -d, -f1 "$M" | tr '\n' ' ')" "$sps"; then
           convert "$RD/2.png" \( -size 10x1 xc:none \) "$RD/ls.png" -background none -gravity center +append "$RD/2.png" 2>>"$LOG"
         fi
         if draw_spark "$RD/ms.png" "$(cut -d, -f2 "$M" | tr '\n' ' ')" "$sps"; then
           convert "$RD/3.png" \( -size 10x1 xc:none \) "$RD/ms.png" -background none -gravity center +append "$RD/3.png" 2>>"$LOG"
+        fi
+        if [ -n "$NRX" ] && [ -f "$RD/7.png" ]; then
+          if draw_spark "$RD/rs.png" "$(cut -d, -f3 "$M" | tr '\n' ' ')" "$sps"; then
+            convert "$RD/7.png" \( -size 10x1 xc:none \) "$RD/rs.png" -background none -gravity center +append "$RD/7.png" 2>>"$LOG"
+          fi
+          if draw_spark "$RD/ts.png" "$(cut -d, -f4 "$M" | tr '\n' ' ')" "$sps"; then
+            convert "$RD/8.png" \( -size 10x1 xc:none \) "$RD/ts.png" -background none -gravity center +append "$RD/8.png" 2>>"$LOG"
+          fi
         fi
       fi
       block="$STATEDIR/_stats.$$.png"
