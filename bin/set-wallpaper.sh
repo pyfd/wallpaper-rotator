@@ -234,13 +234,17 @@ weather_line() {
   local cache="$STATEDIR/weather.txt" loc="${WEATHER_LOCATION:-}"
   # Refresh if missing, >60min old, OR in the pre-structured legacy format (no '|')
   # — so a cache left over from an older version self-heals on upgrade.
-  if [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q . \
-       || ! grep -q '|' "$cache" 2>/dev/null; then
+  # .fail marker = 10-min backoff after a failed fetch. Without it a flaky/down
+  # wttr.in is re-attempted INLINE on every render (the cache mtime never moves),
+  # taxing each rotate with up to 12s of curl (seen 2026-06-05 on Fam3).
+  if { [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q . \
+       || ! grep -q '|' "$cache" 2>/dev/null; } \
+     && ! find "$cache.fail" -mmin -10 2>/dev/null | grep -q .; then
     if curl -fsL --max-time 12 "https://wttr.in/${loc// /+}?format=%l|%C|%t,+%h,+%w" \
          -o "$cache.new" 2>>"$LOG" && [ -s "$cache.new" ]; then
-      mv "$cache.new" "$cache"
+      mv "$cache.new" "$cache"; rm -f "$cache.fail"
     else
-      rm -f "$cache.new"
+      rm -f "$cache.new"; touch "$cache.fail"
     fi
   fi
   local raw wl wc wm glyph="" color=""
@@ -273,10 +277,14 @@ weather_forecast() {
   # 2-day display recovers to 3 days soon after the API catches up.
   local ttl=180 today; today="$(date +%F)"
   [ -f "$raw" ] && [[ "$(head -c10 "$raw" 2>/dev/null)" < "$today" ]] && ttl=30
-  if [ ! -f "$raw" ] || find "$raw" -mmin +$ttl 2>/dev/null | grep -q .; then
+  # Same 10-min failure backoff as weather_line (15s inline curl otherwise).
+  if { [ ! -f "$raw" ] || find "$raw" -mmin +$ttl 2>/dev/null | grep -q .; } \
+     && ! find "$raw.fail" -mmin -10 2>/dev/null | grep -q .; then
     if curl -fsL --max-time 15 "https://wttr.in/${loc// /+}?format=j1" -o "$cache.json" 2>>"$LOG" && [ -s "$cache.json" ]; then
       jq -r '.weather[0:3][] | "\(.date)|\(.maxtempC)|\(.mintempC)|\(.hourly[4].weatherDesc[0].value)"' "$cache.json" 2>/dev/null > "$raw.tmp"
-      [ -s "$raw.tmp" ] && mv "$raw.tmp" "$raw"
+      [ -s "$raw.tmp" ] && { mv "$raw.tmp" "$raw"; rm -f "$raw.fail"; }
+    else
+      touch "$raw.fail"
     fi
     rm -f "$cache.json" "$raw.tmp"
   fi

@@ -5,7 +5,26 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
-## 2026-06-05 07:11 BST — Fam3
+## 2026-06-05 19:14 BST — Fam3
+
+### Fixed
+- **⏭ Next felt dead** (Paul: "clicking Next but wr isn't changing"). Two
+  causes, both fixed:
+  1. **Action POSTs ran the full render synchronously** — a rotate is
+     CPU-bound (~11.5s overlay composite on Fam3, more when wttr.in is slow)
+     and `/next` blocked until it finished (measured 15.6s), so the button
+     looked like a no-op. `/next`, `/ban` and `/use` now fire
+     `set-wallpaper.sh` detached (`Popen`, the same pattern the canvas editor
+     already used) and skip the synchronous `_done()` regen (~6s of
+     gen-status producing state that was stale the moment the rotate landed).
+     `/next` now responds in ~3ms; the UI polls `/state.json` until the new
+     wallpaper appears. Poll window extended 4→10 ticks (~27s) to cover the
+     render; toasts reworded to "rotating…" so they don't claim completion.
+  2. **Failed wttr.in fetches retried inline on every render** — a fetch
+     failure leaves the cache mtime old, so while wttr.in was flaky (20s
+     timeout seen in tonight's log) every rotate paid up to 12s (weather) +
+     15s (forecast) of curl. Both fetchers now drop a `.fail` marker and back
+     off for 10 minutes, serving the stale cache meanwhile.
 
 ### Fixed
 - **Quote theme "any" rejected by instant-apply** — the inspector's select

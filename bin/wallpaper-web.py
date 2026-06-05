@@ -238,16 +238,27 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self._send(404, "text/plain", b"not generated yet")
 
-    def _done(self):
-        """Regenerate the page and bounce to / (fetch() follows and gets fresh HTML)."""
-        regen()
+    def _done(self, do_regen=True):
+        """Regenerate the page and bounce to / (fetch() follows and gets fresh HTML).
+        Rotate-triggering actions pass do_regen=False: the rotate is async, so a
+        synchronous regen here (~6s of gen-status) only delays the response with
+        state that is stale the moment the rotate lands -- /state.json polling
+        regenerates when fresh data exists."""
+        if do_regen:
+            regen()
         self.send_response(303)
         self.send_header("Location", "/")
         self.end_headers()
 
     def _setwp(self, arg=None):
+        # Fire-and-forget: a full render is CPU-bound (10s+ overlay composite on
+        # a modest box, more when the weather cache wants a refetch), and running
+        # it inside the POST made Next/Ban/Use feel dead -- the button "did
+        # nothing" for 15-30s (Fam3, 2026-06-05). The UI polls /state.json
+        # (which self-regenerates when stale) until the rotate lands.
         try:
-            subprocess.run([SETWP, arg] if arg else [SETWP], timeout=30)
+            subprocess.Popen([SETWP, arg] if arg else [SETWP], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
@@ -255,7 +266,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/next":                       # rotate now
             self._setwp()
-            self._done(); return
+            self._done(do_regen=False); return
         if path == "/ban":                        # delete current image + rotate
             cur = current_image()
             if under_pool(cur):
@@ -270,7 +281,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             self._setwp()
-            self._done(); return
+            self._done(do_regen=False); return
         if path == "/keep":                       # move current image to favourites/
             cur = current_image()
             fav = os.path.join(POOL, "favourites")

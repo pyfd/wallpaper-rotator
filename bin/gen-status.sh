@@ -370,7 +370,7 @@ async function act(path,form,msg){
 }
 let pollTimer=null, pollSeq=0;
 function pollSoon(){ clearTimeout(pollTimer); let n=0; const seq=++pollSeq;
-  const tick=async()=>{ if(seq!==pollSeq)return; await refresh(); if(++n<4) pollTimer=setTimeout(tick,2600); else busy(false); };
+  const tick=async()=>{ if(seq!==pollSeq)return; await refresh(); if(++n<10) pollTimer=setTimeout(tick,2600); else busy(false); };
   pollTimer=setTimeout(tick,1700);
 }
 async function refresh(){
@@ -566,9 +566,9 @@ document.addEventListener('change',e=>{
   setone({[k]:v});
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape')hideInsp()});
-$('b-next').onclick=()=>act('/next',null,'⏭ rotated');
+$('b-next').onclick=()=>act('/next',null,'⏭ rotating…');
 $('b-keep').onclick=()=>act('/keep',null,'★ kept');
-$('b-ban').onclick=()=>act('/ban',null,'🚫 banned + rotating');
+$('b-ban').onclick=()=>act('/ban',null,'🚫 banned — rotating…');
 $('b-dream').onclick=()=>act('/dream',null,'✦ dreaming… ~40s');
 
 // drag objects between zones (and out of the auto tray)
