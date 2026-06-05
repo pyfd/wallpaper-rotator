@@ -114,12 +114,21 @@ background updates on your next login.
 
 ---
 
-## Status + control web UI
+## The canvas-editor web UI
 
-A small local page — current wallpaper, pool size/disk, per-source download
-tallies, recent activity, config — **plus controls**. `install.sh` runs it as an
-**always-on systemd user service** (`wallpaper-web.service`): it auto-starts at
-login and restarts on crash, so the page is always at:
+The wallpaper is an **editable canvas** (2026-06-05 redesign): the current
+image fills the page, every overlay (quote / weather / stats / clock / pulse)
+is a **draggable object** sitting exactly where it renders — drag one to a
+different part of the screen and that IS its position setting. Click an
+object (or its layers-panel row) for a floating **inspector** with just that
+overlay's controls; the eye toggles it on/off; an **auto-placed tray** above
+the canvas holds overlays the renderer positions itself. The pool is a
+**filmstrip** along the bottom — click a frame to set it as the wallpaper,
+hover for ★ keep / 🚫 ban; ✦ badges mark AI-dreamed images. **Every change
+applies instantly** to the real desktop (no Apply button) — the top bar shows
+"rendering…" and the canvas refreshes when the new frame is up.
+`install.sh` runs it as an **always-on systemd user service**
+(`wallpaper-web.service`): auto-starts at login, restarts on crash, always at:
 
 ```
 http://127.0.0.1:8787
@@ -141,8 +150,8 @@ systemd user session — just call the launcher directly:
 wallpaper-web                       # -> http://127.0.0.1:8787  (Ctrl-C to stop)
 ```
 
-**Controls** (an `Apply` writes the config, rewrites the rotate cron line, and
-applies immediately):
+**What the inspectors control** (each change writes the config, rewrites the
+rotate cron line where relevant, and re-renders immediately):
 
 - **Change every** — rotation interval (3 / 5 / 10 / 15 / 30 / 60 min).
 - **Quote** — composites a quote onto each wallpaper; **+attribution** adds author /
@@ -281,7 +290,7 @@ wallpaper-rotator/
 │   ├── fetch-wallpaper.sh                   # multi-source pool fetcher w/ fallback (templated)
 │   ├── set-wallpaper.sh                    # DE-aware desktop wallpaper setter (templated)
 │   ├── random-login-bg.sh                  # login-image generator (templated)
-│   ├── gen-status.sh                        # builds the status page + controls form (templated)
+│   ├── gen-status.sh                        # builds state.json + the canvas-editor app shell (templated)
 │   ├── wallpaper-web.py                      # status + control server (serve, POST /set) (templated)
 │   └── wallpaper-web.sh                     # launcher: execs the Python server (templated)
 ├── cron/wallpaper.cron                     # download + prune + rotate (templated)

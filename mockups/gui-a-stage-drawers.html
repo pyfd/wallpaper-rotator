@@ -1,0 +1,197 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup A — Stage &amp; Drawers</title>
+<style>
+:root{color-scheme:dark;
+  --bg:#0b0d11;--panel:rgba(22,25,32,.78);--line:rgba(255,255,255,.08);
+  --txt:#e8eaef;--mut:#8a909a;--acc:#7cc4ff;--acc2:#3a6df0;--ok:#5fd17a;--bad:#e06c75}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,sans-serif;overflow:hidden;height:100vh}
+/* ── the stage: wallpaper IS the page ── */
+.stage{position:fixed;inset:0;background:linear-gradient(160deg,#1a2a4a 0%,#4a3a68 35%,#c2703f 70%,#e8a35c 100%)}
+.stage img{width:100%;height:100%;object-fit:cover;display:block}
+.stage::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.45) 0%,transparent 22%,transparent 62%,rgba(0,0,0,.6) 100%)}
+/* ── top status strip ── */
+.top{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;gap:18px;padding:14px 22px;z-index:5}
+.brand{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px}
+.brand .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.tchips{display:flex;gap:8px;margin-left:auto}
+.tchip{background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:12px;color:var(--mut)}
+.tchip b{color:var(--txt);font-weight:600}
+/* ── overlay ghosts: show where each overlay sits, click = jump to its drawer ── */
+.ghost{position:absolute;background:rgba(10,12,16,.55);backdrop-filter:blur(6px);border:1px dashed rgba(124,196,255,.55);border-radius:10px;padding:8px 12px;font-size:11.5px;color:#cfe2f4;cursor:pointer;transition:all .2s;z-index:4}
+.ghost:hover{background:rgba(58,109,240,.25);border-style:solid}
+.ghost .t{font-weight:700;color:var(--acc);text-transform:uppercase;font-size:10px;letter-spacing:.06em}
+.ghost.off{opacity:.35;border-color:rgba(255,255,255,.25)}
+/* ── bottom dock ── */
+.dock{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;background:var(--panel);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:16px;padding:8px;z-index:10;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.dock .grpline{width:1px;height:26px;background:var(--line);margin:0 4px}
+.dbtn{background:transparent;border:0;color:var(--txt);border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;display:flex;gap:7px;align-items:center;transition:background .15s}
+.dbtn:hover{background:rgba(255,255,255,.08)}
+.dbtn.primary{background:var(--acc2)}.dbtn.primary:hover{background:#2f5fd6}
+.dbtn.danger:hover{background:rgba(224,108,117,.18);color:#f0b6bb}
+.dbtn.active{background:rgba(124,196,255,.16);color:var(--acc)}
+.dbtn .ic{font-size:15px}
+/* ── slide-over drawer ── */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.25);opacity:0;pointer-events:none;transition:opacity .25s;z-index:14}
+.scrim.show{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:430px;max-width:92vw;background:rgba(16,18,24,.92);backdrop-filter:blur(22px);border-left:1px solid var(--line);transform:translateX(105%);transition:transform .32s cubic-bezier(.22,1,.3,1);z-index:15;display:flex;flex-direction:column;box-shadow:-20px 0 60px rgba(0,0,0,.45)}
+.drawer.open{transform:none}
+.dhead{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line)}
+.dhead h2{margin:0;font-size:16px}
+.dhead .x{margin-left:auto;background:transparent;border:0;color:var(--mut);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:8px}
+.dhead .x:hover{background:rgba(255,255,255,.08);color:var(--txt)}
+.dbody{padding:14px 20px 26px;overflow:auto;flex:1}
+/* feature rows inside drawer */
+.feat{border:1px solid var(--line);border-radius:14px;margin-bottom:12px;overflow:hidden;background:rgba(255,255,255,.025);transition:border-color .2s}
+.feat.on{border-color:rgba(58,109,240,.45)}
+.fhead{display:flex;align-items:center;gap:10px;padding:13px 14px;cursor:pointer;user-select:none}
+.fhead .nm{font-weight:650;font-size:13.5px}
+.fhead .sum{color:var(--mut);font-size:11.5px;margin-left:2px;flex:1;text-align:right;padding-right:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fbody{max-height:0;overflow:hidden;transition:max-height .3s cubic-bezier(.22,1,.3,1);border-top:0 solid transparent}
+.feat.expand .fbody{max-height:330px;border-top:1px solid var(--line)}
+.fin{padding:13px 14px;display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+.fin label{display:flex;gap:6px;align-items:center;font-size:12.5px;color:#cfd3da}
+.fin .lbl{color:var(--mut);font-size:11.5px}
+select,input[type=text]{background:rgba(0,0,0,.4);color:var(--txt);border:1px solid rgba(255,255,255,.13);border-radius:8px;padding:6px 9px;font-size:12.5px;outline:none}
+select:focus,input[type=text]:focus{border-color:var(--acc2)}
+input[type=checkbox]{accent-color:var(--acc2)}
+.tgl{display:inline-flex;cursor:pointer}.tgl input{position:absolute;opacity:0}
+.tgl .sw{width:36px;height:20px;border-radius:11px;background:#3a3f4a;position:relative;transition:.18s;display:inline-block}
+.tgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .18s}
+.tgl input:checked+.sw{background:var(--acc2)}.tgl input:checked+.sw::after{left:18px}
+.toast{position:fixed;bottom:84px;left:50%;transform:translate(-50%,16px);background:rgba(46,158,91,.92);color:#fff;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:.3s;z-index:30;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.hintbar{position:fixed;left:22px;bottom:24px;color:rgba(255,255,255,.65);font-size:11.5px;z-index:5;max-width:300px}
+kbd{background:rgba(255,255,255,.12);border-radius:4px;padding:1px 6px;font-size:10.5px}
+</style></head><body>
+
+<div class="stage"><img src="http://127.0.0.1:8787/current.jpg" onerror="this.remove()" alt=""></div>
+
+<div class="top">
+  <div class="brand"><span class="dot"></span> wallpaper-rotator <span style="color:var(--mut);font-weight:400;font-size:12px">· Fam3</span></div>
+  <div class="tchips">
+    <span class="tchip">pool <b>17</b></span>
+    <span class="tchip">last rotate <b>05:52</b></span>
+    <span class="tchip">next in <b>1:42</b></span>
+    <span class="tchip" style="color:var(--ok)">● all cron ok</span>
+  </div>
+</div>
+
+<!-- overlay ghosts mirror live positions: click opens the relevant drawer -->
+<div class="ghost" style="top:64px;left:46%"  onclick="openDrawer('overlays')"><span class="t">Weather · N</span><br>☀ Shoreham +17°C</div>
+<div class="ghost" style="top:64px;right:26px" onclick="openDrawer('overlays')"><span class="t">Stats · NE</span><br>load · mem · bat · net</div>
+<div class="ghost" style="top:34%;right:26px" onclick="openDrawer('pulse')"><span class="t">Pulse · E</span><br>SCB pulse — 7 lines</div>
+<div class="ghost" style="bottom:120px;left:50%;transform:translateX(-50%)" onclick="openDrawer('overlays')"><span class="t">Quote · S</span><br>"When gratitude begins…" — Debasish Mridha</div>
+<div class="ghost off" style="top:64px;left:26px" onclick="openDrawer('overlays')"><span class="t">Clock · NW</span><br>off</div>
+
+<div class="dock">
+  <button class="dbtn primary" onclick="toast('Rotated')"><span class="ic">⏭</span>Next</button>
+  <button class="dbtn" onclick="toast('Saved to favourites ★')"><span class="ic">★</span>Keep</button>
+  <button class="dbtn danger" onclick="toast('Banned + rotated')"><span class="ic">🚫</span>Ban</button>
+  <span class="grpline"></span>
+  <button class="dbtn" id="b-overlays" onclick="openDrawer('overlays')"><span class="ic">✎</span>Overlays</button>
+  <button class="dbtn" id="b-images"   onclick="openDrawer('images')"><span class="ic">🖼</span>Images</button>
+  <button class="dbtn" id="b-pulse"    onclick="openDrawer('pulse')"><span class="ic">📊</span>Pulse</button>
+  <button class="dbtn" id="b-system"   onclick="openDrawer('system')"><span class="ic">⚙</span>System</button>
+</div>
+
+<div class="hintbar">Dashed boxes show where each overlay renders — click one to edit it. <kbd>esc</kbd> closes panels.</div>
+
+<div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+
+<div class="drawer" id="drawer">
+  <div class="dhead"><h2 id="dtitle">Overlays</h2><button class="x" onclick="closeDrawer()">✕</button></div>
+  <div class="dbody" id="dbody"></div>
+</div>
+<div class="toast" id="toast">Saved</div>
+
+<script>
+const PANES = {
+ overlays: {title:'Overlays', html: `
+  ${feat('Quote','on','south · themed: any · matched to image', `
+    <label class="lbl">at</label><select><option>auto</option><option selected>south</option></select>
+    <label class="lbl">theme</label><select><option selected>any</option><option>love</option><option>life</option><option>inspirational</option></select>
+    <label><input type=checkbox checked> Attribution</label>
+    <label><input type=checkbox checked> Match image to quote</label>`)}
+  ${feat('Weather','on','Shoreham · icon · forecast', `
+    <label class="lbl">at</label><select><option selected>north</option></select>
+    <input type=text value="Shoreham" size=10>
+    <label><input type=checkbox checked> Icon</label>
+    <label><input type=checkbox checked> Colour</label>
+    <label><input type=checkbox checked> Forecast</label>`)}
+  ${feat('System stats','on','northeast · sparklines', `
+    <label class="lbl">at</label><select><option selected>northeast</option></select>
+    <label><input type=checkbox checked> Sparklines</label>`)}
+  ${feat('Clock','off','off', `
+    <select><option selected>analogue</option><option>digital</option></select>
+    <label class="lbl">face</label><select><option selected>classic</option><option>minimal</option><option>dots</option><option>numbers</option></select>
+    <label class="lbl">at</label><select><option selected>northwest</option></select>
+    <label><input type=checkbox checked> 24h</label> <label><input type=checkbox> Date</label>`)}
+  ${feat('Appearance','always','frosted · medium · white · FreeSerif', `
+    <label class="lbl">Style</label><select><option selected>frosted</option><option>scrim</option><option>editorial</option><option>chips</option></select>
+    <label class="lbl">Size</label><select><option selected>medium</option></select>
+    <label class="lbl">Text</label><select><option selected>white</option></select>
+    <label class="lbl">Font</label><select><option selected>FreeSerif</option></select>`)}
+ `},
+ images: {title:'Images & sources', html: `
+  ${feat('Rotation','always','every 3 min · shuffle-bag', `
+    <label class="lbl">Change every</label><select><option>3 min</option><option selected>5 min</option><option>10 min</option></select>`)}
+  ${feat('Background themes','on','cycling · forest · ocean', `
+    <label><input type=checkbox checked> cycling</label><label><input type=checkbox checked> forest</label>
+    <label><input type=checkbox checked> ocean</label><label><input type=checkbox> space</label>
+    <label><input type=checkbox> city</label><label><input type=checkbox> minimal</label>`)}
+  ${feat('AI dreamed','on','full-res (25 kudos) · quote-linked', `
+    <input type=text placeholder="extra style words" value="" size=20>
+    <span class="lbl">704/1024px auto by kudos · ~30-70s per image</span>`)}
+  ${feat('Favourites','always','1 kept', `<span class="lbl">★ gallery renders here (click = set as wallpaper)</span>`)}
+  ${feat('Downloads by source','always','wallhaven 53 · ai 14 · bing 9', `<span class="lbl">per-source counters table</span>`)}
+ `},
+ pulse: {title:'Pulse — live JSON', html: `
+  ${feat('Pulse','on','SCB pulse · east · 5 min', `
+    <label class="lbl">title</label><input type=text value="SCB pulse" size=14>
+    <label class="lbl">at</label><select><option selected>east</option></select>
+    <label class="lbl">refresh</label><select><option selected>5 min</option></select>
+    <label class="lbl" style="width:100%">URL</label><input type=text value="http://scb-ubuntu:3000/api/pulse" style="width:100%">
+    <label class="lbl" style="width:100%">template</label><input type=text value=".lines_kv[]" style="width:100%">
+    <button class="dbtn" style="background:rgba(124,196,255,.15);color:var(--acc)">Test</button>`)}
+  <div style="background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:12px;padding:12px;font:12px/1.7 ui-monospace,monospace;color:#9fb4cc">
+   in workshop <span style="float:right;color:var(--acc)">27 bikes</span><br>
+   ready to collect <span style="float:right;color:var(--acc)">8</span><br>
+   emails waiting <span style="float:right;color:var(--acc)">80</span><br>
+   takings today <span style="float:right;color:var(--acc)">£0</span></div>
+ `},
+ system: {title:'System', html: `
+  ${feat('Remote access','off','localhost only', `<span class="lbl">binds the tailnet IP (no auth — trusted networks only)</span>`)}
+  ${feat('Status','always','v2026.06.05.0530 · zorin:gnome · 1920×1080', `
+    <span class="lbl">pruned 312 · misses 41 / fails 2 · log: ~/.local/state/wallpaper-rotator/wallpaper.log</span>`)}
+  ${feat('Recent activity','always','last: rotate ok 05:52', `<span class="lbl">tail of the activity log rolls out here</span>`)}
+ `}
+};
+function feat(nm,state,sum,body){
+  const on = state==='on'||state==='always';
+  const tgl = state==='always' ? '' :
+    `<label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" ${state==='on'?'checked':''} onchange="this.closest('.feat').classList.toggle('on',this.checked);toast('Saved — re-rendering…')"><span class="sw"></span></label>`;
+  return `<div class="feat ${on?'on':''}"><div class="fhead" onclick="this.parentNode.classList.toggle('expand')">
+    <span class="nm">${nm}</span><span class="sum">${sum}</span>${tgl}</div>
+    <div class="fbody"><div class="fin">${body}</div></div></div>`;
+}
+let cur=null;
+function openDrawer(k){
+  const d=document.getElementById('drawer');
+  document.getElementById('dtitle').textContent=PANES[k].title;
+  document.getElementById('dbody').innerHTML=PANES[k].html;
+  d.classList.add('open'); document.getElementById('scrim').classList.add('show');
+  document.querySelectorAll('.dbtn.active').forEach(b=>b.classList.remove('active'));
+  const btn=document.getElementById('b-'+k); if(btn)btn.classList.add('active');
+  cur=k;
+}
+function closeDrawer(){
+  document.getElementById('drawer').classList.remove('open');
+  document.getElementById('scrim').classList.remove('show');
+  document.querySelectorAll('.dbtn.active').forEach(b=>b.classList.remove('active'));
+}
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1400)}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
+</script>
+</body></html>

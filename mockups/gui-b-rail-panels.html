@@ -1,0 +1,188 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup B — Rail &amp; Panels</title>
+<style>
+:root{color-scheme:dark;
+  --bg:#0c0e12;--surf:#14171d;--card:#1a1e26;--line:#262b35;
+  --txt:#e8eaef;--mut:#8a909a;--acc:#7cc4ff;--acc2:#3a6df0;--ok:#5fd17a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 system-ui,sans-serif;height:100vh;display:flex;overflow:hidden}
+/* ── icon rail ── */
+.rail{width:78px;background:var(--surf);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:4px;z-index:3}
+.rail .logo{font-size:22px;margin-bottom:14px}
+.ritem{width:58px;border:0;background:transparent;color:var(--mut);border-radius:12px;padding:9px 0 7px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;transition:.18s}
+.ritem .ic{font-size:19px}
+.ritem:hover{background:rgba(255,255,255,.06);color:var(--txt)}
+.ritem.active{background:rgba(58,109,240,.18);color:var(--acc)}
+.rail .spacer{flex:1}
+.rail .ver{color:#555c66;font-size:9.5px;text-align:center;padding:0 6px}
+/* ── content panels slide horizontally ── */
+.main{flex:1;position:relative;overflow:hidden}
+.panel{position:absolute;inset:0;padding:26px 34px;overflow:auto;opacity:0;transform:translateX(34px);pointer-events:none;transition:opacity .26s,transform .3s cubic-bezier(.22,1,.3,1)}
+.panel.active{opacity:1;transform:none;pointer-events:auto}
+.panel h1{font-size:19px;margin:0 0 4px;display:flex;align-items:center;gap:12px}
+.panel .sub{color:var(--mut);font-size:12px;margin-bottom:20px}
+/* ── persistent live preview (top right, always visible) ── */
+.minivue{position:fixed;top:18px;right:22px;width:264px;z-index:6;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,.45);transition:transform .25s}
+.minivue:hover{transform:scale(1.03)}
+.minivue .ph{height:148px;background:linear-gradient(160deg,#1a2a4a,#4a3a68 45%,#c2703f 80%,#e8a35c);position:relative}
+.minivue .ph img{width:100%;height:100%;object-fit:cover}
+.minivue .bar{display:flex;gap:4px;padding:8px}
+.minivue .bar button{flex:1;background:#232834;border:0;color:var(--txt);font-size:11.5px;font-weight:600;border-radius:8px;padding:6px 0;cursor:pointer}
+.minivue .bar button:hover{background:#2d3442}
+.minivue .live{position:absolute;top:8px;left:8px;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);border-radius:6px;font-size:10px;padding:2px 8px;color:var(--ok)}
+/* ── cards & controls ── */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;max-width:1100px}
+.gcard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;transition:border-color .2s}
+.gcard.on{border-color:rgba(58,109,240,.5)}
+.gh{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.gh .nm{font-weight:650}
+.gh .st{font-size:11px;color:var(--mut);flex:1}
+.row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+.row label{display:flex;gap:6px;align-items:center;font-size:12.5px;color:#cfd3da}
+.lbl{color:var(--mut);font-size:11.5px}
+select,input[type=text]{background:#0e1014;color:var(--txt);border:1px solid #2a2f39;border-radius:8px;padding:6px 9px;font-size:12.5px;outline:none}
+select:focus,input:focus{border-color:var(--acc2)}
+input[type=checkbox]{accent-color:var(--acc2)}
+.tgl{display:inline-flex;cursor:pointer}.tgl input{position:absolute;opacity:0}
+.tgl .sw{width:36px;height:20px;border-radius:11px;background:#363b45;position:relative;transition:.18s;display:inline-block}
+.tgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .18s}
+.tgl input:checked+.sw{background:var(--acc2)}.tgl input:checked+.sw::after{left:18px}
+.statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;max-width:760px;margin-bottom:22px}
+.scard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.scard .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+.scard .v{font-size:20px;font-weight:650;margin-top:3px}
+.scard .v small{font-size:12px;color:var(--mut);font-weight:400}
+.savebar{position:fixed;bottom:0;left:78px;right:0;background:rgba(14,16,20,.9);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:10px 34px;display:flex;align-items:center;gap:14px;transform:translateY(110%);transition:transform .28s cubic-bezier(.22,1,.3,1);z-index:8}
+.savebar.show{transform:none}
+.savebar .msg{color:var(--mut);font-size:13px}
+.savebar button{background:var(--acc2);border:0;color:#fff;font-weight:650;border-radius:9px;padding:9px 26px;cursor:pointer;font-size:13.5px}
+.savebar .ghostb{background:transparent;border:1px solid var(--line);color:var(--mut)}
+.fakefavs{display:flex;gap:10px}.fakefavs div{width:130px;height:74px;border-radius:9px;background:linear-gradient(140deg,#24402a,#0f1a12);border:1px solid var(--line)}
+</style></head><body>
+
+<nav class="rail">
+  <div class="logo">🖼️</div>
+  <button class="ritem active" data-p="home"><span class="ic">◉</span>Now</button>
+  <button class="ritem" data-p="overlays"><span class="ic">✎</span>Overlays</button>
+  <button class="ritem" data-p="images"><span class="ic">🗂</span>Images</button>
+  <button class="ritem" data-p="ai"><span class="ic">✦</span>AI</button>
+  <button class="ritem" data-p="pulse"><span class="ic">📊</span>Pulse</button>
+  <button class="ritem" data-p="system"><span class="ic">⚙</span>System</button>
+  <div class="spacer"></div>
+  <div class="ver">v2026.06.05<br>Fam3</div>
+</nav>
+
+<div class="minivue">
+  <div class="ph"><img src="http://127.0.0.1:8787/current.jpg" onerror="this.remove()"><span class="live">● live</span></div>
+  <div class="bar"><button>⏭ Next</button><button>★ Keep</button><button>🚫 Ban</button></div>
+</div>
+
+<main class="main">
+
+<section class="panel active" id="p-home">
+  <h1>Right now</h1><div class="sub">Fam3 · zorin:gnome · 1920×1080 · rotates every 3 min</div>
+  <div class="statgrid">
+    <div class="scard"><div class="k">Pool</div><div class="v">17 <small>imgs · 24 MB</small></div></div>
+    <div class="scard"><div class="k">Active overlays</div><div class="v">5 <small>of 6</small></div></div>
+    <div class="scard"><div class="k">Last rotate</div><div class="v" style="font-size:14px">05:52 ✓</div></div>
+    <div class="scard"><div class="k">AI kudos</div><div class="v">25 <small>full-res</small></div></div>
+    <div class="scard"><div class="k">Pruned</div><div class="v">312</div></div>
+    <div class="scard"><div class="k">Miss / fail</div><div class="v">41 <small>/ 2</small></div></div>
+  </div>
+  <h1 style="font-size:15px">Favourites <span class="lbl">(1)</span></h1>
+  <div class="fakefavs"><div></div></div>
+</section>
+
+<section class="panel" id="p-overlays">
+  <h1>Overlays</h1><div class="sub">What gets drawn on each wallpaper — changes re-render the current image in place</div>
+  <div class="cards">
+    <div class="gcard on"><div class="gh"><span class="nm">Quote</span><span class="st">south · any theme · matched</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
+      <div class="row"><span class="lbl">at</span><select><option selected>south</option><option>auto</option></select>
+      <span class="lbl">theme</span><select><option selected>any</option><option>love</option><option>inspirational</option></select>
+      <label><input type="checkbox" checked> Attribution</label>
+      <label><input type="checkbox" checked> Match image</label></div></div>
+    <div class="gcard on"><div class="gh"><span class="nm">Weather</span><span class="st">Shoreham · icon+forecast</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
+      <div class="row"><span class="lbl">at</span><select><option selected>north</option></select>
+      <input type="text" value="Shoreham" size="9">
+      <label><input type="checkbox" checked> Icon</label><label><input type="checkbox" checked> Colour</label><label><input type="checkbox" checked> Forecast</label></div></div>
+    <div class="gcard on"><div class="gh"><span class="nm">System stats</span><span class="st">NE · sparklines · net</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
+      <div class="row"><span class="lbl">at</span><select><option selected>northeast</option></select>
+      <label><input type="checkbox" checked> Sparklines</label></div></div>
+    <div class="gcard"><div class="gh"><span class="nm">Clock</span><span class="st">off</span><label class="tgl"><input type="checkbox"><span class="sw"></span></label></div>
+      <div class="row"><select><option selected>analogue</option></select><span class="lbl">face</span><select><option selected>classic</option></select>
+      <span class="lbl">at</span><select><option selected>northwest</option></select>
+      <label><input type="checkbox" checked> 24h</label><label><input type="checkbox"> Date</label></div></div>
+    <div class="gcard on" style="grid-column:1/-1"><div class="gh"><span class="nm">Appearance</span><span class="st">applies to every overlay panel</span></div>
+      <div class="row"><span class="lbl">Style</span><select><option selected>frosted</option><option>scrim</option><option>editorial</option><option>chips</option></select>
+      <span class="lbl">Size</span><select><option selected>medium</option></select>
+      <span class="lbl">Text colour</span><select><option selected>white</option></select>
+      <span class="lbl">Font</span><select><option selected>FreeSerif</option></select></div></div>
+  </div>
+</section>
+
+<section class="panel" id="p-images">
+  <h1>Images</h1><div class="sub">Where wallpapers come from and how they rotate</div>
+  <div class="cards">
+    <div class="gcard on"><div class="gh"><span class="nm">Rotation</span></div>
+      <div class="row"><span class="lbl">Change every</span><select><option selected>3 min</option><option>5 min</option></select>
+      <span class="lbl">shuffle-bag: no repeats per cycle</span></div></div>
+    <div class="gcard on"><div class="gh"><span class="nm">Themes</span><span class="st">3 picked</span></div>
+      <div class="row"><label><input type="checkbox" checked> cycling</label><label><input type="checkbox" checked> forest</label><label><input type="checkbox" checked> ocean</label><label><input type="checkbox"> space</label><label><input type="checkbox"> minimal</label><label><input type="checkbox"> city</label></div></div>
+    <div class="gcard" style="grid-column:1/-1"><div class="gh"><span class="nm">Downloads by source</span></div>
+      <div class="row" style="gap:22px"><span>wallhaven <b style="color:var(--acc)">53</b></span><span>ai <b style="color:var(--acc)">14</b></span><span>picsum <b style="color:var(--acc)">12</b></span><span>bing <b style="color:var(--acc)">9</b></span><span>local <b style="color:var(--acc)">0</b></span></div></div>
+  </div>
+</section>
+
+<section class="panel" id="p-ai">
+  <h1>AI dreamed</h1><div class="sub">Generated from live context — time, season, weather, theme, quote</div>
+  <div class="cards">
+    <div class="gcard on"><div class="gh"><span class="nm">Generation</span><span class="st">on · full-res</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
+      <div class="row"><input type="text" placeholder="extra style words (optional)" size="24">
+      <span class="lbl">kudos 25 → 1024×576 · drops to 704×448 under 15</span></div></div>
+    <div class="gcard on"><div class="gh"><span class="nm">Quote-linked images</span><span class="st">on</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
+      <div class="row"><span class="lbl">each gen illustrates the quote it will carry — sidecar pairs them for life</span></div></div>
+  </div>
+</section>
+
+<section class="panel" id="p-pulse">
+  <h1>Pulse</h1><div class="sub">Any JSON endpoint → live numbers on the wallpaper</div>
+  <div class="cards">
+    <div class="gcard on" style="grid-column:1/-1"><div class="gh"><span class="nm">SCB pulse</span><span class="st">east · 5 min</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
+      <div class="row" style="margin-bottom:10px"><span class="lbl">title</span><input type="text" value="SCB pulse" size="13">
+      <span class="lbl">at</span><select><option selected>east</option></select>
+      <span class="lbl">refresh</span><select><option selected>5 min</option></select></div>
+      <div class="row" style="margin-bottom:10px"><span class="lbl">URL</span><input type="text" value="http://scb-ubuntu:3000/api/pulse" style="flex:1;min-width:240px">
+      <span class="lbl">template</span><input type="text" value=".lines_kv[]" size="12"><button style="background:#26456e;border:0;color:var(--acc);border-radius:8px;padding:7px 16px;cursor:pointer">Test</button></div>
+      <div style="background:#0e1014;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font:12px/1.8 ui-monospace,monospace;color:#9fb4cc;max-width:380px">
+        in workshop <span style="float:right;color:var(--acc)">27 bikes</span><br>ready to collect <span style="float:right;color:var(--acc)">8</span><br>emails waiting <span style="float:right;color:var(--acc)">80</span></div></div>
+  </div>
+</section>
+
+<section class="panel" id="p-system">
+  <h1>System</h1><div class="sub">Service, access, history</div>
+  <div class="cards">
+    <div class="gcard"><div class="gh"><span class="nm">Remote access</span><span class="st">localhost only</span><label class="tgl"><input type="checkbox"><span class="sw"></span></label></div>
+      <div class="row"><span class="lbl">binds the tailnet IP — no auth, trusted networks only</span></div></div>
+    <div class="gcard"><div class="gh"><span class="nm">Recent activity</span></div>
+      <div class="row"><span class="lbl">05:52 rotate ok · 05:50 download ai ok (quote-linked) · 05:46 rotate ok…</span></div></div>
+  </div>
+</section>
+
+</main>
+
+<div class="savebar" id="savebar"><span class="msg">2 unsaved changes</span><button onclick="this.parentNode.classList.remove('show')">Apply</button><button class="ghostb" onclick="this.parentNode.classList.remove('show')">Discard</button></div>
+
+<script>
+document.querySelectorAll('.ritem').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.ritem').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('p-'+b.dataset.p).classList.add('active');
+}));
+// any change slides up the save bar (batch apply, like the real form semantics)
+document.addEventListener('change',()=>document.getElementById('savebar').classList.add('show'));
+// feature toggles also tint their card
+document.addEventListener('change',e=>{const c=e.target.closest('.tgl');if(c){const card=c.closest('.gcard');if(card)card.classList.toggle('on',c.querySelector('input').checked)}});
+</script>
+</body></html>

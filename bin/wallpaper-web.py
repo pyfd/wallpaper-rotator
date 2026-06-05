@@ -11,7 +11,7 @@
 # @@...@@ placeholders are substituted by install.sh; falls back to XDG defaults
 # when run from a raw checkout (guarded by the "@@" prefix check, which the
 # substitution can't reproduce).
-import os, re, shutil, subprocess, threading, urllib.parse
+import os, re, shutil, subprocess, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WEBDIR    = "@@WEBDIR@@"
@@ -140,6 +140,16 @@ def regen():
         pass
 
 
+def _bg(sh):
+    """Run a shell chain detached — the canvas-editor UI never blocks on a
+    render/fetch; it polls /state.json instead."""
+    try:
+        subprocess.Popen(["bash", "-c", sh], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 def current_image():
     """Path of the original behind the wallpaper on screen (state file), or ''."""
     try:
@@ -180,8 +190,40 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path in ("/", "/index.html"):
             fn, ctype = os.path.join(WEBDIR, "index.html"), "text/html; charset=utf-8"
+        elif path == "/state.json":
+            # The app polls this; regenerate when stale (throttled so a burst of
+            # post-action polls doesn't stack gen-status runs).
+            fn, ctype = os.path.join(WEBDIR, "state.json"), "application/json; charset=utf-8"
+            try:
+                if time.time() - os.path.getmtime(fn) > 5:
+                    regen()
+            except OSError:
+                regen()
         elif path == "/current.jpg":
             fn, ctype = os.path.join(WEBDIR, "current.jpg"), "image/jpeg"
+        elif path == "/canvas.jpg":
+            fn, ctype = os.path.join(WEBDIR, "canvas.jpg"), "image/jpeg"
+        elif path == "/thumb":
+            # Filmstrip thumbnail: ?f=<name>[&fav=1], cached under WEBDIR/thumbs.
+            qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            name = qs.get("f", [""])[0]
+            fav = qs.get("fav", ["0"])[0] == "1"
+            if not name or "/" in name or name.startswith("."):
+                self._send(404, "text/plain", b"not found"); return
+            src = os.path.join(POOL, "favourites", name) if fav else os.path.join(POOL, name)
+            if not os.path.isfile(src):
+                self._send(404, "text/plain", b"not found"); return
+            tdir = os.path.join(WEBDIR, "thumbs")
+            os.makedirs(tdir, exist_ok=True)
+            fn = os.path.join(tdir, ("fav-" if fav else "") + name + ".jpg")
+            try:
+                if not os.path.isfile(fn) or os.path.getmtime(fn) < os.path.getmtime(src):
+                    subprocess.run(["convert", src, "-thumbnail", "236x133^",
+                                    "-gravity", "center", "-extent", "236x133", fn],
+                                   timeout=20)
+            except Exception:
+                pass
+            ctype = "image/jpeg"
         elif path.startswith("/fav/"):
             name = urllib.parse.unquote(path[5:])
             if "/" in name or name.startswith("."):
@@ -263,6 +305,134 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         pass
             self._done(); return
+        if path == "/img-act":                   # filmstrip: act on a NAMED pool/favourites image
+            ln = int(self.headers.get("Content-Length") or 0)
+            form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
+            name = form.get("img", [""])[0]
+            in_fav = form.get("fav", ["0"])[0] == "1"
+            actn = form.get("act", [""])[0]
+            if not name or "/" in name or name.startswith("."):
+                self._send(400, "text/plain", b"bad image name"); return
+            src = os.path.join(POOL, "favourites", name) if in_fav else os.path.join(POOL, name)
+            if not os.path.isfile(src) or actn not in ("use", "fav", "unfav", "ban"):
+                self._send(404, "text/plain", b"not found"); return
+            statedir = os.path.dirname(CONFIG)
+            if actn == "use":
+                _bg("%s '%s'; %s" % (SETWP, src, GENSTATUS))
+            elif actn == "fav" and not in_fav:
+                fav = os.path.join(POOL, "favourites")
+                try:
+                    os.makedirs(fav, exist_ok=True)
+                    dest = os.path.join(fav, name)
+                    shutil.move(src, dest)
+                    if current_image() == src:
+                        with open(os.path.join(statedir, "current"), "w") as f:
+                            f.write(dest + "\n")
+                except Exception:
+                    pass
+                regen()
+            elif actn == "unfav" and in_fav:
+                try:
+                    dest = os.path.join(POOL, name)
+                    shutil.move(src, dest)
+                    if current_image() == src:
+                        with open(os.path.join(statedir, "current"), "w") as f:
+                            f.write(dest + "\n")
+                except Exception:
+                    pass
+                regen()
+            elif actn == "ban":
+                was_cur = current_image() == src
+                try:
+                    os.remove(src)
+                except Exception:
+                    pass
+                # top up the pool; rotate away if we just deleted the on-screen image
+                _bg("%s; %s%s" % (FETCH, (SETWP + "; ") if was_cur else "", GENSTATUS))
+            self._send(200, "application/json", b'{"ok":true}'); return
+        if path == "/dream":                     # one-shot AI generation, then show it
+            _bg("WR_FORCE_SRC=ai %s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); "
+                "[ -n \"$n\" ] && %s \"$n\"; %s" % (FETCH, POOL, SETWP, GENSTATUS))
+            self._send(200, "application/json", b'{"ok":true}'); return
+        if path == "/setone":                    # instant-apply: one or a few settings
+            ln = int(self.headers.get("Content-Length") or 0)
+            form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
+            cfg = read_config()
+            old = dict(cfg)
+            BOOLS = {"quote": "OVERLAY_QUOTE", "quote_detail": "OVERLAY_QUOTE_DETAIL",
+                     "quote_match": "QUOTE_MATCH_IMAGE", "stats": "OVERLAY_STATS",
+                     "sparkline": "STATS_SPARKLINE", "weather": "OVERLAY_WEATHER",
+                     "weather_icon": "OVERLAY_WEATHER_ICON",
+                     "weather_icon_color": "OVERLAY_WEATHER_ICON_COLOR",
+                     "weather_forecast": "OVERLAY_WEATHER_FORECAST",
+                     "clock": "OVERLAY_CLOCK", "clock_24h": "CLOCK_24H",
+                     "clock_date": "CLOCK_DATE", "ai": "AI_WALLPAPER",
+                     "pulse": "OVERLAY_PULSE"}
+            PICKS = {"quote_pos": ("QUOTE_POS", ALLOWED_POS), "stats_pos": ("STATS_POS", ALLOWED_POS),
+                     "weather_pos": ("WEATHER_POS", ALLOWED_POS), "clock_pos": ("CLOCK_POS", ALLOWED_POS),
+                     "pulse_pos": ("PULSE_POS", ALLOWED_POS), "size": ("OVERLAY_SIZE", ALLOWED_SIZE),
+                     "overlay_theme": ("OVERLAY_THEME", ALLOWED_THEME), "font": ("OVERLAY_FONT", ALLOWED_FONT),
+                     "overlay_style": ("OVERLAY_STYLE", ALLOWED_OVERLAY_STYLE),
+                     "clock_style": ("CLOCK_STYLE", ALLOWED_CLOCK_STYLE),
+                     "clock_face": ("CLOCK_FACE", ALLOWED_CLOCK_FACE),
+                     "pulse_ttl": ("PULSE_TTL", ALLOWED_PULSE_TTL),
+                     "quote_theme": ("QUOTE_THEME", ALLOWED_QUOTE_THEME),
+                     "interval": ("INTERVAL_MIN", ALLOWED_INTERVALS)}
+            touched = False
+            for k, vals in form.items():
+                v = vals[0]
+                if k in BOOLS and v in ("0", "1"):
+                    cfg[BOOLS[k]] = v; touched = True
+                elif k in PICKS and v in PICKS[k][1]:
+                    cfg[PICKS[k][0]] = v; touched = True
+                elif k == "weather_location":
+                    cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", v.strip())[:40]; touched = True
+                elif k == "ai_prompt":
+                    cfg["AI_PROMPT"] = re.sub(r"[^A-Za-z0-9 ,.\-']", "", v.strip())[:100]; touched = True
+                elif k == "pulse_title":
+                    cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", v.strip())[:40]; touched = True
+                elif k == "pulse_url":
+                    pu = v.strip()
+                    cfg["PULSE_URL"] = pu if re.match(r"^(https?|file)://[^\s\"'<>]+$", pu) else ""
+                    touched = True
+                elif k == "pulse_jq":
+                    cfg["PULSE_JQ"] = v.replace("\n", " ").replace("\r", "").strip()[:200] or "."; touched = True
+                elif k == "theme":
+                    themes = [t for t in vals if t and t in ALLOWED_BGTHEME]
+                    cfg["THEME"] = " ".join(dict.fromkeys(themes)); touched = True
+                elif k == "web_bind":
+                    cfg["WEB_BIND"] = (old.get("WEB_BIND") or "tailscale") if v == "1" else ""
+                    touched = True
+            if not touched:
+                self._send(400, "text/plain", b"no valid setting in request"); return
+            if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old.get("PULSE_URL"), old.get("PULSE_JQ")):
+                try:
+                    os.remove(os.path.join(os.path.dirname(CONFIG), "pulse.txt"))
+                except Exception:
+                    pass
+            write_config(cfg)
+            # side-effects mirror /set, but everything slow runs detached so the
+            # UI gets its 200 instantly and just polls /state.json for results
+            if cfg["INTERVAL_MIN"] != old.get("INTERVAL_MIN"):
+                set_cron_interval(cfg["INTERVAL_MIN"])
+                regen()
+            elif cfg["WEB_BIND"] != old.get("WEB_BIND"):
+                _bg("sleep 1; systemctl --user restart wallpaper-web")
+            elif cfg["AI_WALLPAPER"] == "1" and old.get("AI_WALLPAPER") != "1":
+                _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
+                    "for i in 1 2 3; do %s; done; "
+                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --; %s"
+                    % (FETCH, POOL, SETWP, FETCH, POOL, GENSTATUS))
+            elif set(cfg["THEME"].split()) != set((old.get("THEME") or "").split()):
+                _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
+                    "for i in $(seq 1 7); do %s; done; "
+                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --; %s"
+                    % (FETCH, POOL, SETWP, FETCH, POOL, GENSTATUS))
+            else:
+                cur = current_image()
+                cmd = "%s '%s'" % (SETWP, cur) if (cur and os.path.isfile(cur)) else SETWP
+                _bg("%s; %s" % (cmd, GENSTATUS))
+            self._send(200, "application/json", b'{"ok":true}'); return
         if path == "/pulse_test":                # dry-run a pulse URL + template
             ln = int(self.headers.get("Content-Length") or 0)
             form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))

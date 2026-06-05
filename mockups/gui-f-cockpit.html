@@ -1,0 +1,224 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup F — Cockpit</title>
+<style>
+:root{color-scheme:dark;
+ --bg:#06080c;--panel:#0b0f16;--line:#15202e;--grid:#0e1722;
+ --txt:#d7e4f2;--mut:#5b7088;--acc:#39d2ff;--acc2:#1f6feb;--ok:#34e08a;--warn:#ffd23f;--bad:#ff6b6b;
+ --mono:ui-monospace,'Cascadia Code',Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.5 var(--mono);height:100vh;overflow:hidden;
+ background-image:radial-gradient(circle at 70% -10%,rgba(31,111,235,.14),transparent 50%),
+  linear-gradient(rgba(57,210,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(57,210,255,.03) 1px,transparent 1px);
+ background-size:auto,44px 44px,44px 44px}
+.frame{display:grid;grid-template-columns:300px 1fr 330px;grid-template-rows:54px 1fr 130px;height:100vh;gap:1px}
+/* ── header band ── */
+.head{grid-column:1/-1;display:flex;align-items:center;gap:22px;padding:0 22px;border-bottom:1px solid var(--line)}
+.head .id{font-weight:700;letter-spacing:.14em;font-size:13px;color:var(--acc)}
+.head .id::before{content:"▰▰ ";color:var(--acc2)}
+.head .sys{color:var(--mut);font-size:11px;letter-spacing:.06em}
+.head .clockbig{margin-left:auto;font-size:20px;font-weight:700;letter-spacing:.1em}
+.badge{border:1px solid var(--line);border-radius:4px;padding:3px 10px;font-size:10.5px;letter-spacing:.1em;color:var(--ok)}
+.badge.warn{color:var(--warn)}
+/* ── left: gauges ── */
+.left{padding:18px;display:flex;flex-direction:column;gap:14px;border-right:1px solid var(--line);overflow:auto}
+.g{border:1px solid var(--line);background:rgba(11,15,22,.7);border-radius:6px;padding:12px 14px;position:relative}
+.g .t{font-size:9.5px;letter-spacing:.18em;color:var(--mut);text-transform:uppercase;margin-bottom:8px}
+.g .t::before{content:"◢ ";color:var(--acc2)}
+.dial{display:flex;align-items:center;gap:14px}
+.dial svg{flex:none}
+.dial .v{font-size:24px;font-weight:700}
+.dial .v small{display:block;font-size:10px;color:var(--mut);font-weight:400;letter-spacing:.08em}
+.kv{display:flex;justify-content:space-between;font-size:11.5px;padding:2.5px 0;color:#9fb4cc}
+.kv b{color:var(--txt)}
+.kv .ok{color:var(--ok)} .kv .warn{color:var(--warn)}
+/* ── centre: anchor radar + monitor ── */
+.centre{padding:18px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.radarwrap{flex:1;border:1px solid var(--line);border-radius:6px;background:rgba(11,15,22,.7);padding:14px;display:flex;flex-direction:column;min-height:0}
+.radarwrap .t{font-size:9.5px;letter-spacing:.18em;color:var(--mut);text-transform:uppercase;margin-bottom:10px}
+.radarwrap .t::before{content:"◢ ";color:var(--acc2)}
+.radar{flex:1;display:grid;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:6px;min-height:0;position:relative}
+.cell{border:1px dashed #1a2738;border-radius:5px;display:flex;flex-wrap:wrap;gap:5px;align-items:flex-start;align-content:flex-start;padding:7px;position:relative;transition:.15s;min-height:0}
+.cell::before{content:attr(data-n);position:absolute;bottom:4px;right:7px;font-size:8.5px;color:#22344a;letter-spacing:.1em}
+.cell.drop{border-color:var(--acc);background:rgba(57,210,255,.06)}
+.tok{border:1px solid #234;background:#0e1622;border-radius:4px;padding:4px 9px;font-size:10.5px;letter-spacing:.06em;cursor:grab;color:var(--acc);border-color:rgba(57,210,255,.4);user-select:none;transition:.12s}
+.tok:hover{background:rgba(57,210,255,.12)}
+.tok.off{color:var(--mut);border-color:#1a2738;text-decoration:line-through}
+.tok.held{opacity:.4}
+.monitor{height:128px;border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex;gap:0}
+.monitor img{height:100%;aspect-ratio:16/9;object-fit:cover;display:block;filter:saturate(1.1)}
+.monitor .mside{flex:1;padding:10px 14px;background:rgba(11,15,22,.7)}
+.monitor .mside .t{font-size:9.5px;letter-spacing:.18em;color:var(--mut);text-transform:uppercase}
+.monitor .fn{font-size:11px;color:#9fb4cc;margin-top:5px}
+.mbtns{display:flex;gap:7px;margin-top:9px}
+.cbtn{background:transparent;border:1px solid rgba(57,210,255,.4);color:var(--acc);border-radius:4px;padding:5px 13px;font:600 10.5px var(--mono);letter-spacing:.1em;cursor:pointer;transition:.13s;text-transform:uppercase}
+.cbtn:hover{background:rgba(57,210,255,.14)}
+.cbtn.bad{border-color:rgba(255,107,107,.4);color:var(--bad)}
+.cbtn.bad:hover{background:rgba(255,107,107,.12)}
+/* ── right: switch banks ── */
+.right{padding:18px;display:flex;flex-direction:column;gap:14px;border-left:1px solid var(--line);overflow:auto}
+.bank{border:1px solid var(--line);background:rgba(11,15,22,.7);border-radius:6px;padding:12px 14px}
+.bank .t{font-size:9.5px;letter-spacing:.18em;color:var(--mut);text-transform:uppercase;margin-bottom:9px}
+.bank .t::before{content:"◢ ";color:var(--acc2)}
+.sw-row{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:11.5px;color:#9fb4cc}
+.sw-row .nm{flex:1;letter-spacing:.04em}
+.sw-row .val{color:var(--acc);font-size:10.5px;cursor:pointer;border-bottom:1px dotted rgba(57,210,255,.4)}
+.led{width:7px;height:7px;border-radius:50%;background:#22344a;flex:none}
+.led.on{background:var(--ok);box-shadow:0 0 7px var(--ok)}
+.rocker{width:30px;height:16px;border-radius:3px;background:#13202f;border:1px solid #234;position:relative;cursor:pointer;flex:none}
+.rocker::after{content:"";position:absolute;top:1px;left:1px;width:13px;height:12px;border-radius:2px;background:#2c3c50;transition:.14s}
+.rocker.on{border-color:rgba(52,224,138,.5)}
+.rocker.on::after{left:14px;background:var(--ok)}
+.seg{display:flex;border:1px solid #234;border-radius:4px;overflow:hidden}
+.seg span{padding:3px 9px;font-size:9.5px;letter-spacing:.08em;cursor:pointer;color:var(--mut);border-right:1px solid #1a2738}
+.seg span:last-child{border-right:0}
+.seg span.cur{background:rgba(57,210,255,.16);color:var(--acc)}
+/* ── bottom: oscilloscope feed ── */
+.scope{grid-column:1/-1;border-top:1px solid var(--line);display:flex;align-items:stretch}
+.scope .lane{flex:1;padding:10px 18px;border-right:1px solid var(--line);position:relative;overflow:hidden}
+.scope .t{font-size:9px;letter-spacing:.18em;color:var(--mut);text-transform:uppercase}
+.scope pre{margin:5px 0 0;font-size:10.5px;line-height:1.7;color:#7e96b1}
+.scope .ok{color:var(--ok)} .scope .ai{color:var(--warn)}
+.scanline{position:fixed;left:0;right:0;height:90px;background:linear-gradient(180deg,transparent,rgba(57,210,255,.025),transparent);animation:scan 7s linear infinite;pointer-events:none;z-index:50}
+@keyframes scan{from{top:-90px}to{top:100vh}}
+.toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);background:rgba(57,210,255,.12);border:1px solid rgba(57,210,255,.5);color:var(--acc);padding:7px 18px;border-radius:5px;font:600 11px var(--mono);letter-spacing:.1em;opacity:0;transition:.25s;z-index:60;text-transform:uppercase}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="scanline"></div>
+<div class="frame">
+
+<header class="head">
+  <span class="id">WALLPAPER·ROTATOR</span>
+  <span class="sys">FAM3 // ZORIN:GNOME // 1920×1080 // v2026.06.05</span>
+  <span class="badge">CRON NOMINAL</span>
+  <span class="badge">POOL 17</span>
+  <span class="badge warn">KUDOS 25</span>
+  <span class="clockbig">05:58</span>
+</header>
+
+<aside class="left">
+  <div class="g"><div class="t">Rotation</div>
+    <div class="dial">
+      <svg width="74" height="74" viewBox="0 0 74 74">
+        <circle cx="37" cy="37" r="31" fill="none" stroke="#15202e" stroke-width="7"/>
+        <circle cx="37" cy="37" r="31" fill="none" stroke="#39d2ff" stroke-width="7" stroke-linecap="round"
+          stroke-dasharray="195" stroke-dashoffset="78" transform="rotate(-90 37 37)"/>
+        <text x="37" y="42" text-anchor="middle" fill="#d7e4f2" font-size="14" font-weight="700">1:42</text>
+      </svg>
+      <div class="v">3 min<small>INTERVAL · SHUFFLE-BAG</small></div>
+    </div></div>
+  <div class="g"><div class="t">Image pool</div>
+    <div class="kv"><span>wallhaven</span><b>53</b></div>
+    <div class="kv"><span>ai dreamed</span><b class="warn">14 ✦</b></div>
+    <div class="kv"><span>picsum / bing</span><b>12 / 9</b></div>
+    <div class="kv"><span>favourites</span><b>★ 1</b></div>
+    <div class="kv"><span>pruned total</span><b>312</b></div>
+  </div>
+  <div class="g"><div class="t">AI reactor</div>
+    <div class="kv"><span>backend</span><b>AI HORDE</b></div>
+    <div class="kv"><span>kudos</span><b class="warn">25 → FULL-RES</b></div>
+    <div class="kv"><span>quote-link</span><b class="ok">COUPLED</b></div>
+    <div class="kv"><span>last gen</span><b>05:50 · 41s</b></div>
+  </div>
+  <div class="g"><div class="t">Quote pool</div>
+    <div class="kv"><span>cache</span><b>29,897</b></div>
+    <div class="kv"><span>bag remaining</span><b>29,114</b></div>
+    <div class="kv"><span>theme filter</span><b>ANY</b></div>
+    <div class="kv"><span>repeat horizon</span><b class="ok">~62 DAYS</b></div>
+  </div>
+</aside>
+
+<main class="centre">
+  <div class="radarwrap"><div class="t">Anchor grid — drag modules between zones (this is your screen)</div>
+    <div class="radar" id="radar">
+      <div class="cell" data-n="NW"><span class="tok off" draggable="true" id="tClock">🕐 CLOCK</span></div>
+      <div class="cell" data-n="N"><span class="tok" draggable="true" id="tWx">☀ WEATHER</span></div>
+      <div class="cell" data-n="NE"><span class="tok" draggable="true" id="tStats">📈 STATS</span></div>
+      <div class="cell" data-n="W"></div>
+      <div class="cell" data-n="C"></div>
+      <div class="cell" data-n="E"><span class="tok" draggable="true" id="tPulse">📊 PULSE</span></div>
+      <div class="cell" data-n="SW"></div>
+      <div class="cell" data-n="S"><span class="tok" draggable="true" id="tQuote">❝ QUOTE</span></div>
+      <div class="cell" data-n="SE"></div>
+    </div>
+  </div>
+  <div class="monitor">
+    <img src="http://127.0.0.1:8787/current.jpg" onerror="this.remove()">
+    <div class="mside"><div class="t">On screen now</div>
+      <div class="fn">1780634803.ai.jpg · ✦ dreamed · quote-linked<br>rotated 05:52 · next 06:01</div>
+      <div class="mbtns">
+        <button class="cbtn" onclick="toast('ADVANCE')">⏭ Next</button>
+        <button class="cbtn" onclick="toast('PINNED ★')">★ Keep</button>
+        <button class="cbtn bad" onclick="toast('PURGED')">🚫 Ban</button>
+        <button class="cbtn" onclick="toast('DREAM SEQUENCE INITIATED')">✦ Dream</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<aside class="right">
+  <div class="bank"><div class="t">Module bank</div>
+    <div class="sw-row"><span class="led on"></span><span class="nm">QUOTE</span><span class="val">theme:any</span><span class="val">matched</span><span class="rocker on" onclick="rock(this,'QUOTE')"></span></div>
+    <div class="sw-row"><span class="led on"></span><span class="nm">WEATHER</span><span class="val">Shoreham</span><span class="rocker on" onclick="rock(this,'WEATHER')"></span></div>
+    <div class="sw-row"><span class="led on"></span><span class="nm">STATS</span><span class="val">sparklines</span><span class="rocker on" onclick="rock(this,'STATS')"></span></div>
+    <div class="sw-row"><span class="led"></span><span class="nm">CLOCK</span><span class="val">analogue</span><span class="rocker" onclick="rock(this,'CLOCK')"></span></div>
+    <div class="sw-row"><span class="led on"></span><span class="nm">PULSE</span><span class="val">SCB·5min</span><span class="rocker on" onclick="rock(this,'PULSE')"></span></div>
+    <div class="sw-row"><span class="led on"></span><span class="nm">AI DREAM</span><span class="val">full-res</span><span class="rocker on" onclick="rock(this,'AI')"></span></div>
+  </div>
+  <div class="bank"><div class="t">Render style</div>
+    <div class="sw-row"><span class="nm">PANEL</span><div class="seg"><span class="cur">FROSTED</span><span>SCRIM</span><span>EDIT</span><span>CHIPS</span></div></div>
+    <div class="sw-row"><span class="nm">SIZE</span><div class="seg"><span>S</span><span class="cur">M</span><span>L</span></div></div>
+    <div class="sw-row"><span class="nm">TEXT</span><div class="seg"><span class="cur">WHITE</span><span>BLACK</span><span>ACCENT</span></div></div>
+  </div>
+  <div class="bank"><div class="t">Pulse feed — scb-ubuntu</div>
+    <div class="kv"><span>in workshop</span><b>27 BIKES</b></div>
+    <div class="kv"><span>ready to collect</span><b>8</b></div>
+    <div class="kv"><span>emails waiting</span><b class="warn">80</b></div>
+    <div class="kv"><span>takings today</span><b>£0</b></div>
+    <div class="kv" style="margin-top:5px"><span>endpoint</span><b class="ok">200 · @05:53</b></div>
+  </div>
+  <div class="bank"><div class="t">Uplink</div>
+    <div class="sw-row"><span class="led"></span><span class="nm">TAILNET SERVE</span><span class="rocker" onclick="rock(this,'REMOTE')"></span></div>
+  </div>
+</aside>
+
+<footer class="scope">
+  <div class="lane"><div class="t">Event stream</div>
+    <pre>05:52 <span class="ok">ROTATE OK</span> → 1780634803.ai.jpg
+05:50 <span class="ai">AI GEN 41s</span> quote-linked · 1024×576
+05:50 <span class="ok">PULSE 200</span> 7 lines</pre></div>
+  <div class="lane"><div class="t">Throughput</div>
+    <pre>downloads  ▁▁▂▁▃▂▁▄▂▁▂▅▂▁▃  41 miss / 2 fail
+rotations  ▃▃▃▃▃▃▃▃▃▃▃▃▃▃▃  480/day nominal</pre></div>
+  <div class="lane" style="border-right:0"><div class="t">Quote odometer</div>
+    <pre>shown 783 · bag 29,114 · next repeat <span class="ok">AUG 2026</span>
+"When gratitude begins…" — Debasish Mridha</pre></div>
+</footer>
+
+</div>
+<div class="toast" id="toast"></div>
+<script>
+// drag tokens between radar cells
+let held=null;
+document.querySelectorAll('.tok').forEach(t=>{
+  t.addEventListener('dragstart',e=>{held=t;t.classList.add('held')});
+  t.addEventListener('dragend',()=>{held&&held.classList.remove('held');held=null});
+});
+document.querySelectorAll('.cell').forEach(c=>{
+  c.addEventListener('dragover',e=>{e.preventDefault();c.classList.add('drop')});
+  c.addEventListener('dragleave',()=>c.classList.remove('drop'));
+  c.addEventListener('drop',e=>{e.preventDefault();c.classList.remove('drop');
+    if(held){c.appendChild(held);toast(held.textContent.trim()+' → '+c.dataset.n)}});
+});
+function rock(r,n){r.classList.toggle('on');const on=r.classList.contains('on');
+  const led=r.parentNode.querySelector('.led');if(led)led.classList.toggle('on',on);
+  toast(n+(on?' ONLINE':' OFFLINE'))}
+document.querySelectorAll('.seg span').forEach(s=>s.addEventListener('click',()=>{
+  s.parentNode.querySelectorAll('span').forEach(x=>x.classList.remove('cur'));
+  s.classList.add('cur');toast('STYLE '+s.textContent)}));
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1300)}
+// tick the big clock
+setInterval(()=>{const d=new Date();document.querySelector('.clockbig').textContent=
+ String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')},5000);
+</script>
+</body></html>

@@ -1,8 +1,17 @@
 #!/bin/bash
-# Generate a self-contained status page for wallpaper-rotator from the activity
-# log + pool + config. Written to @@WEBDIR@@/index.html and served by
-# wallpaper-web.sh. Run from cron each tick to keep it fresh, and once at
-# wallpaper-web startup. Placeholders (@@...@@) substituted by install.sh.
+# Generate the wallpaper-rotator web app's data + shell:
+#   $WEBDIR/state.json  — everything the UI shows (config, pool, live overlay
+#                         content, counters) — regenerated on every run
+#   $WEBDIR/index.html  — the static one-page "canvas editor" app (same bytes
+#                         every run; renders entirely from /state.json)
+#   $WEBDIR/current.jpg — downscaled preview of what's on the desktop now
+# Served by wallpaper-web.py. Placeholders (@@...@@) substituted by install.sh.
+#
+# UI paradigm (2026-06-05 redesign, "canvas editor"): the wallpaper is an
+# editable canvas — overlays are draggable objects whose 3×3 snap zone IS the
+# *_POS config; click an object for a floating inspector; every control
+# applies instantly (POST /setone); the pool is a filmstrip. Replaces the old
+# two-column status+form page.
 set -uo pipefail
 
 POOL="@@POOL@@"
@@ -19,13 +28,14 @@ SOURCES="@@SOURCES@@"
 
 CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
-INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; OVERLAY_STATS=0
+STATEDIR="$(dirname "$CONFIG")"
+INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; QUOTE_THEME=""; QUOTE_MATCH_IMAGE=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0; THEME=
 CLOCK_FACE=classic; AI_WALLPAPER=0; AI_PROMPT=
-OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.; PULSE_TTL=5
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.; PULSE_TTL=5; PULSE_TITLE=""
 WEB_BIND=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -35,514 +45,568 @@ PORT="@@PORT@@"
 mkdir -p "$WEBDIR"
 [ -f "$LOG" ] || : > "$LOG"
 
-# Installed version (CL-derived, stamped by install.sh in the state dir).
 WR_VERSION=; WR_VERSION_ID=; WR_VERSION_HOST=; WR_INSTALLED_AT=; WR_INSTALLED_ON=
-VERFILE="$(dirname "$LOG")/version"
+VERFILE="$STATEDIR/version"
 [ -f "$VERFILE" ] && . "$VERFILE" 2>/dev/null
 
-# --- gather stats -----------------------------------------------------------
+# --- gather ------------------------------------------------------------------
 pool_count=$(ls "$POOL"/*.jpg "$POOL"/*.jpeg "$POOL"/*.png 2>/dev/null | wc -l)
 pool_size=$(du -sh "$POOL" 2>/dev/null | cut -f1)
 fav_count=$(ls "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png 2>/dev/null | wc -l)
-fav_bit=""; [ "${fav_count:-0}" -gt 0 ] && fav_bit=" · ★ ${fav_count} kept"
-# Favourites gallery: thumbnails served by the web server's /fav/ route.
-# Click = set as wallpaper, ✕ = move back to the (prunable) pool.
-fav_html=""
-for f in "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png; do
-  [ -f "$f" ] || continue
-  fb="$(basename "$f")"
-  fav_html="$fav_html<div class=fav><img src=\"fav/$fb\" loading=lazy data-img=\"$fb\" title=\"Set as wallpaper\"><button type=button class=unfav data-img=\"$fb\" title=\"Remove from favourites\">&#10005;</button></div>"
-done
-[ -z "$fav_html" ] && fav_html="<span class=muted style=font-size:12px>none yet — &#9733; Keep the current wallpaper to start a collection</span>"
 last_rotate=$(grep '\[rotate\]' "$LOG" 2>/dev/null | tail -1)
 last_dl=$(grep '\[download\] src=.* ok' "$LOG" 2>/dev/null | tail -1)
 cur_img=$(printf '%s' "$last_rotate" | grep -oP 'img=\K\S+' || true)
-cur_ai_tag=""; case "${cur_img:-}" in *.ai.jpg) cur_ai_tag=" <small style=color:#7cc4ff>&#10038; AI dreamed</small>";; esac
 backend=$(printf '%s' "$last_rotate" | grep -oP 'backend=\K\S+' || true)
 de=$(printf '%s' "$last_rotate" | grep -oP 'de=\K\S+' || true)
 rotate_when=$(printf '%s' "$last_rotate" | grep -oP '^\S+ \S+' || true)
 dl_when=$(printf '%s' "$last_dl" | grep -oP '^\S+ \S+' || true)
-# NB: `grep -c` prints 0 AND exits non-zero on no match, so `|| echo 0` would
-# append a SECOND 0 ("0\n0"). Capture directly and default an empty (missing file).
 dl_fail=$(grep -c '\[download\] fail' "$LOG" 2>/dev/null); dl_fail=${dl_fail:-0}
 dl_miss=$(grep -c '\[download\] src=.* miss' "$LOG" 2>/dev/null); dl_miss=${dl_miss:-0}
 pruned_total=$(grep -oP '\[prune\] removed=\K[0-9]+' "$LOG" 2>/dev/null | awk '{s+=$1} END{print s+0}')
+quote_cache=$(wc -l < "$STATEDIR/quotes.cache" 2>/dev/null || echo 0)
+quote_bag=$(wc -l < "$STATEDIR/quotes.bag" 2>/dev/null || echo 0)
 
-# Thumbnail of the current wallpaper (resized). When an overlay is active the
-# real desktop shows the rendered frame, so prefer the newest rendered image.
+# Preview of what's on the desktop now (rendered frame when overlays active).
 thumb_src="$POOL/$cur_img"
-if [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ]; then
-  r=$(ls -t "$(dirname "$LOG")/rendered"/*.jpg 2>/dev/null | head -1)
+if [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVERLAY_WEATHER:-0}" = 1 ] \
+   || [ "${OVERLAY_CLOCK:-0}" = 1 ] || [ "${OVERLAY_PULSE:-0}" = 1 ]; then
+  r=$(ls -t "$STATEDIR/rendered"/*.jpg 2>/dev/null | head -1)
   [ -n "$r" ] && thumb_src="$r"
 fi
 [ -n "${thumb_src:-}" ] && [ -f "$thumb_src" ] || thumb_src=$(ls -t "$POOL"/*.jpg 2>/dev/null | head -1)
-have_thumb=0
 if [ -n "${thumb_src:-}" ] && [ -f "$thumb_src" ]; then
-  convert "$thumb_src" -resize 520x "$WEBDIR/current.jpg" 2>/dev/null && have_thumb=1
+  convert "$thumb_src" -resize 1100x "$WEBDIR/current.jpg" 2>/dev/null
+fi
+# Clean (un-rendered) original for the editor canvas — the draggable overlay
+# objects represent the overlays, so the backdrop must not also contain them.
+canvas_src="$(cat "$STATEDIR/current" 2>/dev/null)"
+[ -n "$canvas_src" ] && [ -f "$canvas_src" ] || canvas_src="$thumb_src"
+if [ -n "${canvas_src:-}" ] && [ -f "$canvas_src" ]; then
+  convert "$canvas_src" -resize 1100x "$WEBDIR/canvas.jpg" 2>/dev/null
 fi
 
-esc() { sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+# Live overlay content so canvas objects mirror the real desktop.
+quote_now=""
+[ -f "$STATEDIR/.quote" ] && quote_now="$(tail -n +2 "$STATEDIR/.quote" 2>/dev/null | head -4)"
+weather_now=""
+[ -f "$STATEDIR/forecast.raw" ] && weather_now="$(head -1 "$STATEDIR/forecast.raw" 2>/dev/null | awk -F'|' '{print $4" "$2"°/"$3"°"}')"
+pulse_now=""
+[ -s "$STATEDIR/pulse.txt" ] && pulse_now="$(head -8 "$STATEDIR/pulse.txt")"
+pulse_age=""
+[ -s "$STATEDIR/pulse.txt" ] && pulse_age="$(date -r "$STATEDIR/pulse.txt" +%H:%M 2>/dev/null)"
+stats_now="$(hostname) · load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null) · mem $(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')"
 
-# Per-source download tallies -> HTML rows.
-src_rows=""
+# Per-source tallies (JSON object).
+src_json="{"
+first=1
 for s in $SOURCES ai; do
   n=$(grep -c "\[download\] src=$s ok" "$LOG" 2>/dev/null); n=${n:-0}
-  src_rows="${src_rows}<tr><td>${s}</td><td class=num>${n}</td></tr>"
+  [ $first = 1 ] || src_json="$src_json,"
+  src_json="$src_json\"$s\":$n"; first=0
 done
+src_json="$src_json}"
 
-recent=$(tail -n 18 "$LOG" 2>/dev/null | tac | esc)
-now=$(date '+%Y-%m-%d %H:%M:%S')
+# Pool list (newest first, top-level + favourites), JSON array via jq.
+pool_json="$( {
+  ls -t "$POOL"/*.jpg "$POOL"/*.jpeg "$POOL"/*.png 2>/dev/null | while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    b="$(basename "$f")"; ai=false; case "$b" in *.ai.jpg) ai=true;; esac
+    jq -n --arg n "$b" --argjson ai "$ai" '{n:$n, ai:$ai, fav:false}'
+  done
+  ls -t "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png 2>/dev/null | while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    b="$(basename "$f")"; ai=false; case "$b" in *.ai.jpg) ai=true;; esac
+    jq -n --arg n "$b" --argjson ai "$ai" '{n:$n, ai:$ai, fav:true}'
+  done
+} | jq -s . )"
+[ -n "$pool_json" ] || pool_json="[]"
 
-# Controls form state (current config reflected in the widgets).
-opts_for() {  # $1=current value, $2..=options -> <option> HTML
-  local cur="$1"; shift; local o="" v s
-  for v in "$@"; do s=""; [ "$cur" = "$v" ] && s=" selected"; o="$o<option value=\"$v\"$s>$v</option>"; done
-  printf '%s' "$o"
-}
-int_opts=""
-for n in 3 5 10 15 30 60; do
-  sel=""; [ "${INTERVAL_MIN:-10}" = "$n" ] && sel=" selected"
-  int_opts="${int_opts}<option value=\"$n\"$sel>${n} min</option>"
-done
-qchk="";  [ "${OVERLAY_QUOTE:-0}" = 1 ]        && qchk=" checked"
-qdchk=""; [ "${OVERLAY_QUOTE_DETAIL:-0}" = 1 ] && qdchk=" checked"
-qmchk=""; [ "${QUOTE_MATCH_IMAGE:-0}" = 1 ]    && qmchk=" checked"
-schk="";  [ "${OVERLAY_STATS:-0}" = 1 ]        && schk=" checked"
-spchk=""; [ "${STATS_SPARKLINE:-0}" = 1 ]      && spchk=" checked"
-wchk="";  [ "${OVERLAY_WEATHER:-0}" = 1 ]      && wchk=" checked"
-wichk=""; [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && wichk=" checked"
-aichk=""; [ "${AI_WALLPAPER:-0}" = 1 ]         && aichk=" checked"
-plschk="";[ "${OVERLAY_PULSE:-0}" = 1 ]        && plschk=" checked"
-wbchk=""; [ -n "${WEB_BIND:-}" ]               && wbchk=" checked"
-wicchk="";[ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ] && wicchk=" checked"
-wfchk=""; [ "${OVERLAY_WEATHER_FORECAST:-0}" = 1 ] && wfchk=" checked"
-clkchk="";[ "${OVERLAY_CLOCK:-0}" = 1 ]        && clkchk=" checked"
-c24chk="";[ "${CLOCK_24H:-1}" = 1 ]            && c24chk=" checked"
-cdchk=""; [ "${CLOCK_DATE:-0}" = 1 ]           && cdchk=" checked"
-# "auto" lets the renderer pick the calmest region of each image per overlay.
-POSNS="auto northwest north northeast west center east southwest south southeast"
-qpos_opts=$(opts_for "${QUOTE_POS:-south}" $POSNS)
-spos_opts=$(opts_for "${STATS_POS:-northeast}" $POSNS)
-wpos_opts=$(opts_for "${WEATHER_POS:-north}" $POSNS)
-cpos_opts=$(opts_for "${CLOCK_POS:-northwest}" $POSNS)
-ppos_opts=$(opts_for "${PULSE_POS:-east}" $POSNS)
-pttl_opts=""
-for n in 1 5 15 30; do
-  s=""; [ "${PULSE_TTL:-5}" = "$n" ] && s=" selected"
-  pttl_opts="${pttl_opts}<option value=\"$n\"$s>${n} min</option>"
-done
-# Quote themes: tag filter over the bulk-seeded pool (Quotes-500K categories).
-# Keep in sync with ALLOWED_QUOTE_THEME in wallpaper-web.py.
-qtheme_opts="<option value=\"\">any</option>"
-for t in love life inspirational humor philosophy wisdom happiness hope success romance friendship science; do
-  s=""; [ "${QUOTE_THEME:-}" = "$t" ] && s=" selected"
-  qtheme_opts="${qtheme_opts}<option value=\"$t\"$s>$t</option>"
-done
-# Current cached pulse lines (what the overlay is actually showing right now)
-pulse_now=""
-[ -s "$(dirname "$LOG")/pulse.txt" ] && pulse_now="$(head -8 "$(dirname "$LOG")/pulse.txt" | sed 's/&/\&amp;/g; s/</\&lt;/g')"
-cstyle_opts=$(opts_for "${CLOCK_STYLE:-digital}" digital analogue)
-cface_opts=$(opts_for "${CLOCK_FACE:-classic}" classic minimal dots numbers)
-size_opts=$(opts_for "${OVERLAY_SIZE:-medium}" small medium large)
-# Stored values stay dark/light/accent (config + server allow-list compat);
-# the DISPLAYED labels are the actual colours so the control can't mislead.
-theme_opts=""
-for pair in "light:white" "dark:black" "accent:accent"; do
-  v="${pair%%:*}"; lbl="${pair#*:}"
-  s=""; [ "${OVERLAY_THEME:-light}" = "$v" ] && s=" selected"
-  theme_opts="$theme_opts<option value=\"$v\"$s>$lbl</option>"
-done
-style_opts=$(opts_for "${OVERLAY_STYLE:-scrim}" scrim frosted editorial chips)
-# Background themes: multi-select chips (THEME is a space-separated list;
-# none checked = any). Each fetch picks one of the checked themes at random.
-bg_cur=" ${THEME:-} "
-bgtheme_opts=""
-for t in nature landscape minimal space city abstract cars cycling animals dark forest ocean; do
-  s=""; case "$bg_cur" in *" $t "*) s=" checked";; esac
-  bgtheme_opts="$bgtheme_opts<label class=chip><input type=checkbox name=theme value=\"$t\"$s>$t</label>"
-done
-wloc_val=$(printf '%s' "${WEATHER_LOCATION:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
-aip_val=$(printf '%s' "${AI_PROMPT:-}"   | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
-purl_val=$(printf '%s' "${PULSE_URL:-}"  | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
-pjq_val=$(printf '%s' "${PULSE_JQ:-.}"   | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
-ptitle_val=$(printf '%s' "${PULSE_TITLE:-}" | sed 's/&/\&amp;/g; s/"/\&quot;/g; s/</\&lt;/g')
-# Remote-access line: resolve the URL actually reachable from the tailnet.
+# Fonts ImageMagick actually has (subset offered in Appearance).
+fonts_json="$( {
+  echo default
+  avail_fonts=$(convert -list font 2>/dev/null | sed -n 's/^ *Font: //p')
+  for fc in DejaVu-Sans DejaVu-Serif DejaVu-Sans-Mono Liberation-Sans Liberation-Serif FreeSans FreeSerif; do
+    grep -qxF -- "$fc" <<<"$avail_fonts" && echo "$fc"
+  done
+} | jq -R . | jq -s . )"
+
 remote_url=""
 if [ -n "${WEB_BIND:-}" ]; then
-  if [ "$WEB_BIND" = tailscale ]; then
-    ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"
-  else
-    ts_ip="$WEB_BIND"
-  fi
-  [ -n "$ts_ip" ] && remote_url="http://${ts_ip}:${PORT}"
+  if [ "$WEB_BIND" = tailscale ]; then ts_ip="$(tailscale ip -4 2>/dev/null | head -1)"; else ts_ip="$WEB_BIND"; fi
+  [ -n "${ts_ip:-}" ] && remote_url="http://${ts_ip}:${PORT}"
 fi
-# Pre-built snippets: quotes inside a ${var:+...} expansion would be consumed
-# by the shell (quote removal applies within parameter expansions).
-remote_card=""; remote_foot=""
-if [ -n "$remote_url" ]; then
-  remote_card="<span class=fld><a href=\"$remote_url\" style=\"color:#7cc4ff\">$remote_url</a></span>"
-  remote_foot="<br>Remote (tailnet): <a href=\"$remote_url\" style=\"color:#7cc4ff\">$remote_url</a>"
-fi
-# Font dropdown: "default" + any of a common set that ImageMagick actually has.
-# NB: match via here-string, NOT `printf ... | grep -qx`. Under `set -o pipefail`
-# grep -q's early exit SIGPIPEs printf (exit 141), so the pipeline reports failure
-# even on a match and every font got rejected (only "default" showed).
-font_sel=""; [ "${OVERLAY_FONT:-default}" = default ] && font_sel=" selected"
-font_opts="<option value=\"default\"$font_sel>default</option>"
-avail_fonts=$(convert -list font 2>/dev/null | sed -n 's/^ *Font: //p')
-for fc in DejaVu-Sans DejaVu-Serif DejaVu-Sans-Mono Liberation-Sans Liberation-Serif FreeSans FreeSerif; do
-  if grep -qxF -- "$fc" <<<"$avail_fonts"; then
-    s=""; [ "${OVERLAY_FONT:-default}" = "$fc" ] && s=" selected"
-    font_opts="$font_opts<option value=\"$fc\"$s>$fc</option>"
-  fi
-done
 
-# Inline SVG favicon (framed landscape: accent frame, gold sun, green hills) as a
-# base64 data-URI so no server route or binary asset is needed. base64 is
-# attribute-safe, unlike a raw SVG with #/<>/quotes.
+recent_json="$(tail -n 14 "$LOG" 2>/dev/null | tac | jq -R . | jq -s .)"
+[ -n "$recent_json" ] || recent_json="[]"
+
+host="$(hostname 2>/dev/null)"
+now="$(date '+%Y-%m-%d %H:%M:%S')"
+
+# --- emit state.json ---------------------------------------------------------
+jq -n \
+  --arg version "${WR_VERSION:-unknown}" --arg vid "${WR_VERSION_ID:-}" --arg vhost "${WR_VERSION_HOST:-}" \
+  --arg host "$host" --arg de "${de:-?}" --arg backend "${backend:-?}" --arg res "$RES" --arg now "$now" \
+  --arg cur "$cur_img" --arg rotate_when "${rotate_when:-}" --arg dl_when "${dl_when:-}" \
+  --arg pool_size "${pool_size:-?}" --arg remote "$remote_url" --arg sources "$SOURCES" \
+  --arg quote_now "$quote_now" --arg weather_now "$weather_now" --arg pulse_now "$pulse_now" \
+  --arg pulse_age "$pulse_age" --arg stats_now "$stats_now" \
+  --argjson pool_count "${pool_count:-0}" --argjson fav_count "${fav_count:-0}" \
+  --argjson pruned "${pruned_total:-0}" --argjson miss "${dl_miss:-0}" --argjson fail "${dl_fail:-0}" \
+  --argjson quote_cache "${quote_cache:-0}" --argjson quote_bag "${quote_bag:-0}" \
+  --argjson srcs "$src_json" --argjson pool "$pool_json" --argjson fonts "$fonts_json" --argjson recent "$recent_json" \
+  --arg c_interval "${INTERVAL_MIN}" \
+  --arg c_quote "${OVERLAY_QUOTE}" --arg c_quote_detail "${OVERLAY_QUOTE_DETAIL}" \
+  --arg c_quote_theme "${QUOTE_THEME}" --arg c_quote_match "${QUOTE_MATCH_IMAGE}" --arg c_quote_pos "${QUOTE_POS}" \
+  --arg c_stats "${OVERLAY_STATS}" --arg c_sparkline "${STATS_SPARKLINE}" --arg c_stats_pos "${STATS_POS}" \
+  --arg c_weather "${OVERLAY_WEATHER}" --arg c_weather_pos "${WEATHER_POS}" --arg c_weather_location "${WEATHER_LOCATION}" \
+  --arg c_weather_icon "${OVERLAY_WEATHER_ICON}" --arg c_weather_icon_color "${OVERLAY_WEATHER_ICON_COLOR}" --arg c_weather_forecast "${OVERLAY_WEATHER_FORECAST}" \
+  --arg c_clock "${OVERLAY_CLOCK}" --arg c_clock_style "${CLOCK_STYLE}" --arg c_clock_face "${CLOCK_FACE}" \
+  --arg c_clock_pos "${CLOCK_POS}" --arg c_clock_24h "${CLOCK_24H}" --arg c_clock_date "${CLOCK_DATE}" \
+  --arg c_pulse "${OVERLAY_PULSE}" --arg c_pulse_pos "${PULSE_POS}" --arg c_pulse_url "${PULSE_URL}" \
+  --arg c_pulse_jq "${PULSE_JQ}" --arg c_pulse_ttl "${PULSE_TTL}" --arg c_pulse_title "${PULSE_TITLE}" \
+  --arg c_ai "${AI_WALLPAPER}" --arg c_ai_prompt "${AI_PROMPT}" \
+  --arg c_style "${OVERLAY_STYLE}" --arg c_size "${OVERLAY_SIZE}" --arg c_text "${OVERLAY_THEME}" --arg c_font "${OVERLAY_FONT}" \
+  --arg c_theme "${THEME}" --arg c_web_bind "${WEB_BIND}" \
+'{
+  version:$version, version_id:$vid, version_host:$vhost,
+  host:$host, de:$de, backend:$backend, res:$res, now:$now,
+  cur:$cur, rotate_when:$rotate_when, dl_when:$dl_when,
+  pool_count:$pool_count, pool_size:$pool_size, fav_count:$fav_count,
+  pruned:$pruned, miss:$miss, fail:$fail,
+  quote_cache:$quote_cache, quote_bag:$quote_bag,
+  srcs:$srcs, pool:$pool, fonts:$fonts, recent:$recent,
+  remote:$remote, sources:$sources,
+  live:{quote:$quote_now, weather:$weather_now, pulse:$pulse_now, pulse_age:$pulse_age, stats:$stats_now},
+  cfg:{
+    interval:$c_interval,
+    quote:$c_quote, quote_detail:$c_quote_detail, quote_theme:$c_quote_theme,
+    quote_match:$c_quote_match, quote_pos:$c_quote_pos,
+    stats:$c_stats, sparkline:$c_sparkline, stats_pos:$c_stats_pos,
+    weather:$c_weather, weather_pos:$c_weather_pos, weather_location:$c_weather_location,
+    weather_icon:$c_weather_icon, weather_icon_color:$c_weather_icon_color, weather_forecast:$c_weather_forecast,
+    clock:$c_clock, clock_style:$c_clock_style, clock_face:$c_clock_face,
+    clock_pos:$c_clock_pos, clock_24h:$c_clock_24h, clock_date:$c_clock_date,
+    pulse:$c_pulse, pulse_pos:$c_pulse_pos, pulse_url:$c_pulse_url,
+    pulse_jq:$c_pulse_jq, pulse_ttl:$c_pulse_ttl, pulse_title:$c_pulse_title,
+    ai:$c_ai, ai_prompt:$c_ai_prompt,
+    style:$c_style, size:$c_size, text:$c_text, font:$c_font,
+    theme:$c_theme, web_bind:$c_web_bind
+  }
+}' > "$WEBDIR/state.json.tmp" && mv "$WEBDIR/state.json.tmp" "$WEBDIR/state.json"
+
+# --- emit the static app shell (same bytes every run) ------------------------
 favicon_svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="2" y="5" width="28" height="22" rx="5" fill="#14161a" stroke="#7cc4ff" stroke-width="2"/><circle cx="11" cy="12" r="3" fill="#ffd23f"/><path d="M3 25 L12 16 L18 21 L23 15 L29 25 Z" fill="#5fd17a"/></svg>'
 favicon_b64="$(printf '%s' "$favicon_svg" | base64 -w0 2>/dev/null)"
-host="$(hostname 2>/dev/null)"
 
-# --- emit page --------------------------------------------------------------
-cat > "$WEBDIR/index.html" <<HTML
+{
+cat <<HTML
 <!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,${favicon_b64}">
-<title>Wallpaper Rotator${host:+ · $host}${pool_count:+ — ${pool_count} imgs}</title>
+<title>Wallpaper Rotator</title>
+HTML
+cat <<'HTML'
 <style>
-:root{color-scheme:dark}
-body{margin:0;background:#14161a;color:#e6e8ec;font:14px/1.5 system-ui,sans-serif}
-.wrap{max-width:1560px;margin:0 auto;padding:20px 28px}
-/* Wide screens: status (thumb + cards) left, controls right — interactive bits
-   above the fold; downloads/activity diagnostics flow below-left. Narrow
-   screens keep the original single-column stack (source order). */
-@media(min-width:1100px){
-  .cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);column-gap:28px;align-items:start}
-  .col-status{grid-column:1;grid-row:1}
-  .col-ctl{grid-column:2;grid-row:1/span 2}
-  .col-extra{grid-column:1;grid-row:2}
-  /* drop the heading so the panel top aligns flush with the thumbnail top */
-  .col-ctl>h2:first-child{display:none}
-  /* 6 status cards as a neat 3+3 instead of auto-fit's ragged 4+2 */
-  .col-status .grid{grid-template-columns:repeat(3,1fr)}
+:root{color-scheme:dark;--txt:#eef1f6;--mut:#98a0ac;--acc:#7cc4ff;--acc2:#3a6df0;--ok:#5fd17a;--bad:#e06c75;--warn:#ffd23f}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.45 system-ui,sans-serif;color:var(--txt);height:100vh;overflow:hidden;background:#101218;display:flex;flex-direction:column}
+button{font:inherit}
+/* ── top bar ── */
+.bar{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#15171e;border-bottom:1px solid #23262f;z-index:7;flex-wrap:wrap}
+.bar .ttl{font-weight:700;font-size:13.5px;white-space:nowrap}
+.bar .crumb{color:var(--mut);font-size:12px;white-space:nowrap}
+.bar .livedot{color:var(--ok);font-size:11.5px;white-space:nowrap}
+.bar .busy{display:none;color:var(--warn);font-size:11.5px}
+.bar .busy.show{display:inline}
+.actions{margin-left:auto;display:flex;gap:6px}
+.bbtn{background:#1d212b;border:1px solid #2a2f3a;color:var(--txt);border-radius:8px;padding:5px 13px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.bbtn:hover{border-color:var(--acc2)}
+.bbtn.primary{background:var(--acc2);border-color:var(--acc2);color:#fff}
+.bbtn.danger:hover{border-color:var(--bad);color:#eea}
+.bbtn:disabled{opacity:.5;cursor:progress}
+/* ── work area ── */
+.work{flex:1;display:grid;place-items:center;position:relative;min-height:0;background:radial-gradient(circle at 50% 40%,#181b23 0%,#101218 75%);padding:6px 16px}
+.cwrap{display:flex;flex-direction:column;gap:8px;width:min(96%,calc((100vh - 238px)*1.78));min-width:340px}
+/* auto-tray: overlays with position=auto live here */
+.tray{display:flex;gap:8px;align-items:center;min-height:30px}
+.tray .tl{font-size:9.5px;letter-spacing:.12em;color:var(--mut);text-transform:uppercase}
+.tray:not(.has) .tl::after{content:" — drag an overlay here to let the renderer place it"}
+.canvas{position:relative;width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.6);outline:1px solid #2a2f3a;background:#000}
+.canvas>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.zones{position:absolute;inset:0;display:grid;grid-template:repeat(3,1fr)/repeat(3,1fr);z-index:2}
+.zone{border:1px dashed transparent;transition:.15s}
+.canvas.dragging .zone{border-color:rgba(124,196,255,.22)}
+.zone.hot{background:rgba(58,109,240,.2);border-color:var(--acc)}
+/* overlay objects */
+.obj{position:absolute;z-index:3;background:rgba(8,10,14,.62);backdrop-filter:blur(8px);border:1.5px solid transparent;border-radius:10px;padding:7px 11px;font-size:11px;color:#e7ecf3;cursor:grab;user-select:none;transition:border-color .15s,box-shadow .15s,opacity .2s;max-width:46%;touch-action:none}
+.obj .on{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--acc);font-weight:700}
+.obj:hover{border-color:rgba(124,196,255,.6)}
+.obj.sel{border-color:var(--acc);box-shadow:0 0 0 3px rgba(124,196,255,.22)}
+.obj.dim{opacity:.38;filter:grayscale(.8)}
+.obj.intray{position:static;max-width:none;cursor:grab}
+.obj .bodytxt{display:block;max-height:3.1em;overflow:hidden}
+/* inspector */
+.insp{position:fixed;z-index:20;width:248px;background:rgba(15,17,23,.96);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.13);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.55);padding:13px 15px;opacity:0;pointer-events:none;transform:translateY(6px) scale(.98);transition:.18s}
+.insp.show{opacity:1;pointer-events:auto;transform:none}
+.insp h3{margin:0 0 9px;font-size:12.5px;display:flex;align-items:center;gap:8px}
+.insp h3 .auto{margin-left:auto;font-size:10px;color:var(--mut);cursor:pointer;border:1px solid #2a2f3a;border-radius:6px;padding:2px 7px}
+.insp h3 .auto:hover{color:var(--acc);border-color:var(--acc2)}
+.insp .row{display:flex;flex-wrap:wrap;gap:7px 10px;align-items:center;margin-bottom:8px}
+.insp .lbl{color:var(--mut);font-size:10.5px}
+.insp select,.insp input[type=text]{background:rgba(0,0,0,.45);color:var(--txt);border:1px solid rgba(255,255,255,.14);border-radius:7px;padding:4px 7px;font-size:11.5px;outline:none;max-width:150px}
+.insp input.wide{max-width:none;width:100%}
+.insp label{display:flex;gap:5px;align-items:center;font-size:11px;color:#cfd3da}
+.insp input[type=checkbox]{accent-color:var(--acc2);margin:0}
+.insp .chips{display:flex;flex-wrap:wrap;gap:5px}
+.insp .chip{border:1px solid #2a2f39;border-radius:999px;padding:2px 9px;font-size:10.5px;cursor:pointer;color:#cfd3da}
+.insp .chip.cur{background:rgba(58,109,240,.3);border-color:var(--acc2);color:#fff}
+.insp pre{background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.1);border-radius:9px;padding:8px 10px;font-size:10.5px;color:#9fb4cc;max-height:110px;overflow:auto;margin:0;white-space:pre-wrap}
+.insp .mut{font-size:10px;color:var(--mut)}
+.tgl{display:inline-flex;cursor:pointer}.tgl input{position:absolute;opacity:0}
+.tgl .sw{width:32px;height:18px;border-radius:10px;background:#3a3f4a;position:relative;transition:.15s;display:inline-block}
+.tgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .15s}
+.tgl input:checked+.sw{background:var(--acc2)}.tgl input:checked+.sw::after{left:16px}
+/* layers panel */
+.layers{position:fixed;left:14px;top:60px;width:178px;background:rgba(15,17,23,.88);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);border-radius:13px;padding:9px;z-index:8;max-height:calc(100vh - 220px);overflow:auto}
+.layers h4{margin:2px 6px 7px;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--mut)}
+.lay{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12px;transition:.12s}
+.lay:hover{background:rgba(255,255,255,.07)}
+.lay.sel{background:rgba(58,109,240,.22)}
+.lay.dim{opacity:.45}
+.lay .eye{margin-left:auto;cursor:pointer;font-size:12px;opacity:.85;padding:0 2px}
+.lay .eye:hover{transform:scale(1.2)}
+/* filmstrip */
+.strip{display:flex;gap:8px;align-items:center;padding:10px 14px;background:#13151b;border-top:1px solid #23262f;overflow-x:auto;z-index:5;min-height:96px}
+.fr{position:relative;flex:none;width:118px;aspect-ratio:16/9;border-radius:8px;overflow:hidden;cursor:pointer;outline:2px solid transparent;outline-offset:1px;transition:.15s;background:#1a1e26}
+.fr:hover{outline-color:rgba(124,196,255,.55);transform:translateY(-2px)}
+.fr.cur{outline-color:var(--acc)}
+.fr img{width:100%;height:100%;object-fit:cover;display:block}
+.fr .tag{position:absolute;top:4px;left:4px;background:rgba(0,0,0,.62);border-radius:5px;font-size:9px;padding:1px 6px;color:var(--warn)}
+.fr .star{position:absolute;top:4px;right:4px;font-size:11px;text-shadow:0 1px 3px #000}
+.fr .acts{position:absolute;inset:auto 0 0 0;display:flex;justify-content:space-between;padding:3px 7px;background:linear-gradient(0deg,rgba(0,0,0,.75),transparent);opacity:0;transition:.15s;font-size:12px}
+.fr:hover .acts{opacity:1}
+.fr .acts span:hover{transform:scale(1.3)}
+.strip .more{flex:none;color:var(--mut);font-size:11px;padding:0 10px;white-space:nowrap}
+.toast{position:fixed;top:52px;left:50%;transform:translateX(-50%);background:rgba(46,158,91,.95);color:#fff;padding:7px 16px;border-radius:9px;font-size:12.5px;font-weight:600;opacity:0;transition:.3s;z-index:40;pointer-events:none}
+.toast.show{opacity:1}
+.toast.err{background:rgba(181,84,79,.96)}
+@media(max-width:900px){
+  .layers{position:static;width:auto;max-height:none;display:flex;gap:4px;overflow-x:auto;border-radius:0;background:#13151b;border:0;border-bottom:1px solid #23262f;padding:6px 10px}
+  .layers h4{display:none}.lay{white-space:nowrap}
+  .cwrap{width:96%}
 }
-h1{font-size:20px;margin:0 0 2px} .sub{color:#8a909a;font-size:12px;margin-bottom:20px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
-.card{background:#1c1f26;border:1px solid #262a33;border-radius:10px;padding:14px}
-.card .k{color:#8a909a;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-.card .v{font-size:22px;font-weight:600;margin-top:4px}
-.card .v small{font-size:13px;font-weight:400;color:#8a909a}
-img.cur{width:100%;border-radius:10px;border:1px solid #262a33;display:block}
-table{border-collapse:collapse;width:100%} td{padding:4px 8px;border-bottom:1px solid #23272f}
-td.num{text-align:right;font-variant-numeric:tabular-nums}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a909a;margin:24px 0 8px}
-pre{background:#0f1115;border:1px solid #262a33;border-radius:10px;padding:12px;overflow:auto;font-size:12px;margin:0}
-.ok{color:#5fd17a}.bad{color:#e06c75}
-.foot{color:#5a606a;font-size:11px;margin-top:24px}
-form.controls{background:#1c1f26;border:1px solid #262a33;border-radius:12px;padding:18px}
-.ctl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
-/* odd group count: let the last (Appearance) span the row instead of orphaning */
-.ctl-grid>.ctl-grp:last-child{grid-column:1/-1}
-.ctl-grid>.ctl-wide{grid-column:1/-1}
-.pulse-pre{flex:1;background:#0f1115;border:1px solid #23272f;border-radius:8px;padding:8px 12px;font-size:12px;margin:0;min-height:34px;max-height:140px;overflow:auto;color:#9fb4cc}
-.ctl-grp{background:#15181e;border:1px solid #23272f;border-radius:10px;padding:12px 14px}
-.ctl-lbl{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7c828c;margin:0 0 9px}
-.ctl-row{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
-.ctl-row label{display:flex;align-items:center;gap:6px;color:#cfd3da;font-size:13px;margin:0}
-.ctl-row .muted{color:#7c828c;font-size:12px}
-.ctl-row .fld{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
-form.controls select,form.controls input[type=text]{background:#0f1115;color:#e6e8ec;border:1px solid #2a2f39;border-radius:6px;padding:5px 8px;font-size:13px;outline:none}
-form.controls select:hover{border-color:#37425a}
-form.controls input[type=text]:focus,form.controls select:focus{border-color:#3a6df0}
-form.controls input[type=checkbox]{accent-color:#3a6df0;width:15px;height:15px;margin:0}
-.ctl-apply{margin-top:16px;background:#3a6df0;color:#fff;border:0;border-radius:8px;padding:10px 24px;cursor:pointer;font-weight:600;font-size:14px;min-width:170px;transition:background .15s}
-.ctl-apply:hover{background:#2f5fd6}
-/* AJAX submit states — colour-only feedback, min-width keeps the button steady */
-.ctl-apply.busy{background:#2a3b66;cursor:progress}
-.ctl-apply.done{background:#2e9e5b}
-.ctl-apply.err{background:#b5544f}
-.ctl-apply .spin{display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:ctlspin .7s linear infinite}
-@keyframes ctlspin{to{transform:rotate(360deg)}}
-/* card header with the feature name + an enable toggle on the right */
-.ctl-hd{display:flex;align-items:center;justify-content:space-between;margin:0 0 9px}
-.ctl-hd .ctl-lbl{margin:0}
-/* toggle switch (checkbox hidden, sibling span is the track+knob) */
-.tgl{display:inline-flex;cursor:pointer}
-.tgl input{position:absolute;opacity:0;width:0;height:0}
-.tgl .sw{width:34px;height:19px;border-radius:10px;background:#363b45;position:relative;transition:background .15s;display:inline-block}
-.tgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:left .15s}
-.tgl input:checked + .sw{background:#3a6df0}
-.tgl input:checked + .sw::after{left:17px}
-/* enabled card gets a subtle accent; disabled sub-controls dim out */
-.ctl-grp.on{border-color:#34508f;background:#171b22}
-.ctl-grp [disabled]{opacity:.38;cursor:not-allowed}
-.ctl-grp.off .ctl-row{opacity:.55}
-/* curation buttons under the thumbnail */
-.cur-actions{display:flex;gap:10px;margin:10px 0 2px}
-.act{background:#1c1f26;color:#e6e8ec;border:1px solid #2a2f39;border-radius:8px;padding:7px 16px;min-width:96px;cursor:pointer;font-size:13px;font-weight:600;transition:border-color .15s,background .15s}
-.act:hover{border-color:#3a6df0}
-.act.danger:hover{border-color:#b5544f;color:#e8a9a5}
-.act:disabled{opacity:.45;cursor:progress}
-/* background-theme chips */
-.chip{background:#0f1115;border:1px solid #2a2f39;border-radius:999px;padding:3px 10px;font-size:12px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;color:#cfd3da}
-.chip input{accent-color:#3a6df0;width:13px;height:13px;margin:0}
-.chip:has(input:checked){border-color:#3a6df0;background:#1b2536}
-/* favourites gallery */
-.favs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
-.fav{position:relative}
-.fav img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px;border:1px solid #262a33;display:block;cursor:pointer;transition:border-color .15s}
-.fav img:hover{border-color:#3a6df0}
-.fav .unfav{position:absolute;top:4px;right:4px;width:20px;height:20px;line-height:1;background:rgba(0,0,0,.55);color:#e6e8ec;border:0;border-radius:6px;cursor:pointer;font-size:11px;transition:background .15s}
-.fav .unfav:hover{background:#b5544f}
-/* collapsed-by-default recent activity with a chevron */
-details.ra summary{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#8a909a;margin:24px 0 8px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;user-select:none}
-details.ra summary::-webkit-details-marker{display:none}
-details.ra summary::before{content:"";width:7px;height:7px;border-right:2px solid #8a909a;border-bottom:2px solid #8a909a;transform:rotate(-45deg);transition:transform .15s;flex:none}
-details.ra[open] summary::before{transform:rotate(45deg)}
-</style></head><body><div class=wrap>
-<h1>🖼️ wallpaper-rotator</h1>
-<div class=sub id=page-sub>v${WR_VERSION:-unknown} · desktop: ${de:-?} · backend: ${backend:-?} · resolution: ${RES} · generated ${now}</div>
-<div class=cols><div class=col-status>
-HTML
+</style></head><body>
 
-if [ "$have_thumb" = 1 ]; then
-  echo "<img class=cur id=cur-img data-img=\"${cur_img:-}\" src=\"current.jpg?$(date +%s)\" alt=\"current wallpaper\">" >> "$WEBDIR/index.html"
-fi
-cat >> "$WEBDIR/index.html" <<'HTML'
-<div class=cur-actions>
-<button type=button class=act data-act=next title="Rotate to another wallpaper now">&#9197; Next</button>
-<button type=button class=act data-act=keep title="Move to favourites — stays in rotation, never pruned">&#9733; Keep</button>
-<button type=button class="act danger" data-act=ban title="Delete this image from the pool and rotate">&#128683; Ban</button>
+<div class=bar>
+  <span class=ttl>🖼️ wallpaper-rotator</span>
+  <span class=crumb id=crumb></span>
+  <span class=livedot>● live — edits apply to the real desktop</span>
+  <span class=busy id=busy>⟳ rendering…</span>
+  <div class=actions>
+    <button class=bbtn id=b-next>⏭ Next</button>
+    <button class=bbtn id=b-keep>★ Keep</button>
+    <button class="bbtn danger" id=b-ban>🚫 Ban</button>
+    <button class="bbtn primary" id=b-dream>✦ Dream</button>
+  </div>
 </div>
-HTML
 
-cat >> "$WEBDIR/index.html" <<HTML
-<div class=grid id=status-cards>
-  <div class=card><div class=k>Pool</div><div class=v>${pool_count} <small>images · ${pool_size:-?}${fav_bit}</small></div></div>
-  <div class=card><div class=k>Current image</div><div class=v style=font-size:14px>${cur_img:-none}${cur_ai_tag}</div></div>
-  <div class=card><div class=k>Last rotate</div><div class=v style=font-size:14px>${rotate_when:-never}</div></div>
-  <div class=card><div class=k>Last download</div><div class=v style=font-size:14px>${dl_when:-never}</div></div>
-  <div class=card><div class=k>Pruned (total)</div><div class=v>${pruned_total:-0}</div></div>
-  <div class=card><div class=k>Download misses / fails</div><div class=v>${dl_miss:-0} <small>/ ${dl_fail:-0}</small></div></div>
-</div>
-</div><div class=col-ctl>
-<h2>Controls</h2>
-<form class=controls method=post action="/set">
-<div class=ctl-grid>
-  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Rotation</span></div>
-    <div class=ctl-row><span class=fld><span class=muted>Change every</span><select name=interval>${int_opts}</select></span></div></div>
-  <div class=ctl-grp data-feat=quote><div class=ctl-hd><span class=ctl-lbl>Quote</span>
-      <label class=tgl><input type=checkbox name=quote value=1${qchk}><span class=sw></span></label></div>
-    <div class=ctl-row>
-      <label><input type=checkbox name=quote_detail value=1${qdchk}> Attribution</label>
-      <span class=fld><span class=muted>at</span><select name=quote_pos>${qpos_opts}</select></span>
-      <span class=fld><span class=muted>theme</span><select name=quote_theme>${qtheme_opts}</select></span>
-      <label><input type=checkbox name=quote_match value=1${qmchk}> Match image to quote</label>
-      <span class=muted>theme filters the bulk quote pool by topic; match makes AI-dreamed images illustrate their quote</span>
-    </div></div>
-  <div class=ctl-grp data-feat=stats><div class=ctl-hd><span class=ctl-lbl>System stats</span>
-      <label class=tgl><input type=checkbox name=stats value=1${schk}><span class=sw></span></label></div>
-    <div class=ctl-row>
-      <label><input type=checkbox name=sparkline value=1${spchk}> Sparklines</label>
-      <span class=fld><span class=muted>at</span><select name=stats_pos>${spos_opts}</select></span>
-    </div></div>
-  <div class=ctl-grp data-feat=weather><div class=ctl-hd><span class=ctl-lbl>Weather</span>
-      <label class=tgl><input type=checkbox name=weather value=1${wchk}><span class=sw></span></label></div>
-    <div class=ctl-row>
-      <span class=fld><span class=muted>at</span><select name=weather_pos>${wpos_opts}</select></span>
-      <input type=text name=weather_location value="${wloc_val}" placeholder="Location" size=10>
-      <label><input type=checkbox name=weather_icon value=1${wichk}> Icon</label>
-      <label><input type=checkbox name=weather_icon_color value=1${wicchk}> Colour</label>
-      <label><input type=checkbox name=weather_forecast value=1${wfchk}> Forecast</label>
-    </div></div>
-  <div class=ctl-grp data-feat=clock><div class=ctl-hd><span class=ctl-lbl>Clock</span>
-      <label class=tgl><input type=checkbox name=clock value=1${clkchk}><span class=sw></span></label></div>
-    <div class=ctl-row>
-      <select name=clock_style>${cstyle_opts}</select>
-      <span class=fld><span class=muted>face</span><select name=clock_face>${cface_opts}</select></span>
-      <span class=fld><span class=muted>at</span><select name=clock_pos>${cpos_opts}</select></span>
-      <label><input type=checkbox name=clock_24h value=1${c24chk}> 24h</label>
-      <label><input type=checkbox name=clock_date value=1${cdchk}> Date</label>
-    </div></div>
-  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Background themes</span><span class=muted style=font-size:11px>none = any</span></div>
-    <div class=ctl-row style="gap:6px">${bgtheme_opts}</div></div>
-  <div class=ctl-grp data-feat=ai><div class=ctl-hd><span class=ctl-lbl>AI dreamed</span>
-      <label class=tgl><input type=checkbox name=ai value=1${aichk}><span class=sw></span></label></div>
-    <div class=ctl-row>
-      <input type=text name=ai_prompt value="${aip_val}" placeholder="extra style words (optional)" size=22>
-      <span class=muted>generates images from live context (time, season, weather, theme) — ~30s each</span>
-    </div></div>
-  <div class="ctl-grp ctl-wide" data-feat=pulse><div class=ctl-hd><span class=ctl-lbl>Pulse &mdash; live JSON on the wallpaper</span>
-      <label class=tgl><input type=checkbox name=pulse value=1${plschk}><span class=sw></span></label></div>
-    <div class=ctl-row style="margin-bottom:8px">
-      <span class=fld><span class=muted>at</span><select name=pulse_pos>${ppos_opts}</select></span>
-      <span class=fld><span class=muted>refresh every</span><select name=pulse_ttl>${pttl_opts}</select></span>
-      <span class=fld><span class=muted>title</span><input type=text name=pulse_title value="${ptitle_val}" placeholder="SCB pulse (optional header)" size=18></span>
-      <span class=muted>any JSON endpoint (http/https/file) + a jq template &rarr; one overlay line per output line (max 8); "label|value" lines render as aligned label/value columns</span>
+<div class=layers id=layers></div>
+
+<div class=work id=work>
+  <div class=cwrap>
+    <div class=tray id=tray><span class=tl>auto-placed</span></div>
+    <div class=canvas id=cv>
+      <img id=cvimg src="canvas.jpg">
+      <div class=zones id=zones></div>
     </div>
-    <div class=ctl-row style="margin-bottom:8px">
-      <span class=fld style="flex:1"><span class=muted>URL</span><input type=text name=pulse_url value="${purl_val}" placeholder="https://host:3000/api/pulse or file:///path/data.json" style="flex:1;min-width:260px"></span>
-      <span class=fld style="flex:1"><span class=muted>template</span><input type=text name=pulse_jq value="${pjq_val}" placeholder='.lines[]  or  "jobs \(.jobs)","mail \(.mail)"' style="flex:1;min-width:200px"></span>
-      <button type=button class=act id=pulse-test style="min-width:70px">Test</button>
-    </div>
-    <div class=ctl-row>
-      <pre id=pulse-preview class=pulse-pre>${pulse_now:-（press Test to preview, or Apply to go live）}</pre>
-    </div></div>
-  <div class=ctl-grp data-feat=remote><div class=ctl-hd><span class=ctl-lbl>Remote access</span>
-      <label class=tgl><input type=checkbox name=web_bind value=1${wbchk}><span class=sw></span></label></div>
-    <div class=ctl-row>
-      ${remote_card}
-      <span class=muted>binds the tailnet IP (no auth &mdash; trusted networks only); applying a change restarts the server, page back in ~2s</span>
-    </div></div>
-  <div class=ctl-grp><div class=ctl-hd><span class=ctl-lbl>Appearance</span></div>
-    <div class=ctl-row>
-      <span class=fld><span class=muted>Style</span><select name=overlay_style>${style_opts}</select></span>
-      <span class=fld><span class=muted>Size</span><select name=size>${size_opts}</select></span>
-      <span class=fld><span class=muted>Text colour</span><select name=overlay_theme>${theme_opts}</select></span>
-      <span class=fld><span class=muted>Font</span><select name=font>${font_opts}</select></span>
-    </div></div>
+  </div>
 </div>
-<button type=submit class=ctl-apply>Apply changes</button>
-</form>
+<div class=insp id=insp></div>
+
+<div class=strip id=strip></div>
+<div class=toast id=toast></div>
+
 <script>
-(function(){
-  // Reflect each feature's enable toggle on its card (accent when on, dim when
-  // off). Controls are only DIMMED, never disabled — disabled fields aren't
-  // submitted, which would reset a saved position when you toggle off + Apply.
-  function sync(){
-    document.querySelectorAll('.ctl-grp[data-feat]').forEach(function(g){
-      var cb=g.querySelector('.tgl input'); if(!cb)return;
-      g.classList.toggle('on',cb.checked); g.classList.toggle('off',!cb.checked);
-    });
-  }
-  document.addEventListener('change',function(e){if(e.target.closest('.tgl'))sync();});
-  sync();
+'use strict';
+let S=null;                                   // latest /state.json
+const $=id=>document.getElementById(id);
+const ZONES=['northwest','north','northeast','west','center','east','southwest','south','southeast'];
+const OVERLAYS={
+  quote:  {ic:'❝', name:'Quote',   posKey:'quote_pos',   onKey:'quote'},
+  weather:{ic:'☀', name:'Weather', posKey:'weather_pos', onKey:'weather'},
+  stats:  {ic:'📈', name:'Stats',   posKey:'stats_pos',   onKey:'stats'},
+  clock:  {ic:'🕐', name:'Clock',   posKey:'clock_pos',   onKey:'clock'},
+  pulse:  {ic:'📊', name:'Pulse',   posKey:'pulse_pos',   onKey:'pulse'},
+};
+const CANVAS_ITEMS={
+  appearance:{ic:'🎨', name:'Appearance'},
+  rotation:  {ic:'🗂', name:'Rotation & themes'},
+  ai:        {ic:'✦', name:'AI dreamed'},
+  system:    {ic:'⚙', name:'Status & remote'},
+};
+const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
-  // NB: this block sits inside gen-status.sh's UNQUOTED heredoc — no backticks,
-  // no template literals, no dollar signs anywhere in the JS.
-
-  // Form-drift guard: fields the user has TOUCHED are left alone, but every
-  // untouched field self-syncs to the saved config on each soft refresh —
-  // otherwise a long-open tab's Apply silently reverts settings changed from
-  // another tab/machine (clock-date flip-flop, Fam1 2026-06-04).
-  var dirty={};
-  document.addEventListener('input',function(e){
-    if(e.target.name&&e.target.closest('form.controls'))dirty[e.target.name]=1;
-  });
-  function syncForm(d){
-    var lf=document.querySelector('form.controls'),nf=d.querySelector('form.controls');
-    if(!lf||!nf)return;
-    lf.querySelectorAll('input,select').forEach(function(el){
-      if(!el.name||dirty[el.name])return;
-      var cands=nf.querySelectorAll('[name="'+el.name+'"]');
-      if(el.type==='checkbox'){
-        var match=null;
-        cands.forEach(function(c){if(c.value===el.value)match=c;});
-        el.checked=!!(match&&match.checked);
-      } else if(cands[0]){ el.value=cands[0].value; }
-    });
-    sync();   // re-apply the card on/off accents to the synced state
-  }
-
-  // Pull fresh status out of a fetched copy of this page and swap it in place.
-  // In-progress form edits survive a refresh (see the drift guard above).
-  function swapStatus(html){
-    var d=new DOMParser().parseFromString(html,'text/html');
-    ['page-sub','status-cards','src-table','recent-pre','fav-count','fav-grid'].forEach(function(id){
-      var n=d.getElementById(id),o=document.getElementById(id);
-      if(n&&o)o.innerHTML=n.innerHTML;
-    });
-    syncForm(d);
-    // Only reload the thumbnail when the underlying image actually changed
-    // (the src cache-buster differs every regen and would flicker otherwise).
-    var ni=d.getElementById('cur-img'),oi=document.getElementById('cur-img');
-    if(ni&&oi&&ni.getAttribute('data-img')!==oi.getAttribute('data-img')){
-      oi.setAttribute('data-img',ni.getAttribute('data-img')||'');
-      oi.src=ni.getAttribute('src');
+// ── server I/O ──────────────────────────────────────────────
+async function setone(kv,msg){
+  busy(true);
+  try{
+    const body=new URLSearchParams();
+    for(const [k,v] of Object.entries(kv)){
+      if(Array.isArray(v)) v.forEach(x=>body.append(k,x)); else body.append(k,v);
     }
+    const r=await fetch('/setone',{method:'POST',body});
+    if(!r.ok) throw new Error(await r.text());
+    toast(msg||'Saved — rendering…');
+    pollSoon();
+  }catch(e){toast('save failed: '+e.message,1)}
+}
+async function act(path,form,msg){
+  busy(true);
+  try{
+    const r=await fetch(path,{method:'POST',body:form?new URLSearchParams(form):undefined});
+    if(!r.ok) throw new Error(await r.text());
+    toast(msg||'Done'); pollSoon();
+  }catch(e){toast('failed: '+e.message,1)}
+}
+let pollTimer=null, pollSeq=0;
+function pollSoon(){ clearTimeout(pollTimer); let n=0; const seq=++pollSeq;
+  const tick=async()=>{ if(seq!==pollSeq)return; await refresh(); if(++n<4) pollTimer=setTimeout(tick,2600); else busy(false); };
+  pollTimer=setTimeout(tick,1700);
+}
+async function refresh(){
+  try{
+    const r=await fetch('/state.json?t='+Date.now());
+    S=await r.json(); render(); busy(false);
+  }catch(e){/* server restarting (web_bind) — retry next poll */}
+}
+function busy(b){$('busy').classList.toggle('show',b)}
+function toast(t,err){const e=$('toast');e.textContent=t;e.classList.toggle('err',!!err);e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1700)}
+
+// ── render everything from S ────────────────────────────────
+function render(){
+  const c=S.cfg;
+  $('crumb').textContent=`${S.host} · ${S.de} · ${S.res} · every ${c.interval} min`;
+  $('cvimg').src='canvas.jpg?'+Date.now();
+  renderLayers(); renderObjects(); renderStrip();
+}
+function renderLayers(){
+  const c=S.cfg; let h='<h4>Overlays</h4>';
+  for(const [k,o] of Object.entries(OVERLAYS)){
+    const on=c[o.onKey]==='1';
+    h+=`<div class="lay ${on?'':'dim'}" data-sel="${k}">${o.ic} ${o.name}
+        <span class=eye data-eye="${k}" title="${on?'disable':'enable'}">${on?'👁':'—'}</span></div>`;
   }
-  function refresh(){fetch('/').then(function(r){return r.text();}).then(swapStatus).catch(function(){});}
-  setInterval(refresh,30000);   // soft update — replaces the old meta-refresh full reload
-
-  // Pulse "Test": dry-run the URL + template server-side, show the lines.
-  var pt=document.getElementById('pulse-test');
-  if(pt)pt.addEventListener('click',function(){
-    var f=document.querySelector('form.controls');
-    var pv=document.getElementById('pulse-preview'); if(!f||!pv)return;
-    var body=new URLSearchParams();
-    body.set('url',(f.elements.pulse_url&&f.elements.pulse_url.value)||'');
-    body.set('jq',(f.elements.pulse_jq&&f.elements.pulse_jq.value)||'.');
-    pt.disabled=true;pv.textContent='testing…';
-    fetch('/pulse_test',{method:'POST',body:body})
-      .then(function(r){return r.text();})
-      .then(function(t){pv.textContent=t;})
-      .catch(function(){pv.textContent='test failed (network)';})
-      .then(function(){pt.disabled=false;});
+  h+='<h4>Canvas</h4>';
+  for(const [k,o] of Object.entries(CANVAS_ITEMS))
+    h+=`<div class=lay data-sel="${k}">${o.ic} ${o.name}</div>`;
+  $('layers').innerHTML=h;
+}
+function objBody(k){
+  const c=S.cfg,L=S.live;
+  if(k==='quote')  return esc(L.quote||'— next quote draws at rotate —');
+  if(k==='weather')return '☀ '+esc((c.weather_location||'?')+' '+(L.weather||''));
+  if(k==='stats')  return esc(L.stats||'');
+  if(k==='clock')  return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:c.clock_24h!=='1'})+' · '+esc(c.clock_style);
+  if(k==='pulse'){
+    const lines=(L.pulse||'').split('\n').filter(Boolean).slice(0,3)
+      .map(l=>{const i=l.indexOf('|');return i>0? esc(l.slice(0,i))+' <b style="color:var(--acc)">'+esc(l.slice(i+1))+'</b>' : esc(l)});
+    return lines.length?lines.join(' · '):'— no data yet —';
+  }
+  return '';
+}
+function renderObjects(){
+  const c=S.cfg, cv=$('cv'), tray=$('tray');
+  cv.querySelectorAll('.obj').forEach(o=>o.remove());
+  tray.querySelectorAll('.obj').forEach(o=>o.remove());
+  let trayHas=false;
+  for(const [k,o] of Object.entries(OVERLAYS)){
+    const on=c[o.onKey]==='1', pos=c[o.posKey];
+    const el=document.createElement('div');
+    el.className='obj'+(on?'':' dim'); el.dataset.k=k;
+    const title=k==='pulse'&&c.pulse_title?esc(c.pulse_title):o.name;
+    const sub=k==='pulse'&&S.live.pulse_age?' · @'+S.live.pulse_age:'';
+    el.innerHTML=`<span class=on ${on?'':'style="color:var(--mut)"'}>${o.ic} ${title}${on?'':' — off'}${sub}</span><span class=bodytxt>${objBody(k)}</span>`;
+    if(pos==='auto'){ el.classList.add('intray'); tray.appendChild(el); trayHas=true; }
+    else { el.dataset.z=ZONES.indexOf(pos); cv.appendChild(el); }
+  }
+  tray.classList.toggle('has',trayHas);
+  placeObjects();
+}
+function placeObjects(){
+  $('cv').querySelectorAll('.obj:not(.intray)').forEach(o=>{
+    const z=+o.dataset.z, col=z%3, row=(z/3)|0;
+    o.style.left=(col===0?'2.2%':col===1?'50%':'97.8%');
+    o.style.top =(row===0?'4%':row===1?'50%':'96%');
+    o.style.transform=`translate(${col===0?'0':col===1?'-50%':'-100%'},${row===0?'0':row===1?'-50%':'-100%'})`;
   });
+}
+function renderStrip(){
+  const cur=S.cur, list=S.pool||[];
+  let h='';
+  for(const p of list){
+    const src='/thumb?f='+encodeURIComponent(p.n)+(p.fav?'&fav=1':'');
+    h+=`<div class="fr ${p.n===cur?'cur':''}" data-img="${esc(p.n)}" data-fav="${p.fav?1:0}" title="${esc(p.n)} — click to set as wallpaper">
+      <img loading=lazy src="${src}">
+      ${p.ai?'<span class=tag>✦ ai</span>':''}${p.fav?'<span class=star>★</span>':''}
+      <div class=acts><span data-fr-act="${p.fav?'unfav':'fav'}" title="${p.fav?'remove from favourites':'keep in favourites'}">${p.fav?'✕':'★'}</span><span data-fr-act=ban title="delete">🚫</span></div></div>`;
+  }
+  h+=`<span class=more>${S.pool_count} in pool · ${S.fav_count} kept · ${S.pool_size}</span>`;
+  $('strip').innerHTML=h;
+}
 
-  // Curation buttons (Next/Keep/Ban): POST the action, swap fresh status in.
-  var acts=document.querySelectorAll('.act[data-act]');
-  acts.forEach(function(b){
-    b.addEventListener('click',function(){
-      acts.forEach(function(x){x.disabled=true;});
-      var t0=b.textContent;b.textContent='working…';
-      fetch('/'+b.getAttribute('data-act'),{method:'POST'})
-        .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text();})
-        .then(swapStatus).catch(function(){})
-        .then(function(){b.textContent=t0;acts.forEach(function(x){x.disabled=false;});});
-    });
-  });
+// ── inspector ───────────────────────────────────────────────
+function cb(key,label,cfgKey){const c=S.cfg;return `<label><input type=checkbox data-set="${key}" ${c[cfgKey??key]==='1'?'checked':''}> ${label}</label>`}
+function sel(key,opts,cur){return `<select data-set="${key}">${opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')}</select>`}
+function inspHtml(k){
+  const c=S.cfg;
+  const head=(o,onKey)=>`<h3>${o.ic} ${o.name}
+    ${onKey?`<label class=tgl><input type=checkbox data-set="${onKey}" ${c[onKey]==='1'?'checked':''}><span class=sw></span></label>`:''}
+    ${OVERLAYS[k]?`<span class=auto data-auto="${k}" title="let the renderer pick the calmest spot">${c[OVERLAYS[k].posKey]==='auto'?'auto ✓':'↺ auto'}</span>`:''}</h3>`;
+  if(k==='quote') return head(OVERLAYS[k],'quote')+
+    `<div class=row><span class=lbl>theme</span>${sel('quote_theme',['any','love','life','inspirational','humor','philosophy','wisdom','happiness','hope','success','romance','friendship','science'],c.quote_theme||'any')}</div>
+     <div class=row>${cb('quote_detail','Attribution')}</div>
+     <div class=row>${cb('quote_match','Match image to quote')}</div>
+     <div class=row><span class=mut>pool ${S.quote_cache.toLocaleString()} quotes · bag ${S.quote_bag.toLocaleString()} left</span></div>`;
+  if(k==='weather') return head(OVERLAYS[k],'weather')+
+    `<div class=row><input type=text data-set=weather_location value="${esc(c.weather_location)}" placeholder=Location size=12></div>
+     <div class=row>${cb('weather_icon','Icon')}${cb('weather_icon_color','Colour')}${cb('weather_forecast','Forecast')}</div>`;
+  if(k==='stats') return head(OVERLAYS[k],'stats')+
+    `<div class=row>${cb('sparkline','Sparklines')}</div>
+     <div class=row><span class=mut>${esc(S.live.stats)}</span></div>`;
+  if(k==='clock') return head(OVERLAYS[k],'clock')+
+    `<div class=row>${sel('clock_style',['analogue','digital'],c.clock_style)}<span class=lbl>face</span>${sel('clock_face',['classic','minimal','dots','numbers'],c.clock_face)}</div>
+     <div class=row>${cb('clock_24h','24h')}${cb('clock_date','Date')}</div>`;
+  if(k==='pulse') return head(OVERLAYS[k],'pulse')+
+    `<div class=row><span class=lbl>title</span><input type=text data-set=pulse_title value="${esc(c.pulse_title)}" size=12>
+       <span class=lbl>every</span>${sel('pulse_ttl',['1','5','15','30'],c.pulse_ttl)}<span class=lbl>min</span></div>
+     <div class=row><span class=lbl>URL</span><input type=text class=wide data-set=pulse_url value="${esc(c.pulse_url)}" placeholder="https://host/api or file:///path.json"></div>
+     <div class=row><span class=lbl>template</span><input type=text class=wide data-set=pulse_jq value="${esc(c.pulse_jq)}" placeholder=".lines[]"></div>
+     <div class=row><button class=bbtn id=pulse-test>Test</button></div>
+     <pre id=pulse-pre>${esc(S.live.pulse||'(no data yet)')}</pre>`;
+  if(k==='appearance') return `<h3>🎨 Appearance</h3>
+     <div class=row><span class=lbl>Style</span>${sel('overlay_style',['frosted','scrim','editorial','chips'],c.style)}
+       <span class=lbl>Size</span>${sel('size',['small','medium','large'],c.size)}</div>
+     <div class=row><span class=lbl>Text</span>${sel('overlay_theme',['light','dark','accent'],c.text)}
+       <span class=lbl>Font</span>${sel('font',S.fonts,c.font)}</div>`;
+  if(k==='rotation'){
+    const themes=['nature','landscape','minimal','space','city','abstract','cars','cycling','animals','dark','forest','ocean'];
+    const cur=new Set((c.theme||'').split(' ').filter(Boolean));
+    return `<h3>🗂 Rotation & themes</h3>
+     <div class=row><span class=lbl>Change every</span>${sel('interval',['3','5','10','15','30','60'],c.interval)}<span class=lbl>min</span></div>
+     <div class=row><span class=lbl>image themes (none = any)</span></div>
+     <div class=chips>${themes.map(t=>`<span class="chip ${cur.has(t)?'cur':''}" data-chip="${t}">${t}</span>`).join('')}</div>
+     <div class=row style=margin-top:8px><span class=mut>sources: ${esc(S.sources)} — wallhaven honours themes</span></div>`;
+  }
+  if(k==='ai') return `<h3>✦ AI dreamed
+     <label class=tgl><input type=checkbox data-set=ai ${c.ai==='1'?'checked':''}><span class=sw></span></label></h3>
+     <div class=row><input type=text class=wide data-set=ai_prompt value="${esc(c.ai_prompt)}" placeholder="extra style words (optional)"></div>
+     <div class=row><span class=mut>prompts build from time · season · weather · theme${c.quote_match==='1'?' · quote':''}</span></div>
+     <div class=row><button class=bbtn id=dream2>✦ Dream now</button></div>`;
+  if(k==='system') return `<h3>⚙ Status & remote</h3>
+     <div class=row><label class=tgl><input type=checkbox data-set=web_bind ${c.web_bind?'checked':''}><span class=sw></span></label>
+       <span class=lbl>tailnet access${S.remote?` — <a style="color:var(--acc)" href="${esc(S.remote)}">${esc(S.remote)}</a>`:''}</span></div>
+     <div class=row><span class=mut>v${esc(S.version)} · ${esc(S.de)} · ${esc(S.backend)}<br>
+       rotate ${esc(S.rotate_when)} · download ${esc(S.dl_when)}<br>
+       pruned ${S.pruned} · miss ${S.miss} / fail ${S.fail}<br>
+       sources: ${Object.entries(S.srcs).map(([a,b])=>a+' '+b).join(' · ')}</span></div>
+     <pre>${(S.recent||[]).slice(0,8).map(esc).join('\n')}</pre>`;
+  return '';
+}
+let inspFor=null;
+function showInsp(k,anchor){
+  inspFor=k;
+  const p=$('insp'); p.innerHTML=inspHtml(k);
+  const r=anchor.getBoundingClientRect();
+  let x=r.right+12, y=r.top;
+  if(x+260>innerWidth) x=r.left-262;
+  if(x<6)x=6;
+  y=Math.min(Math.max(8,y),innerHeight-330);
+  p.style.left=x+'px'; p.style.top=y+'px';
+  p.classList.add('show');
+  document.querySelectorAll('.lay').forEach(l=>l.classList.toggle('sel',l.dataset.sel===k));
+}
+function hideInsp(){$('insp').classList.remove('show');inspFor=null;
+  document.querySelectorAll('.lay').forEach(l=>l.classList.remove('sel'))}
 
-  // Favourites gallery: click a thumb = set as wallpaper, ✕ = unfavourite.
-  // Delegated — the grid's innerHTML is replaced by status swaps.
-  document.addEventListener('click',function(e){
-    var un=e.target.closest('.unfav');
-    var im=un?null:e.target.closest('.fav img');
-    var el=un||im; if(!el)return;
-    var name=el.getAttribute('data-img'); if(!name)return;
-    var body=new URLSearchParams(); body.set('img',name);
-    el.style.opacity='.4';
-    fetch(un?'/unfav':'/use',{method:'POST',body:body})
-      .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text();})
-      .then(swapStatus).catch(function(){})
-      .then(function(){el.style.opacity='';});
-  });
+// ── events ──────────────────────────────────────────────────
+document.addEventListener('click',e=>{
+  const eye=e.target.closest('[data-eye]');
+  if(eye){const k=eye.dataset.eye,o=OVERLAYS[k];
+    setone({[o.onKey]:S.cfg[o.onKey]==='1'?'0':'1'},o.name+(S.cfg[o.onKey]==='1'?' off':' on'));
+    e.stopPropagation();return}
+  const lay=e.target.closest('[data-sel]');
+  if(lay){const k=lay.dataset.sel;
+    const obj=document.querySelector(`.obj[data-k="${k}"]`);
+    showInsp(k,obj||lay);return}
+  const au=e.target.closest('[data-auto]');
+  if(au){const k=au.dataset.auto,o=OVERLAYS[k];
+    setone({[o.posKey]:'auto'},o.name+' → auto-placed');return}
+  const chip=e.target.closest('[data-chip]');
+  if(chip){chip.classList.toggle('cur');
+    const picked=[...document.querySelectorAll('.chip.cur')].map(c=>c.dataset.chip);
+    setone({theme:picked},'themes: '+(picked.join(' ')||'any'));return}
+  const fr=e.target.closest('.fr');
+  if(fr){
+    const a=e.target.closest('[data-fr-act]');
+    const form={img:fr.dataset.img,fav:fr.dataset.fav};
+    if(a){form.act=a.dataset.frAct;act('/img-act',form,{fav:'★ kept',unfav:'back to pool',ban:'🚫 deleted'}[form.act]);e.stopPropagation()}
+    else {form.act='use';act('/img-act',form,'set as wallpaper')}
+    return}
+  if(e.target.id==='pulse-test'){
+    const u=document.querySelector('[data-set=pulse_url]').value,
+          j=document.querySelector('[data-set=pulse_jq]').value;
+    fetch('/pulse_test',{method:'POST',body:new URLSearchParams({url:u,jq:j})})
+      .then(r=>r.text()).then(t=>{$('pulse-pre').textContent=t});return}
+  if(e.target.id==='dream2'){act('/dream',null,'✦ dreaming… ~40s');hideInsp();return}
+  if(!e.target.closest('.insp')&&!e.target.closest('.obj')) hideInsp();
+});
+document.addEventListener('change',e=>{
+  const k=e.target.dataset.set; if(!k)return;
+  const v=e.target.type==='checkbox'?(e.target.checked?'1':'0'):e.target.value;
+  setone({[k]:v});
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideInsp()});
+$('b-next').onclick=()=>act('/next',null,'⏭ rotated');
+$('b-keep').onclick=()=>act('/keep',null,'★ kept');
+$('b-ban').onclick=()=>act('/ban',null,'🚫 banned + rotating');
+$('b-dream').onclick=()=>act('/dream',null,'✦ dreaming… ~40s');
 
-  // AJAX Apply: stay on the page, show progress on the button itself.
-  var form=document.querySelector('form.controls');
-  var btn=form&&form.querySelector('.ctl-apply');
-  if(form&&btn)form.addEventListener('submit',function(e){
-    e.preventDefault();
-    if(btn.disabled)return;
-    var idle='Apply changes';
-    btn.disabled=true;btn.classList.add('busy');
-    btn.innerHTML='<span class=spin></span>Applying…';
-    fetch('/set',{method:'POST',body:new URLSearchParams(new FormData(form))})
-      .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.text();})
-      .then(function(html){          // POST redirects to /, so this IS the fresh page
-        dirty={};                    // server state now matches the form
-        swapStatus(html);
-        btn.classList.remove('busy');btn.classList.add('done');btn.textContent='Applied ✓';
-        setTimeout(function(){btn.classList.remove('done');btn.textContent=idle;btn.disabled=false;},1600);
-      })
-      .catch(function(){
-        btn.classList.remove('busy');btn.classList.add('err');btn.textContent='Failed — try again';
-        setTimeout(function(){btn.classList.remove('err');btn.textContent=idle;btn.disabled=false;},2600);
-      });
-  });
-})();
+// drag objects between zones (and out of the auto tray)
+let drag=null;
+document.addEventListener('pointerdown',e=>{
+  const o=e.target.closest('.obj'); if(!o)return;
+  drag={el:o,moved:false}; o.classList.add('sel');
+  e.preventDefault();
+});
+document.addEventListener('pointermove',e=>{
+  if(!drag)return; drag.moved=true;
+  const cv=$('cv'), r=cv.getBoundingClientRect();
+  cv.classList.add('dragging');
+  const x=Math.min(Math.max(e.clientX-r.left,0),r.width), y=Math.min(Math.max(e.clientY-r.top,0),r.height);
+  const col=Math.min(2,(x/r.width*3)|0), row=Math.min(2,(y/r.height*3)|0), z=row*3+col;
+  document.querySelectorAll('.zone').forEach(zz=>zz.classList.toggle('hot',+zz.dataset.i===z));
+  if(drag.el.classList.contains('intray')){drag.el.classList.remove('intray');$('cv').appendChild(drag.el)}
+  drag.el.dataset.z=z; placeObjects();
+});
+document.addEventListener('pointerup',e=>{
+  if(!drag)return;
+  const o=drag.el, moved=drag.moved; drag=null;
+  $('cv').classList.remove('dragging');
+  document.querySelectorAll('.zone').forEach(zz=>zz.classList.remove('hot'));
+  o.classList.remove('sel');
+  const k=o.dataset.k, ov=OVERLAYS[k];
+  if(moved && o.dataset.z!==undefined){
+    const pos=ZONES[+o.dataset.z];
+    if(S.cfg[ov.posKey]!==pos) setone({[ov.posKey]:pos},`${ov.name} → ${pos}`);
+  } else showInsp(k,o);
+});
+
+// boot + slow poll
+const zs=$('zones');
+for(let i=0;i<9;i++){const d=document.createElement('div');d.className='zone';d.dataset.i=i;zs.appendChild(d)}
+refresh();
+setInterval(refresh,30000);
 </script>
-</div><div class=col-extra>
-<details class=ra open><summary>Favourites (<span id=fav-count>${fav_count}</span>)</summary>
-<div class=favs id=fav-grid>${fav_html}</div>
-</details>
-<h2>Downloads by source</h2>
-<table id=src-table>${src_rows}</table>
-<details class=ra><summary>Recent activity</summary>
-<pre id=recent-pre>${recent:-（no activity logged yet）}</pre>
-</details>
-</div></div>
-<div class=foot>v${WR_VERSION_ID:-unknown}${WR_VERSION_HOST:+ (authored on ${WR_VERSION_HOST})}${WR_INSTALLED_AT:+ · installed ${WR_INSTALLED_AT}}${WR_INSTALLED_ON:+ on ${WR_INSTALLED_ON}}<br>Sources: ${SOURCES} · log: ${LOG} · status auto-updates every 30s${remote_foot}</div>
-</div></body></html>
+</body></html>
 HTML
+} > "$WEBDIR/index.html"

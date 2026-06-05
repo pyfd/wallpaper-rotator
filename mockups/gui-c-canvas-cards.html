@@ -1,0 +1,204 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup C — Canvas Cards</title>
+<style>
+:root{color-scheme:dark;
+  --line:rgba(255,255,255,.09);--txt:#eceef2;--mut:#9aa0ab;--acc:#7cc4ff;--acc2:#3a6df0;--ok:#5fd17a}
+*{box-sizing:border-box}
+body{margin:0;color:var(--txt);font:14px/1.5 system-ui,sans-serif;min-height:100vh;background:#0b0d11}
+/* the current wallpaper, blurred, IS the page background */
+.bgwall{position:fixed;inset:-30px;background:linear-gradient(160deg,#1a2a4a,#4a3a68 40%,#c2703f 75%,#e8a35c);z-index:-2}
+.bgwall img{width:100%;height:100%;object-fit:cover;filter:blur(26px) brightness(.45) saturate(1.1)}
+.wrap{max-width:880px;margin:0 auto;padding:26px 22px 90px}
+/* ── hero: crisp preview floats on its own blur ── */
+.hero{position:relative;border-radius:20px;overflow:hidden;border:1px solid var(--line);box-shadow:0 24px 70px rgba(0,0,0,.55);margin-bottom:10px}
+.hero .ph{aspect-ratio:21/9;background:linear-gradient(160deg,#1a2a4a,#4a3a68 40%,#c2703f 75%,#e8a35c)}
+.hero .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.hero .glassbar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:10px;padding:12px 16px;background:linear-gradient(0deg,rgba(8,10,14,.82),transparent);backdrop-filter:blur(2px)}
+.hero .meta{font-size:12px;color:#cfd6df}
+.hero .meta b{color:#fff}
+.hbtn{background:rgba(255,255,255,.14);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:10px;padding:7px 16px;font-size:13px;font-weight:650;cursor:pointer;transition:.15s}
+.hbtn:hover{background:rgba(255,255,255,.26)}
+.hbtn.danger:hover{background:rgba(224,108,117,.4)}
+.hbtn:first-of-type{margin-left:auto}
+/* status ribbon */
+.ribbon{display:flex;gap:8px;flex-wrap:wrap;margin:14px 2px 22px}
+.rb{background:rgba(18,21,28,.72);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:12px;color:var(--mut)}
+.rb b{color:var(--txt)}
+.rb.ok{color:var(--ok)}
+/* ── the card stack ── */
+.stack{display:flex;flex-direction:column;gap:10px}
+.cc{background:rgba(17,20,27,.82);backdrop-filter:blur(16px);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:border-color .25s, transform .25s}
+.cc.on{border-color:rgba(124,196,255,.35)}
+.cc:hover{transform:translateY(-1px)}
+.chead{display:flex;align-items:center;gap:12px;padding:15px 18px;cursor:pointer;user-select:none}
+.chead .ic{width:34px;height:34px;border-radius:10px;background:rgba(124,196,255,.12);display:grid;place-items:center;font-size:16px;flex:none}
+.cc.off .chead .ic{background:rgba(255,255,255,.06);filter:grayscale(1);opacity:.6}
+.chead .nm{font-weight:680;font-size:14.5px}
+.chead .chips{display:flex;gap:6px;flex-wrap:wrap;flex:1;justify-content:flex-end;margin-right:6px}
+.chp{background:rgba(124,196,255,.1);border:1px solid rgba(124,196,255,.22);color:#aed4f6;border-radius:999px;font-size:10.5px;padding:2px 9px;white-space:nowrap}
+.cc.off .chp{background:rgba(255,255,255,.05);border-color:var(--line);color:var(--mut)}
+.chev{width:8px;height:8px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:rotate(45deg);transition:transform .28s;flex:none;margin:0 4px}
+.cc.open .chev{transform:rotate(-135deg)}
+/* roll-out body */
+.cbody{display:grid;grid-template-rows:0fr;transition:grid-template-rows .34s cubic-bezier(.22,1,.3,1)}
+.cc.open .cbody{grid-template-rows:1fr}
+.cbody>div{overflow:hidden}
+.cin{padding:0 18px 17px 64px;display:flex;flex-wrap:wrap;gap:11px 16px;align-items:center}
+.cin label{display:flex;gap:6px;align-items:center;font-size:12.5px;color:#cfd3da}
+.lbl{color:var(--mut);font-size:11.5px}
+select,input[type=text]{background:rgba(0,0,0,.45);color:var(--txt);border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:6px 9px;font-size:12.5px;outline:none}
+select:focus,input:focus{border-color:var(--acc2)}
+input[type=checkbox]{accent-color:var(--acc2)}
+.tgl{display:inline-flex;cursor:pointer;flex:none}.tgl input{position:absolute;opacity:0}
+.tgl .sw{width:38px;height:21px;border-radius:12px;background:#3a3f4a;position:relative;transition:.18s;display:inline-block}
+.tgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .18s}
+.tgl input:checked+.sw{background:var(--acc2)}.tgl input:checked+.sw::after{left:19px}
+/* sticky section minimap */
+.mini{position:fixed;right:max(12px,calc(50vw - 560px));top:120px;display:flex;flex-direction:column;gap:6px;z-index:5}
+.mini a{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.18);transition:.2s;cursor:pointer}
+.mini a:hover,.mini a.hot{background:var(--acc);transform:scale(1.25)}
+.toast{position:fixed;bottom:26px;left:50%;transform:translate(-50%,16px);background:rgba(46,158,91,.94);color:#fff;padding:9px 20px;border-radius:11px;font-size:13px;font-weight:600;opacity:0;transition:.3s;z-index:30;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+h1{font-size:17px;margin:0;display:flex;align-items:baseline;gap:10px}
+h1 small{color:var(--mut);font-size:11.5px;font-weight:400}
+.pulsemono{background:rgba(0,0,0,.5);border:1px solid var(--line);border-radius:11px;padding:11px 15px;font:12px/1.8 ui-monospace,monospace;color:#9fb4cc;width:100%;max-width:400px}
+.pulsemono span{float:right;color:var(--acc)}
+</style></head><body>
+<div class="bgwall"><img src="http://127.0.0.1:8787/current.jpg" onerror="this.remove()"></div>
+<div class="wrap">
+
+<div class="hero">
+  <div class="ph"><img src="http://127.0.0.1:8787/current.jpg" onerror="this.remove()"></div>
+  <div class="glassbar">
+    <span class="meta"><b>1780634803.ai.jpg</b> · ✦ dreamed · quote-linked · rotated 05:52</span>
+    <button class="hbtn" onclick="toast('Rotated')">⏭ Next</button>
+    <button class="hbtn" onclick="toast('★ kept')">★ Keep</button>
+    <button class="hbtn danger" onclick="toast('Banned')">🚫 Ban</button>
+  </div>
+</div>
+
+<div class="ribbon">
+  <span class="rb">pool <b>17</b> · 24 MB</span>
+  <span class="rb">overlays <b>5/6</b> on</span>
+  <span class="rb">AI <b>full-res</b> · 25 kudos</span>
+  <span class="rb">next rotate <b>1:40</b></span>
+  <span class="rb ok">● cron healthy</span>
+  <span class="rb">v2026.06.05 · Fam3</span>
+</div>
+
+<div class="stack" id="stack">
+
+<div class="cc on" id="c1"><div class="chead" onclick="flip(this)">
+  <span class="ic">❝</span><span class="nm">Quote</span>
+  <span class="chips"><span class="chp">south</span><span class="chp">theme: any</span><span class="chp">matched to image</span><span class="chp">30k pool</span></span>
+  <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" checked onchange="tog(this)"><span class="sw"></span></label><span class="chev"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <span class="lbl">at</span><select><option selected>south</option><option>auto</option></select>
+    <span class="lbl">theme</span><select><option selected>any</option><option>love</option><option>life</option><option>inspirational</option><option>humor</option></select>
+    <label><input type="checkbox" checked> Attribution</label>
+    <label><input type="checkbox" checked> Match image to quote</label>
+  </div></div></div></div>
+
+<div class="cc on" id="c2"><div class="chead" onclick="flip(this)">
+  <span class="ic">☀</span><span class="nm">Weather</span>
+  <span class="chips"><span class="chp">north</span><span class="chp">Shoreham</span><span class="chp">icon · colour</span><span class="chp">3-day forecast</span></span>
+  <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" checked onchange="tog(this)"><span class="sw"></span></label><span class="chev"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <span class="lbl">at</span><select><option selected>north</option></select>
+    <input type="text" value="Shoreham" size="10">
+    <label><input type="checkbox" checked> Icon</label><label><input type="checkbox" checked> Colour</label><label><input type="checkbox" checked> Forecast</label>
+  </div></div></div></div>
+
+<div class="cc on" id="c3"><div class="chead" onclick="flip(this)">
+  <span class="ic">📈</span><span class="nm">System stats</span>
+  <span class="chips"><span class="chp">northeast</span><span class="chp">sparklines</span><span class="chp">bat · net</span></span>
+  <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" checked onchange="tog(this)"><span class="sw"></span></label><span class="chev"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <span class="lbl">at</span><select><option selected>northeast</option></select>
+    <label><input type="checkbox" checked> Sparklines</label>
+  </div></div></div></div>
+
+<div class="cc on" id="c4"><div class="chead" onclick="flip(this)">
+  <span class="ic">📊</span><span class="nm">Pulse</span>
+  <span class="chips"><span class="chp">SCB pulse</span><span class="chp">east</span><span class="chp">5 min</span><span class="chp">7 lines ok</span></span>
+  <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" checked onchange="tog(this)"><span class="sw"></span></label><span class="chev"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <span class="lbl">title</span><input type="text" value="SCB pulse" size="12">
+    <span class="lbl">at</span><select><option selected>east</option></select>
+    <span class="lbl">refresh</span><select><option selected>5 min</option></select>
+    <span class="lbl" style="width:100%">URL</span><input type="text" value="http://scb-ubuntu:3000/api/pulse" style="flex:1;min-width:280px">
+    <span class="lbl">template</span><input type="text" value=".lines_kv[]" size="11">
+    <button class="hbtn" style="background:rgba(124,196,255,.16);border-color:rgba(124,196,255,.3)" onclick="toast('Pulse OK — 7 lines')">Test</button>
+    <div class="pulsemono">in workshop <span>27 bikes</span><br>ready to collect <span>8</span><br>emails waiting <span>80</span><br>takings today <span>£0</span></div>
+  </div></div></div></div>
+
+<div class="cc on" id="c5"><div class="chead" onclick="flip(this)">
+  <span class="ic">✦</span><span class="nm">AI dreamed</span>
+  <span class="chips"><span class="chp">full-res 1024×576</span><span class="chp">quote-linked</span><span class="chp">14 generated</span></span>
+  <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" checked onchange="tog(this)"><span class="sw"></span></label><span class="chev"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <input type="text" placeholder="extra style words (optional)" size="24">
+    <span class="lbl">prompts build from time · season · weather · theme · quote</span>
+  </div></div></div></div>
+
+<div class="cc on" id="c6"><div class="chead" onclick="flip(this)">
+  <span class="ic">🗂</span><span class="nm">Images &amp; rotation</span>
+  <span class="chips"><span class="chp">every 3 min</span><span class="chp">themes: cycling · forest · ocean</span><span class="chp">★ 1</span></span>
+  <span class="chev" style="margin-left:auto"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <span class="lbl">Change every</span><select><option selected>3 min</option><option>5 min</option><option>10 min</option></select>
+    <label><input type="checkbox" checked> cycling</label><label><input type="checkbox" checked> forest</label><label><input type="checkbox" checked> ocean</label><label><input type="checkbox"> space</label><label><input type="checkbox"> minimal</label>
+    <span class="lbl" style="width:100%">sources: wallhaven 53 · ai 14 · picsum 12 · bing 9 — favourites gallery rolls out here</span>
+  </div></div></div></div>
+
+<div class="cc off" id="c7"><div class="chead" onclick="flip(this)">
+  <span class="ic">🕐</span><span class="nm">Clock</span>
+  <span class="chips"><span class="chp">off</span></span>
+  <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" onchange="tog(this)"><span class="sw"></span></label><span class="chev"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <select><option selected>analogue</option><option>digital</option></select>
+    <span class="lbl">face</span><select><option selected>classic</option><option>minimal</option><option>dots</option><option>numbers</option></select>
+    <span class="lbl">at</span><select><option selected>northwest</option></select>
+    <label><input type="checkbox" checked> 24h</label><label><input type="checkbox"> Date</label>
+  </div></div></div></div>
+
+<div class="cc" id="c8"><div class="chead" onclick="flip(this)">
+  <span class="ic">🎨</span><span class="nm">Appearance</span>
+  <span class="chips"><span class="chp">frosted</span><span class="chp">medium</span><span class="chp">white</span><span class="chp">FreeSerif</span></span>
+  <span class="chev" style="margin-left:auto"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <span class="lbl">Style</span><select><option selected>frosted</option><option>scrim</option><option>editorial</option><option>chips</option></select>
+    <span class="lbl">Size</span><select><option selected>medium</option></select>
+    <span class="lbl">Text colour</span><select><option selected>white</option></select>
+    <span class="lbl">Font</span><select><option selected>FreeSerif</option></select>
+  </div></div></div></div>
+
+<div class="cc off" id="c9"><div class="chead" onclick="flip(this)">
+  <span class="ic">🌐</span><span class="nm">Remote &amp; system</span>
+  <span class="chips"><span class="chp">localhost only</span><span class="chp">log · activity</span></span>
+  <span class="chev" style="margin-left:auto"></span></div>
+  <div class="cbody"><div><div class="cin">
+    <label class="tgl"><input type="checkbox"><span class="sw"></span></label><span class="lbl">tailnet access (no auth — trusted networks only)</span>
+    <span class="lbl" style="width:100%">recent: 05:52 rotate ok · 05:50 ai download ok (quote-linked) · pruned 312 total · misses 41/2</span>
+  </div></div></div></div>
+
+</div></div>
+
+<div class="mini" id="mini"></div>
+<div class="toast" id="toast">Saved</div>
+
+<script>
+function flip(h){h.parentNode.classList.toggle('open')}
+function tog(cb){
+  const cc=cb.closest('.cc');
+  cc.classList.toggle('on',cb.checked);cc.classList.toggle('off',!cb.checked);
+  toast(cb.checked?'Enabled — re-rendering…':'Disabled — re-rendering…');
+}
+document.addEventListener('change',e=>{if(!e.target.closest('.tgl'))toast('Saved — re-rendering…')});
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),1300)}
+// minimap dots
+const stack=[...document.querySelectorAll('.cc')];const mini=document.getElementById('mini');
+stack.forEach(c=>{const a=document.createElement('a');a.onclick=()=>c.scrollIntoView({behavior:'smooth',block:'center'});mini.appendChild(a)});
+</script>
+</body></html>

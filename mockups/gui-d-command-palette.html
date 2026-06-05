@@ -1,0 +1,139 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup D — Palette OS</title>
+<style>
+:root{color-scheme:dark;--txt:#eef1f6;--mut:#98a0ac;--acc:#7cc4ff;--acc2:#3a6df0;--ok:#5fd17a;--warn:#ffd23f}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 system-ui,sans-serif;color:var(--txt);height:100vh;overflow:hidden;background:#000}
+.bg{position:fixed;inset:0}
+.bg img{width:100%;height:100%;object-fit:cover;filter:brightness(.55) saturate(1.05)}
+.bg::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 50% 38%,transparent 0%,rgba(0,0,0,.55) 90%)}
+/* ── ambient HUD: one slim pill row, nothing else on screen ── */
+.hud{position:fixed;top:22px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:4}
+.pill{background:rgba(12,14,19,.6);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:6px 16px;font-size:12.5px;color:var(--mut);display:flex;gap:7px;align-items:center}
+.pill b{color:var(--txt);font-weight:650}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
+/* ── THE palette ── */
+.pal{position:fixed;left:50%;top:34%;transform:translate(-50%,-50%);width:640px;max-width:92vw;z-index:10}
+.pbox{background:rgba(14,16,22,.82);backdrop-filter:blur(28px) saturate(1.3);border:1px solid rgba(255,255,255,.14);border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.65),inset 0 1px 0 rgba(255,255,255,.06);overflow:hidden}
+.pin{display:flex;align-items:center;gap:12px;padding:16px 20px}
+.pin .pr{color:var(--acc);font-size:18px}
+.pin input{flex:1;background:transparent;border:0;outline:0;color:var(--txt);font-size:17px;caret-color:var(--acc)}
+.pin input::placeholder{color:#6b727e}
+.pin kbd{background:rgba(255,255,255,.1);border-radius:6px;padding:2px 8px;font-size:11px;color:var(--mut)}
+.plist{border-top:1px solid rgba(255,255,255,.08);max-height:330px;overflow:auto}
+.pi{display:flex;align-items:center;gap:13px;padding:11px 20px;cursor:pointer;transition:background .1s}
+.pi:hover,.pi.sel{background:rgba(58,109,240,.18)}
+.pi .ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:15px;background:rgba(124,196,255,.12);flex:none}
+.pi .t{flex:1}
+.pi .t .n{font-weight:600;font-size:13.5px}
+.pi .t .d{font-size:11.5px;color:var(--mut)}
+.pi .state{font-size:11px;color:var(--acc);background:rgba(124,196,255,.1);border:1px solid rgba(124,196,255,.25);padding:2px 10px;border-radius:999px;white-space:nowrap}
+.pi .state.off{color:var(--mut);background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.12)}
+.pi .go{color:#5b626e;font-size:11px}
+/* inline value editing inside a result row */
+.pi .quickset{display:flex;gap:5px}
+.qv{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);color:var(--mut);font-size:11px;border-radius:7px;padding:3px 10px;cursor:pointer;transition:.12s}
+.qv:hover{color:var(--txt);border-color:var(--acc2)}
+.qv.cur{background:rgba(58,109,240,.3);color:#fff;border-color:var(--acc2)}
+.phint{padding:9px 20px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#6b727e;display:flex;gap:16px}
+.phint b{color:var(--mut);font-weight:600}
+/* ── activity feed: bottom-left, chat-like ── */
+.feed{position:fixed;left:24px;bottom:24px;width:330px;z-index:4;display:flex;flex-direction:column;gap:7px}
+.ev{background:rgba(12,14,19,.6);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:8px 13px;font-size:12px;color:#c8cdd6;display:flex;gap:9px;align-items:center;animation:pop .35s cubic-bezier(.22,1,.3,1)}
+.ev .when{color:#646b76;font-size:10.5px;margin-left:auto;flex:none}
+.ev .evic{flex:none}
+@keyframes pop{from{opacity:0;transform:translateY(10px)}}
+/* ── quick actions: bottom-right corner ── */
+.qa{position:fixed;right:24px;bottom:24px;display:flex;gap:8px;z-index:4}
+.qab{background:rgba(12,14,19,.66);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.12);color:var(--txt);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:650;cursor:pointer;transition:.15s}
+.qab:hover{border-color:var(--acc2);background:rgba(58,109,240,.25)}
+.toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:rgba(46,158,91,.95);color:#fff;padding:8px 18px;border-radius:10px;font-size:13px;font-weight:600;opacity:0;transition:.3s;z-index:30}
+.toast.show{opacity:1}
+</style></head><body>
+
+<div class="bg"><img src="http://127.0.0.1:8787/current.jpg" onerror="this.remove()"></div>
+
+<div class="hud">
+  <span class="pill"><span class="dot"></span><b>wallpaper-rotator</b> Fam3</span>
+  <span class="pill">pool <b>17</b></span>
+  <span class="pill">overlays <b>5/6</b></span>
+  <span class="pill">AI <b>full-res</b></span>
+  <span class="pill">next rotate <b>1:42</b></span>
+</div>
+
+<div class="pal">
+  <div class="pbox">
+    <div class="pin"><span class="pr">›</span>
+      <input id="q" placeholder="Type to control anything… try “quote theme”, “ban”, “pulse”" autofocus>
+      <kbd>esc</kbd>
+    </div>
+    <div class="plist" id="list"></div>
+    <div class="phint"><span><b>↑↓</b> choose</span><span><b>↵</b> run / toggle</span><span><b>tab</b> edit values inline</span><span>changes apply instantly</span></div>
+  </div>
+</div>
+
+<div class="feed" id="feed">
+  <div class="ev"><span class="evic">✦</span>dreamed a quote-linked image (1024×576)<span class="when">05:50</span></div>
+  <div class="ev"><span class="evic">🔄</span>rotated → 1780634803.ai.jpg<span class="when">05:52</span></div>
+  <div class="ev"><span class="evic">📊</span>pulse refreshed — 7 lines from scb-ubuntu<span class="when">05:53</span></div>
+</div>
+
+<div class="qa">
+  <button class="qab" onclick="act('⏭ rotated')">⏭ Next</button>
+  <button class="qab" onclick="act('★ kept to favourites')">★ Keep</button>
+  <button class="qab" onclick="act('🚫 banned + rotated')">🚫 Ban</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// command registry — every setting is a searchable, runnable row
+const CMDS = [
+ {ic:'❝', n:'Quote', d:'overlay · south · matched to image', state:'on',
+  quick:{k:'theme', vals:['any','love','life','inspirational','humor','wisdom'], cur:'any'}},
+ {ic:'🎯', n:'Quote → match image', d:'AI-dreamed images illustrate their quote', state:'on'},
+ {ic:'☀', n:'Weather', d:'Shoreham · icon · colour · 3-day forecast · north', state:'on'},
+ {ic:'📈', n:'System stats', d:'load mem disk bat net · sparklines · northeast', state:'on'},
+ {ic:'🕐', n:'Clock', d:'analogue · classic face · northwest', state:'off'},
+ {ic:'📊', n:'Pulse', d:'SCB pulse · scb-ubuntu/api/pulse · east · 5 min', state:'on',
+  quick:{k:'refresh', vals:['1 min','5 min','15 min','30 min'], cur:'5 min'}},
+ {ic:'✦', n:'AI dreamed', d:'context prompts · kudos 25 → full-res', state:'on'},
+ {ic:'🗂', n:'Rotation interval', d:'shuffle-bag, no repeats', state:'3 min',
+  quick:{k:'every', vals:['3 min','5 min','10 min','30 min'], cur:'3 min'}},
+ {ic:'🎨', n:'Appearance', d:'frosted · medium · white · FreeSerif', state:'edit'},
+ {ic:'🏞', n:'Background themes', d:'cycling · forest · ocean', state:'3 picked'},
+ {ic:'★', n:'Favourites', d:'1 kept — browse gallery', state:'view'},
+ {ic:'🌐', n:'Remote access', d:'serve this UI on the tailnet', state:'off'},
+ {ic:'📜', n:'Activity log', d:'rotates · downloads · prunes', state:'view'},
+];
+const list=document.getElementById('list'), q=document.getElementById('q');
+function row(c,i){
+  const quick = c.quick? `<span class="quickset">${c.quick.vals.map(v=>
+     `<span class="qv ${v===c.quick.cur?'cur':''}" onclick="event.stopPropagation();setq(this,'${c.n}','${v}')">${v}</span>`).join('')}</span>`
+   : `<span class="state ${c.state==='off'?'off':''}">${c.state}</span>`;
+  return `<div class="pi ${i===0?'sel':''}" onclick="act('${c.n} — done')">
+    <span class="ic">${c.ic}</span><span class="t"><span class="n">${c.n}</span><br><span class="d">${c.d}</span></span>
+    ${quick}<span class="go">↵</span></div>`;
+}
+function render(f){
+  const t=(f||'').toLowerCase();
+  const m=CMDS.filter(c=>!t||((c.n+' '+c.d).toLowerCase().includes(t)));
+  list.innerHTML=m.map(row).join('')||'<div class="pi"><span class="t"><span class="d">no match — try “quote”, “pulse”, “theme”…</span></span></div>';
+}
+q.addEventListener('input',()=>render(q.value));
+render();
+function setq(el,n,v){
+  el.parentNode.querySelectorAll('.qv').forEach(x=>x.classList.remove('cur'));
+  el.classList.add('cur');
+  act(`${n}: ${v} ✓`);
+}
+function act(t){
+  const e=document.getElementById('toast');e.textContent=t;e.classList.add('show');
+  setTimeout(()=>e.classList.remove('show'),1400);
+  const f=document.getElementById('feed');
+  const d=document.createElement('div');d.className='ev';
+  d.innerHTML=`<span class="evic">⚙</span>${t}<span class="when">now</span>`;
+  f.appendChild(d); while(f.children.length>4) f.removeChild(f.firstChild);
+}
+</script>
+</body></html>

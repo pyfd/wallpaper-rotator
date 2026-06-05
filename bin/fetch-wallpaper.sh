@@ -203,6 +203,10 @@ fi
 # AI mode: while on, every new download tries generation first (normal sources
 # stay as fallback for outages/slow gens) — the pool converges to AI images.
 [ "${AI_WALLPAPER:-0}" = 1 ] && ORDER="ai $ORDER"
+# One-shot source override (the web UI's "Dream now" sets WR_FORCE_SRC=ai):
+# try ONLY this source — no fallback, so a failed dream doesn't surprise-swap
+# the wallpaper with a random download.
+[ -n "${WR_FORCE_SRC:-}" ] && ORDER="$WR_FORCE_SRC"
 for src in $ORDER; do
   : > "$TMP"
   if "fetch_$src" 2>>"$LOG" && valid_image "$TMP"; then

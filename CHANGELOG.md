@@ -5,6 +5,36 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-05 07:00 BST — Fam3
+
+### Changed
+- **Web GUI rebuilt as a "canvas editor"** (Paul: the old two-column page was
+  "a mess — spread over two pages, disjointed"; chosen from 6 mockups, E).
+  The wallpaper IS the page: overlays are draggable objects positioned where
+  they really render — dropping one on the 3×3 snap grid sets its `*_POS`;
+  clicking opens a floating per-overlay inspector; the layers panel's eye
+  toggles features; an auto-placed tray holds `auto`-positioned overlays; the
+  pool is a filmstrip (click = set wallpaper, hover ★/🚫, ✦ = AI). **Every
+  control applies instantly** — no Apply button, no form drift; the page
+  polls `state.json` and shows a "rendering…" pill while the desktop updates.
+  - `gen-status.sh` now emits `state.json` (config + pool + live overlay
+    content + counters) and a static app shell that renders entirely
+    client-side, plus a clean-original `canvas.jpg` for the editor backdrop.
+  - `wallpaper-web.py` gains `/setone` (instant per-control apply with the
+    full `/set` side-effect parity: cron rewrite, AI-converge, themed-fetch,
+    web-bind restart, pulse-cache drop — all detached so responses are
+    instant), `/img-act` (use/fav/unfav/ban any named pool image),
+    `/dream` (one-shot forced AI gen via `WR_FORCE_SRC=ai`), `/thumb`
+    (cached filmstrip thumbnails), `/state.json` (throttled regen) and
+    `/canvas.jpg`. Legacy `/set` kept for rollback.
+  - `fetch-wallpaper.sh`: `WR_FORCE_SRC` env forces a single source, no
+    fallback (the Dream button's contract).
+  - Verified live on Fam3: drag Quote south→west→south wrote `QUOTE_POS` and
+    re-rendered the real desktop each time; eye-toggled Clock on/off;
+    inspector reflects live state (incl. 30k quote pool / bag counts);
+    filmstrip thumbs + current ring + ai badges all live. Design mockups
+    (3 conventional + 3 paradigm) kept in `mockups/`.
+
 ## 2026-06-05 05:30 BST — Fam1
 
 ### Added
