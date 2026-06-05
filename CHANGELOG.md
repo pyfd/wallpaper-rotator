@@ -5,6 +5,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-05 07:11 BST — Fam3
+
+### Fixed
+- **Quote theme "any" rejected by instant-apply** — the inspector's select
+  says "any" but the config stores "" for it; `/setone` validated against the
+  raw value and 400'd ("no valid setting"), surfacing as a fleeting toast
+  error (Paul's catch, minutes after ship). Server now maps any→"" .
+  Error toasts also linger 4.5s (were 1.7s — too quick to read).
+
 ## 2026-06-05 07:00 BST — Fam3
 
 ### Changed

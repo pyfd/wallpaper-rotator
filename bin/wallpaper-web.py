@@ -376,7 +376,6 @@ class Handler(BaseHTTPRequestHandler):
                      "clock_style": ("CLOCK_STYLE", ALLOWED_CLOCK_STYLE),
                      "clock_face": ("CLOCK_FACE", ALLOWED_CLOCK_FACE),
                      "pulse_ttl": ("PULSE_TTL", ALLOWED_PULSE_TTL),
-                     "quote_theme": ("QUOTE_THEME", ALLOWED_QUOTE_THEME),
                      "interval": ("INTERVAL_MIN", ALLOWED_INTERVALS)}
             touched = False
             for k, vals in form.items():
@@ -385,6 +384,11 @@ class Handler(BaseHTTPRequestHandler):
                     cfg[BOOLS[k]] = v; touched = True
                 elif k in PICKS and v in PICKS[k][1]:
                     cfg[PICKS[k][0]] = v; touched = True
+                elif k == "quote_theme":
+                    # the UI's select says "any"; the config stores "" for it
+                    v = "" if v == "any" else v
+                    if v in ALLOWED_QUOTE_THEME:
+                        cfg["QUOTE_THEME"] = v; touched = True
                 elif k == "weather_location":
                     cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", v.strip())[:40]; touched = True
                 elif k == "ai_prompt":

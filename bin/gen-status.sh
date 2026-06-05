@@ -380,7 +380,7 @@ async function refresh(){
   }catch(e){/* server restarting (web_bind) — retry next poll */}
 }
 function busy(b){$('busy').classList.toggle('show',b)}
-function toast(t,err){const e=$('toast');e.textContent=t;e.classList.toggle('err',!!err);e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1700)}
+function toast(t,err){const e=$('toast');e.textContent=t;e.classList.toggle('err',!!err);e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),err?4500:1700)}
 
 // ── render everything from S ────────────────────────────────
 function render(){
