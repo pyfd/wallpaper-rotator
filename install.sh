@@ -45,11 +45,16 @@ WEB_PORT="8787"
 SOURCES="wallhaven bing picsum local"
 # Local image folder for the 'local' source — used only if it exists + has images.
 LOCALDIR="$USER_HOME/Pictures/Wallpapers"
-# How many images to download up front on a FIRST install, so random rotation has
-# variety from the very first tick instead of repeating one image until cron fills
-# the pool. Only runs when the pool is empty; re-installs don't re-seed. Kept under
-# the keep-60 prune ceiling.
-SEED_COUNT=15
+# Seed-burst: top the pool up to SEED_TARGET whenever it holds fewer than
+# SEED_MIN images at install time. The original seed only ran on a COMPLETELY
+# empty pool, so a machine installed with a handful of images (Fam1, 2026-06-06:
+# 18 files, all <90 min old) skipped it and cycled the same few wallpapers every
+# ~90 min for the ~10h the 10-min cron needed to reach the prune ceiling.
+# SEED_TARGET sits under the keep-60 prune ceiling; the fetcher's md5 dedup
+# (2026-06-05) discards re-served pictures during the burst, so the loop runs
+# until the pool actually GROWS to target or attempts are exhausted.
+SEED_MIN=30
+SEED_TARGET=55
 # Activity log + web status dir (XDG state dir). Shared by the cron jobs, the
 # setter, and the login generator. Created user-owned so the root-run login
 # generator appends rather than taking ownership.
@@ -220,18 +225,24 @@ sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@RES@@#${RES}#
 sudo install -m 0755 -o root -g root "$TMP" "$FETCH_BIN"
 rm -f "$TMP"
 
-# Seed the pool now so nothing is blank until the first cron tick. Fetch a batch
-# up front (SEED_COUNT) so random rotation has variety immediately rather than
-# repeating one image while cron slowly fills the pool. Each fetch shuffles
-# sources, so the batch is varied; failures (offline) just yield a smaller pool.
-if ! ls "$POOL"/*.jpg >/dev/null 2>&1; then
-  echo "==> seeding pool (up to $SEED_COUNT images)"
-  got=0
-  for _ in $(seq "$SEED_COUNT"); do
-    "$FETCH_BIN" && got=$((got + 1))
+# Seed-burst: if the pool is thin (< SEED_MIN), top it up to SEED_TARGET now
+# rather than leaving the 10-min cron to drip-fill it (~10h to ceiling from
+# empty — meanwhile rotation cycles the same few images every pool×interval
+# minutes, which reads as "duplication" even with the md5 dedup working).
+# Attempts are capped at 3× the shortfall: sources re-serve pictures and the
+# fetcher discards those as dups, so not every attempt grows the pool.
+pool_count() { ls "$POOL"/*.jpg 2>/dev/null | wc -l; }
+COUNT=$(pool_count)
+if [ "$COUNT" -lt "$SEED_MIN" ]; then
+  echo "==> seeding pool ($COUNT -> $SEED_TARGET images)"
+  attempts=$(( (SEED_TARGET - COUNT) * 3 ))
+  while [ "$(pool_count)" -lt "$SEED_TARGET" ] && [ "$attempts" -gt 0 ]; do
+    "$FETCH_BIN" >/dev/null 2>&1 || true
+    attempts=$((attempts - 1))
   done
-  if [ "$got" -gt 0 ]; then
-    echo "    seeded $got/$SEED_COUNT"
+  COUNT=$(pool_count)
+  if [ "$COUNT" -gt 0 ]; then
+    echo "    pool now $COUNT images"
   else
     echo "    WARNING: seed fetch failed (no internet?). Pool empty for now." >&2
   fi

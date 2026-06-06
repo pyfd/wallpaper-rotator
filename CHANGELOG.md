@@ -5,6 +5,27 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-06 04:57 BST — Fam1
+
+### Fixed
+- **"Same image again" on freshly-installed machines** (Paul, Fam1, ~04:45) —
+  NOT the duplication bug: the 06-05 md5 dedup was verified working here
+  (dup-discard lines in the log, zero duplicate hashes in the pool). The
+  actual cause: Fam1's pool held only **18 images, all <90 min old**, so the
+  5-min rotation legitimately cycled every ~90 min. Root cause in install.sh:
+  the seed step only ran on a COMPLETELY empty pool — a machine with a
+  handful of images skipped it and waited ~10h for the 10-min cron to
+  drip-fill to the keep-60 ceiling.
+  - **Seed-burst**: install.sh now tops the pool up to `SEED_TARGET=55`
+    whenever it holds fewer than `SEED_MIN=30` at install time (was: 15
+    fetches, empty-pool-only). The loop counts pool GROWTH, not fetch
+    attempts — sources re-serve pictures during a burst and the md5 dedup
+    discards them (observed live: wallhaven/bing dups discarded, fell
+    through to picsum) — capped at 3× the shortfall. Sandbox-tested with a
+    simulated 33% dup rate.
+  - Fam1's pool hand-seeded 18 → 63 the same minute; the install.sh change
+    makes that automatic for the next machine.
+
 ## 2026-06-05 19:57 BST — Fam3
 
 ### Fixed
