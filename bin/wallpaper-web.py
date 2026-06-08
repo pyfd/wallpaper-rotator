@@ -60,7 +60,7 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEM
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN", "AI_HORDE_KEY",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
-            "PULSE_TITLE", "WEB_BIND")
+            "PULSE_TITLE", "WEB_BIND", "ALERTS_URL")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "QUOTE_THEME": "", "QUOTE_MATCH_IMAGE": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
@@ -83,7 +83,11 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 # not a form field — set in the config file, needs a service
                 # restart: "" = localhost only, "tailscale" = + tailnet IP,
                 # or an explicit extra IP to bind
-                "WEB_BIND": ""}
+                "WEB_BIND": "",
+                # not a form field — set in the config file. "" = infra-alert
+                # badge off; an alerts-endpoint URL enables check-alerts.sh.
+                # Listed in CFG_KEYS purely so a web-UI save preserves it.
+                "ALERTS_URL": ""}
 
 
 def read_config():
