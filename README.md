@@ -91,6 +91,10 @@ Non-interactive: pass `--yes-disable` or `--no-disable`. With no terminal, it
 defaults to coexist. A *dormant* (installed but not running) rotator isn't
 flagged — only a live one can conflict.
 
+Pass `--no-seed` to skip the one-time bulk quote-pool seed (~144MB) and the
+image seed-burst — useful for routine re-installs/updates where the pools are
+already populated and you just want to redeploy the latest scripts + cron.
+
 ### Distros
 Dependency install auto-detects `apt` / `dnf` / `pacman` / `zypper`. Core deps:
 `imagemagick` (`convert`), `curl`, a cron daemon. XFCE also needs `xfconf`.

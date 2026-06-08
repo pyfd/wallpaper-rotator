@@ -22,10 +22,12 @@ fi
 
 # Non-interactive answers for the "existing rotator detected" prompt.
 DISABLE_OTHERS=""   # "yes" | "no" | "" (ask via /dev/tty)
+NO_SEED=""          # "1" skips the image seed-burst + the one-time bulk quote seed
 for arg in "$@"; do
   case "$arg" in
     --yes-disable) DISABLE_OTHERS="yes" ;;
     --no-disable)  DISABLE_OTHERS="no"  ;;
+    --no-seed)     NO_SEED="1"          ;;
   esac
 done
 
@@ -233,7 +235,9 @@ rm -f "$TMP"
 # fetcher discards those as dups, so not every attempt grows the pool.
 pool_count() { ls "$POOL"/*.jpg 2>/dev/null | wc -l; }
 COUNT=$(pool_count)
-if [ "$COUNT" -lt "$SEED_MIN" ]; then
+if [ -n "$NO_SEED" ]; then
+  echo "==> skipping image seed-burst (--no-seed); pool has $COUNT images, cron will maintain it"
+elif [ "$COUNT" -lt "$SEED_MIN" ]; then
   echo "==> seeding pool ($COUNT -> $SEED_TARGET images)"
   attempts=$(( (SEED_TARGET - COUNT) * 3 ))
   while [ "$(pool_count)" -lt "$SEED_TARGET" ] && [ "$attempts" -gt 0 ]; do
@@ -256,8 +260,11 @@ sudo install -m 0755 -o root -g root "$TMP" "$FETCHQ_BIN"
 rm -f "$TMP"
 "$FETCHQ_BIN" >/dev/null 2>&1 || true   # seed the quote cache once
 # Bulk-seed the quote pool (one-time, ~30k quotes) when the cache looks
-# unseeded — background: the Quotes-500K download is ~144MB.
-if [ "$(wc -l < "$LOG_DIR/quotes.cache" 2>/dev/null || echo 0)" -lt 2000 ]; then
+# unseeded — background: the Quotes-500K download is ~144MB. Skipped under
+# --no-seed (e.g. routine `wr-update` re-installs, where the cache is already seeded).
+if [ -n "$NO_SEED" ]; then
+  echo "    skipping bulk quote-pool seed (--no-seed)"
+elif [ "$(wc -l < "$LOG_DIR/quotes.cache" 2>/dev/null || echo 0)" -lt 2000 ]; then
   echo "    seeding bulk quote pool in background (~30k quotes, one-time)"
   nohup "$FETCHQ_BIN" --seed >/dev/null 2>&1 &
 fi

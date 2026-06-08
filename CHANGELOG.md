@@ -5,6 +5,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-08 11:31 BST — paul-e210
+
+### Added
+- **`install.sh --no-seed`** — skips the one-time bulk quote-pool seed (~144MB
+  Quotes-500K download, runs in background) and the image seed-burst. Intended
+  for routine re-installs/updates where the pools are already populated and you
+  only want to redeploy the latest scripts + cron. Both seed steps now print a
+  "skipping … (--no-seed)" line instead of running. Documented in README under
+  the non-interactive flags. Pairs with the new dotfiles `wr-update` alias
+  (`git pull && install.sh --no-disable --no-seed`).
+
 ## 2026-06-06 04:57 BST — Fam1
 
 ### Fixed
