@@ -148,14 +148,14 @@ input[type=checkbox]{accent-color:var(--acc2)}
 <section class="panel" id="p-pulse">
   <h1>Pulse</h1><div class="sub">Any JSON endpoint → live numbers on the wallpaper</div>
   <div class="cards">
-    <div class="gcard on" style="grid-column:1/-1"><div class="gh"><span class="nm">SCB pulse</span><span class="st">east · 5 min</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
-      <div class="row" style="margin-bottom:10px"><span class="lbl">title</span><input type="text" value="SCB pulse" size="13">
+    <div class="gcard on" style="grid-column:1/-1"><div class="gh"><span class="nm">Server pulse</span><span class="st">east · 5 min</span><label class="tgl"><input type="checkbox" checked><span class="sw"></span></label></div>
+      <div class="row" style="margin-bottom:10px"><span class="lbl">title</span><input type="text" value="Server pulse" size="13">
       <span class="lbl">at</span><select><option selected>east</option></select>
       <span class="lbl">refresh</span><select><option selected>5 min</option></select></div>
-      <div class="row" style="margin-bottom:10px"><span class="lbl">URL</span><input type="text" value="http://scb-ubuntu:3000/api/pulse" style="flex:1;min-width:240px">
+      <div class="row" style="margin-bottom:10px"><span class="lbl">URL</span><input type="text" value="https://example.com/status.json" style="flex:1;min-width:240px">
       <span class="lbl">template</span><input type="text" value=".lines_kv[]" size="12"><button style="background:#26456e;border:0;color:var(--acc);border-radius:8px;padding:7px 16px;cursor:pointer">Test</button></div>
       <div style="background:#0e1014;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font:12px/1.8 ui-monospace,monospace;color:#9fb4cc;max-width:380px">
-        in workshop <span style="float:right;color:var(--acc)">27 bikes</span><br>ready to collect <span style="float:right;color:var(--acc)">8</span><br>emails waiting <span style="float:right;color:var(--acc)">80</span></div></div>
+        in queue <span style="float:right;color:var(--acc)">27 jobs</span><br>ready <span style="float:right;color:var(--acc)">8</span><br>pending <span style="float:right;color:var(--acc)">80</span></div></div>
   </div>
 </section>
 

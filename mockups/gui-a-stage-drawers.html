@@ -81,7 +81,7 @@ kbd{background:rgba(255,255,255,.12);border-radius:4px;padding:1px 6px;font-size
 <!-- overlay ghosts mirror live positions: click opens the relevant drawer -->
 <div class="ghost" style="top:64px;left:46%"  onclick="openDrawer('overlays')"><span class="t">Weather · N</span><br>☀ Shoreham +17°C</div>
 <div class="ghost" style="top:64px;right:26px" onclick="openDrawer('overlays')"><span class="t">Stats · NE</span><br>load · mem · bat · net</div>
-<div class="ghost" style="top:34%;right:26px" onclick="openDrawer('pulse')"><span class="t">Pulse · E</span><br>SCB pulse — 7 lines</div>
+<div class="ghost" style="top:34%;right:26px" onclick="openDrawer('pulse')"><span class="t">Pulse · E</span><br>Server pulse — 7 lines</div>
 <div class="ghost" style="bottom:120px;left:50%;transform:translateX(-50%)" onclick="openDrawer('overlays')"><span class="t">Quote · S</span><br>"When gratitude begins…" — Debasish Mridha</div>
 <div class="ghost off" style="top:64px;left:26px" onclick="openDrawer('overlays')"><span class="t">Clock · NW</span><br>off</div>
 
@@ -148,18 +148,18 @@ const PANES = {
   ${feat('Downloads by source','always','wallhaven 53 · ai 14 · bing 9', `<span class="lbl">per-source counters table</span>`)}
  `},
  pulse: {title:'Pulse — live JSON', html: `
-  ${feat('Pulse','on','SCB pulse · east · 5 min', `
-    <label class="lbl">title</label><input type=text value="SCB pulse" size=14>
+  ${feat('Pulse','on','Server pulse · east · 5 min', `
+    <label class="lbl">title</label><input type=text value="Server pulse" size=14>
     <label class="lbl">at</label><select><option selected>east</option></select>
     <label class="lbl">refresh</label><select><option selected>5 min</option></select>
-    <label class="lbl" style="width:100%">URL</label><input type=text value="http://scb-ubuntu:3000/api/pulse" style="width:100%">
+    <label class="lbl" style="width:100%">URL</label><input type=text value="https://example.com/status.json" style="width:100%">
     <label class="lbl" style="width:100%">template</label><input type=text value=".lines_kv[]" style="width:100%">
     <button class="dbtn" style="background:rgba(124,196,255,.15);color:var(--acc)">Test</button>`)}
   <div style="background:rgba(0,0,0,.45);border:1px solid var(--line);border-radius:12px;padding:12px;font:12px/1.7 ui-monospace,monospace;color:#9fb4cc">
-   in workshop <span style="float:right;color:var(--acc)">27 bikes</span><br>
-   ready to collect <span style="float:right;color:var(--acc)">8</span><br>
-   emails waiting <span style="float:right;color:var(--acc)">80</span><br>
-   takings today <span style="float:right;color:var(--acc)">£0</span></div>
+   in queue <span style="float:right;color:var(--acc)">27 jobs</span><br>
+   ready <span style="float:right;color:var(--acc)">8</span><br>
+   pending <span style="float:right;color:var(--acc)">80</span><br>
+   errors today <span style="float:right;color:var(--acc)">0</span></div>
  `},
  system: {title:'System', html: `
   ${feat('Remote access','off','localhost only', `<span class="lbl">binds the tailnet IP (no auth — trusted networks only)</span>`)}

@@ -16,6 +16,14 @@ Entry headers carry the date + local time + machine the change was made on
   the non-interactive flags. Pairs with the new dotfiles `wr-update` alias
   (`git pull && install.sh --no-disable --no-seed`).
 
+### Changed
+- **Scrubbed internal details from the 6 GUI design mockups** (`mockups/gui-*.html`).
+  They used the author's real setup as the pulse example — `scb-ubuntu` hostname,
+  `http://scb-ubuntu:3000/api/pulse`, "SCB pulse" branding, and live-shaped
+  business metrics — none secret, but internal-infra/business details with no
+  place in a public repo. Genericised to `example.com/status.json` + neutral
+  queue/server stats. Mockups only; no installed-code or behaviour change.
+
 ## 2026-06-06 04:57 BST — Fam1
 
 ### Fixed

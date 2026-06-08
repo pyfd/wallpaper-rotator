@@ -83,7 +83,7 @@ body{margin:0;font:13px/1.45 system-ui,sans-serif;color:var(--txt);height:100vh;
     <div class="obj" data-z="7" data-name="Quote"><span class="on">Quote · themed</span><br>“When gratitude begins, then life finds the abundance…”<br><i style="opacity:.75">— Debasish Mridha</i></div>
     <div class="obj" data-z="1" data-name="Weather"><span class="on">Weather</span><br>☀ Shoreham +17°C · Today 25/15 · Sat 26/19</div>
     <div class="obj" data-z="2" data-name="Stats"><span class="on">Stats</span><br>Fam3 · load 0.62 ▁▂▄ · mem 2.6G ▃▅ · bat 54% · net 8K/234K</div>
-    <div class="obj" data-z="5" data-name="Pulse"><span class="on">SCB pulse · @05:53</span><br>in workshop <b style="color:var(--acc)">27</b> · ready <b style="color:var(--acc)">8</b> · emails <b style="color:var(--acc)">80</b></div>
+    <div class="obj" data-z="5" data-name="Pulse"><span class="on">Server pulse · @05:53</span><br>in queue <b style="color:var(--acc)">27</b> · ready <b style="color:var(--acc)">8</b> · pending <b style="color:var(--acc)">80</b></div>
     <div class="obj dim" data-z="0" data-name="Clock"><span class="on" style="color:var(--mut)">Clock — off</span><br>🕐 analogue · classic</div>
   </div>
   <div class="insp" id="insp"></div>
@@ -160,9 +160,9 @@ const INSP={
  Stats:`<h3>📈 Stats <label class="tgl"><input type=checkbox checked><span class="sw"></span></label></h3>
   <div class="row"><label><input type=checkbox checked> Sparklines</label></div>`,
  Pulse:`<h3>📊 Pulse <label class="tgl"><input type=checkbox checked><span class="sw"></span></label></h3>
-  <div class="row"><span class="lbl">title</span><input type=text value="SCB pulse" size=10></div>
+  <div class="row"><span class="lbl">title</span><input type=text value="Server pulse" size=10></div>
   <div class="row"><span class="lbl">refresh</span><select><option selected>5 min</option></select></div>
-  <div class="row"><span class="lbl" style="width:100%">URL</span><input type=text value="http://scb-ubuntu:3000/api/pulse" style="max-width:100%;width:100%"></div>`,
+  <div class="row"><span class="lbl" style="width:100%">URL</span><input type=text value="https://example.com/status.json" style="max-width:100%;width:100%"></div>`,
  Clock:`<h3>🕐 Clock <label class="tgl"><input type=checkbox><span class="sw"></span></label></h3>
   <div class="row"><select><option selected>analogue</option><option>digital</option></select>
   <select><option selected>classic</option><option>minimal</option><option>dots</option></select></div>
