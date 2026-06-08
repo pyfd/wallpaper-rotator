@@ -5,6 +5,20 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-08 22:40 BST — Fam3
+
+### Added
+- **Infra-alert panel + Ack in the web UI (Phase 3 of the alerting channel).**
+  The `:8787` page now shows active **critical** (red) / **warn** (amber) alerts
+  as a banner under the top bar, each with an **Ack** button — so an alert is
+  visible and dismissible from the browser, not only as the wallpaper badge.
+  New server endpoints in `wallpaper-web.py`: `GET /alerts.json` serves the live
+  cache `check-alerts.sh` maintains; `POST /ack` proxies the browser's ack to the
+  aggregator's keyless `/api/alerts/ack` (derived from `ALERTS_URL`), stamping
+  this machine's hostname. The panel polls every 20s, independent of the main
+  render loop. Cross-machine ack is automatic — every wr polls the same
+  aggregator, so an ack on one box clears the badge everywhere next cycle.
+
 ## 2026-06-08 19:33 BST — Fam3
 
 ### Added

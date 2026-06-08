@@ -211,6 +211,16 @@ cat <<'HTML'
 *{box-sizing:border-box}
 body{margin:0;font:13px/1.45 system-ui,sans-serif;color:var(--txt);height:100vh;overflow:hidden;background:#101218;display:flex;flex-direction:column}
 button{font:inherit}
+/* ── infra-alert banner ── */
+.alertbar{display:flex;flex-direction:column;gap:6px;padding:0 16px}
+.alertbar:not(:empty){padding:9px 16px;border-bottom:1px solid #23262f}
+.alert{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:12.5px;font-weight:600}
+.alert.critical{background:#c0392b;color:#fff}
+.alert.warn{background:#3a2f12;color:#ffd23f;border:1px solid #6b551c}
+.alert .ahost{opacity:.85;font-weight:700;font-size:11px;text-transform:uppercase}
+.alert .atitle{flex:1;min-width:0}
+.alert .aack{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.35);color:inherit;border-radius:7px;padding:3px 11px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.alert .aack:hover{background:rgba(0,0,0,.45)}
 /* ── top bar ── */
 .bar{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#15171e;border-bottom:1px solid #23262f;z-index:7;flex-wrap:wrap}
 .bar .ttl{font-weight:700;font-size:13.5px;white-space:nowrap}
@@ -309,6 +319,8 @@ button{font:inherit}
     <button class="bbtn primary" id=b-dream>✦ Dream</button>
   </div>
 </div>
+
+<div class=alertbar id=alertbar></div>
 
 <div class=layers id=layers></div>
 
@@ -601,11 +613,42 @@ document.addEventListener('pointerup',e=>{
   } else showInsp(k,o);
 });
 
+// ── infra-alert banner (Phase 3) ──────────────────────────
+// Polls /alerts.json (the live cache check-alerts.sh maintains) and renders
+// active critical/warn alerts with an Ack button. Ack POSTs to /ack, which the
+// server proxies to the aggregator. Self-contained — independent of the main
+// render loop, so an alerts hiccup never affects the rest of the UI.
+async function pollAlerts(){
+  let d;
+  try{ d=await (await fetch('/alerts.json?t='+Date.now())).json(); }
+  catch(e){ return; }                                   // endpoint blip — keep last paint
+  const bar=$('alertbar'); if(!bar) return;
+  const active=(d.active||[]).filter(a=>a.severity==='critical'||a.severity==='warn');
+  active.sort((a,b)=> (a.severity==='critical'?0:1)-(b.severity==='critical'?0:1));
+  bar.innerHTML=active.map(a=>
+    `<div class="alert ${a.severity==='critical'?'critical':'warn'}">`+
+    `<span class=ahost>${esc(a.host||'')}</span>`+
+    `<span class=atitle>${esc(a.title||a.key||'')}</span>`+
+    `<button class=aack data-h="${esc(a.host||'')}" data-k="${esc(a.key||'')}">Ack</button>`+
+    `</div>`).join('');
+}
+document.getElementById('alertbar').addEventListener('click',async e=>{
+  const b=e.target.closest('.aack'); if(!b) return;
+  b.disabled=true; b.textContent='…';
+  try{
+    const r=await fetch('/ack',{method:'POST',body:new URLSearchParams({host:b.dataset.h,key:b.dataset.k})});
+    if(!r.ok) throw new Error(await r.text());
+    toast('Alert acknowledged'); pollAlerts();
+  }catch(err){ b.disabled=false; b.textContent='Ack'; toast('ack failed: '+err.message,1); }
+});
+
 // boot + slow poll
 const zs=$('zones');
 for(let i=0;i<9;i++){const d=document.createElement('div');d.className='zone';d.dataset.i=i;zs.appendChild(d)}
 refresh();
 setInterval(refresh,30000);
+pollAlerts();
+setInterval(pollAlerts,20000);
 </script>
 </body></html>
 HTML

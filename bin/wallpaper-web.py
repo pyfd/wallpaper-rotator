@@ -11,7 +11,7 @@
 # @@...@@ placeholders are substituted by install.sh; falls back to XDG defaults
 # when run from a raw checkout (guarded by the "@@" prefix check, which the
 # substitution can't reproduce).
-import os, re, shutil, subprocess, threading, time, urllib.parse
+import os, re, shutil, subprocess, threading, time, json, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WEBDIR    = "@@WEBDIR@@"
@@ -209,6 +209,13 @@ class Handler(BaseHTTPRequestHandler):
                     regen()
             except OSError:
                 regen()
+        elif path == "/alerts.json":
+            # Infra-alert set for the UI panel — the live cache check-alerts.sh
+            # writes every minute. Empty when the badge feature is off/unfetched.
+            fn = os.path.join(STATE, "alerts.json")
+            ctype = "application/json; charset=utf-8"
+            if not os.path.isfile(fn):
+                self._send(200, ctype, b'{"active":[]}'); return
         elif path == "/current.jpg":
             fn, ctype = os.path.join(WEBDIR, "current.jpg"), "image/jpeg"
         elif path == "/canvas.jpg":
@@ -277,6 +284,24 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/next":                       # rotate now
             self._setwp()
             self._done(do_regen=False); return
+        if path == "/ack":                        # acknowledge an infra alert
+            ln = int(self.headers.get("Content-Length") or 0)
+            form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
+            ahost = form.get("host", [""])[0]
+            akey = form.get("key", [""])[0]
+            aurl = read_config().get("ALERTS_URL", "")
+            if not ahost or not akey or not aurl:
+                self._send(400, "application/json", b'{"ok":false,"error":"missing host/key/ALERTS_URL"}'); return
+            ackurl = aurl.replace("/admin/alerts.json", "/api/alerts/ack")
+            payload = json.dumps({"host": ahost, "key": akey, "acked_by": os.uname().nodename}).encode()
+            try:
+                req = urllib.request.Request(ackurl, data=payload,
+                                             headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    self._send(200, "application/json; charset=utf-8", r.read())
+            except Exception as e:
+                self._send(502, "application/json", ('{"ok":false,"error":%s}' % json.dumps(str(e))).encode())
+            return
         if path == "/ban":                        # delete current image + rotate
             cur = current_image()
             if under_pool(cur):
