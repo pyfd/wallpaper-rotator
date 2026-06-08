@@ -5,9 +5,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
-## 2026-06-08 11:31 BST — paul-e210
+## 2026-06-08 19:33 BST — Fam3
 
 ### Added
+- **Infra-alert badge (subscriber side of an external alerting channel).** New
+  `bin/check-alerts.sh` polls a JSON alerts endpoint (set `ALERTS_URL` in the
+  config to enable — empty = off, the default) once a minute and caches the
+  active set to `~/.local/state/wallpaper-rotator/alerts.json`. When an active
+  **critical** (red) or **warn** (amber) alert is present and the cache is fresh
+  (<10 min), `set-wallpaper.sh` renders a loud top-centre badge with a ⚠ glyph
+  and the alert title(s), drawn over every other overlay. The poller re-renders
+  the current image when the active set changes, so a badge appears within ~60s
+  independent of the rotate/clock crons. `install.sh` deploys the poller, wires
+  the 1-min cron, and seeds the `ALERTS_URL=` config key (back-filled into
+  existing configs). No new dependencies (reuses ImageMagick + jq + curl).
+  Generic by design — point `ALERTS_URL` at any endpoint returning
+  `{active:[{severity,title,...}]}`.
 - **`install.sh --no-seed`** — skips the one-time bulk quote-pool seed (~144MB
   Quotes-500K download, runs in background) and the image seed-burst. Intended
   for routine re-installs/updates where the pools are already populated and you

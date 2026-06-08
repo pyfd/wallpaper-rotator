@@ -40,6 +40,7 @@ SETWP_BIN="/usr/local/bin/set-wallpaper.sh"
 FETCH_BIN="/usr/local/bin/fetch-wallpaper.sh"
 FETCHQ_BIN="/usr/local/bin/fetch-quotes.sh"
 GENSTATUS_BIN="/usr/local/bin/gen-status.sh"
+CHECKALERTS_BIN="/usr/local/bin/check-alerts.sh"
 WEB_BIN="/usr/local/bin/wallpaper-web"
 WEB_PORT="8787"
 # Image sources (priority is randomised per fetch for variety; the chain falls
@@ -299,8 +300,14 @@ CLOCK_POS=northwest
 CLOCK_24H=1
 CLOCK_DATE=0
 THEME=
+# Infra-alert badge (Phase 1). Empty = off. Point at the aggregator's poll
+# endpoint to enable, e.g. ALERTS_URL=http://scb-ubuntu:3000/admin/alerts.json
+ALERTS_URL=
 CFG
 fi
+# Existing configs predate ALERTS_URL — append it so check-alerts.sh has a key
+# to read (kept empty = feature off until set).
+grep -q '^ALERTS_URL=' "$CONFIG_FILE" 2>/dev/null || printf 'ALERTS_URL=\n' >> "$CONFIG_FILE"
 
 # Status-page generator.
 TMP="$(mktemp)"
@@ -374,12 +381,21 @@ else
   echo "==> SKIPPED desktop setup (coexisting with existing rotator)"
 fi
 
+# Infra-alert poller (Phase 1). Installed regardless of DESKTOP_ENABLED — it's a
+# no-op until ALERTS_URL is set in the config, and harmless when coexisting.
+echo "==> installing $CHECKALERTS_BIN"
+TMP="$(mktemp)"
+sed -e "s#@@CONFIG@@#${CONFIG_FILE}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" \
+    -e "s#@@CURRENT@@#${LOG_DIR}/current#g" "$REPO_DIR/bin/check-alerts.sh" > "$TMP"
+sudo install -m 0755 -o root -g root "$TMP" "$CHECKALERTS_BIN"
+rm -f "$TMP"
+
 # --- 7. cron jobs (download + prune + rotate) ---------------------------
 echo "==> installing cron jobs"
 # Rotate interval from config (preserved across re-installs; the web UI updates it).
 CFG_INTERVAL="$(grep '^INTERVAL_MIN=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 | tr -dc '0-9')"
 [ -n "$CFG_INTERVAL" ] || CFG_INTERVAL=10
-NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@FETCHQ@@#${FETCHQ_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@INTERVAL@@#${CFG_INTERVAL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" -e "s#@@CURRENT@@#${LOG_DIR}/current#g" "$REPO_DIR/cron/wallpaper.cron")"
+NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@FETCHQ@@#${FETCHQ_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@CHECKALERTS@@#${CHECKALERTS_BIN}#g" -e "s#@@INTERVAL@@#${CFG_INTERVAL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" -e "s#@@CURRENT@@#${LOG_DIR}/current#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
 # When coexisting, drop the desktop-rotate line so we never fight the other manager.

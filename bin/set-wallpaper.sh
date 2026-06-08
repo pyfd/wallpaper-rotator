@@ -951,6 +951,43 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       fi
       rm -f "$sig"
     ;; esac
+    # Infra-alert badge (Phase 1 of the wr-alerting design). check-alerts.sh
+    # polls the aggregator and writes $STATEDIR/alerts.json; here we render a
+    # loud top-centre badge when an active critical (red) or warn (amber) alert
+    # is present and the state file is fresh (<10 min old). Text only — no
+    # rotation takeover yet (that's Phase 3). Drawn last so it sits over every
+    # other overlay.
+    ASTATE="$STATEDIR/alerts.json"
+    if command -v jq >/dev/null 2>&1 && [ -s "$ASTATE" ] \
+       && ! find "$ASTATE" -mmin +10 2>/dev/null | grep -q . ; then
+      acrit=$(jq -r '[.active[]?|select(.severity=="critical")]|length' "$ASTATE" 2>/dev/null)
+      awarn=$(jq -r '[.active[]?|select(.severity=="warn")]|length' "$ASTATE" 2>/dev/null)
+      abg=""; atxt=""
+      if [ "${acrit:-0}" -gt 0 ] 2>/dev/null; then
+        abg="#c0392b"
+        atxt=$(jq -r '[.active[]?|select(.severity=="critical")|.title]|join("    •    ")' "$ASTATE" 2>/dev/null)
+      elif [ "${awarn:-0}" -gt 0 ] 2>/dev/null; then
+        abg="#b9770e"
+        atxt=$(jq -r '[.active[]?|select(.severity=="warn")|.title]|join("    •    ")' "$ASTATE" 2>/dev/null)
+      fi
+      if [ -n "$abg" ] && [ -n "$atxt" ]; then
+        [ "${#atxt}" -gt 140 ] && atxt="${atxt:0:137}..."
+        aps=$(( ${BASEPS:-30} * 9 / 10 )); [ "$aps" -lt 20 ] && aps=20
+        afont=DejaVu-Sans-Bold
+        convert -list font 2>/dev/null | grep -q "Font: ${afont}$" || afont=DejaVu-Sans
+        ab="$STATEDIR/_alert.$$.png"; ash="$STATEDIR/_alertsh.$$.png"
+        if convert -background "$abg" -fill white -font "$afont" -pointsize "$aps" \
+             label:"⚠   $atxt" -bordercolor "$abg" -border 26x16 "$ab" 2>>"$LOG" \
+           && [ -s "$ab" ]; then
+          # Soft drop shadow so the badge reads on any wallpaper.
+          convert "$ab" -fill black -colorize 100 -channel A -blur 0x6 +channel "$ash" 2>>"$LOG"
+          [ -s "$ash" ] && convert "$RENDER" "$ash" -gravity North -geometry +0+22 -composite "$RENDER" 2>>"$LOG"
+          convert "$RENDER" "$ab" -gravity North -geometry +0+24 -composite "$RENDER" 2>>"$LOG" \
+            && OVERLAYS="${OVERLAYS:+$OVERLAYS+}alert"
+        fi
+        rm -f "$ab" "$ash"
+      fi
+    fi
     IMG="$RENDER"
     # Keep only the newest few rendered frames.
     ls -t "$RDIR"/*.jpg 2>/dev/null | tail -n +4 | xargs -r rm -- 2>/dev/null
