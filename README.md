@@ -203,6 +203,12 @@ rotate cron line where relevant, and re-renders immediately):
   that dry-runs the URL + template and previews the lines before you Apply,
   and shows what the overlay is currently displaying. Tip: if your endpoint
   returns `{"lines": ["…", "…"]}`, the template is just `.lines[]`.
+- **Alerts badge** — set `ALERTS_URL` in the config to any JSON endpoint
+  returning `{active:[{severity,title,…}]}`. A one-minute `check-alerts.sh` cron
+  polls it; an active **critical** (red) or **warn** (amber) alert renders a loud
+  top-centre badge over the wallpaper (re-rendered within ~60s of a change) until
+  it clears. Config-file only, empty = off. Turns the desktop into a passive
+  status surface for infra/CI/home-automation alerts.
 - **Position** — place each overlay at any corner/edge/centre (per-overlay), or
   **auto**: the renderer ranks the image's 9 anchor regions by visual busyness
   and gives each auto overlay the calmest remaining spot (explicit positions

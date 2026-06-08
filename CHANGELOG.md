@@ -22,7 +22,8 @@ Entry headers carry the date + local time + machine the change was made on
   Generic by design — point `ALERTS_URL` at any endpoint returning
   `{active:[{severity,title,...}]}`. `ALERTS_URL` is also listed in the web
   UI's `CFG_KEYS` (config-file-only, like `WEB_BIND`/`AI_TOKEN`) so a settings
-  save preserves it instead of silently dropping the badge.
+  save preserves it instead of silently dropping the badge. README documents the
+  badge under the web-UI feature list.
 - **`install.sh --no-seed`** — skips the one-time bulk quote-pool seed (~144MB
   Quotes-500K download, runs in background) and the image seed-burst. Intended
   for routine re-installs/updates where the pools are already populated and you
