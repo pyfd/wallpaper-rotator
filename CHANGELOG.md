@@ -8,6 +8,13 @@ Entry headers carry the date + local time + machine the change was made on
 ## 2026-06-09 05:06 BST — Fam3
 
 ### Fixed
+- **Acked banner lingered.** `/alerts.json` served the on-disk cache that
+  `check-alerts.sh` only refreshes every 60s, so after an Ack (which succeeds at
+  the aggregator → toast fires) `pollAlerts()` re-read the stale cache and
+  re-drew the banner for up to a minute. The web server now fetches `/alerts.json`
+  **live from the aggregator** (3s timeout, falls back to the cache if
+  unreachable, and refreshes the cache so the wallpaper badge stays current too);
+  the Ack handler also removes the banner optimistically for instant feedback.
 - **Alert banner / overlays-menu overlap.** The infra-alert panel (Phase 3) sits
   in normal flow at the top, but the overlays menu (`.layers`) is `position:fixed`
   at `top:60px` and was drawing over the **left half of the alert banners** (only

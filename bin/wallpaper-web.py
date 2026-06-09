@@ -210,12 +210,34 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 regen()
         elif path == "/alerts.json":
-            # Infra-alert set for the UI panel — the live cache check-alerts.sh
-            # writes every minute. Empty when the badge feature is off/unfetched.
-            fn = os.path.join(STATE, "alerts.json")
+            # Infra-alert set for the UI panel. Fetch LIVE from the aggregator so
+            # an ack (or any change) reflects immediately — the on-disk cache is
+            # only refreshed by check-alerts.sh every 60s, which made acked
+            # banners linger. Falls back to that cache if the aggregator is
+            # unreachable. Also refreshes the cache so the wallpaper badge stays
+            # current between check-alerts runs.
             ctype = "application/json; charset=utf-8"
-            if not os.path.isfile(fn):
-                self._send(200, ctype, b'{"active":[]}'); return
+            cache = os.path.join(STATE, "alerts.json")
+            aurl = read_config().get("ALERTS_URL", "")
+            body = None
+            if aurl:
+                try:
+                    with urllib.request.urlopen(aurl, timeout=3) as r:
+                        body = r.read()
+                    try:
+                        with open(cache, "wb") as f:
+                            f.write(body)
+                    except Exception:
+                        pass
+                except Exception:
+                    body = None
+            if body is None:
+                try:
+                    with open(cache, "rb") as f:
+                        body = f.read()
+                except Exception:
+                    body = b'{"active":[]}'
+            self._send(200, ctype, body); return
         elif path == "/current.jpg":
             fn, ctype = os.path.join(WEBDIR, "current.jpg"), "image/jpeg"
         elif path == "/canvas.jpg":

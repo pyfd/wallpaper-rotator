@@ -643,7 +643,8 @@ document.getElementById('alertbar').addEventListener('click',async e=>{
   try{
     const r=await fetch('/ack',{method:'POST',body:new URLSearchParams({host:b.dataset.h,key:b.dataset.k})});
     if(!r.ok) throw new Error(await r.text());
-    toast('Alert acknowledged'); pollAlerts();
+    b.closest('.alert')?.remove();          // optimistic: drop the banner now
+    toast('Alert acknowledged'); pollAlerts();  // then reconcile with the live aggregator
   }catch(err){ b.disabled=false; b.textContent='Ack'; toast('ack failed: '+err.message,1); }
 });
 
