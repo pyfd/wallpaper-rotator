@@ -631,6 +631,11 @@ async function pollAlerts(){
     `<span class=atitle>${esc(a.title||a.key||'')}</span>`+
     `<button class=aack data-h="${esc(a.host||'')}" data-k="${esc(a.key||'')}">Ack</button>`+
     `</div>`).join('');
+  // The overlays menu (.layers) is position:fixed at top:60px and would cover
+  // the left of the banners. Push it below the banner while alerts are present
+  // (variable height: 1+ banners), restore the CSS default when clear.
+  const lay=$('layers');
+  if(lay){ lay.style.top = active.length ? (Math.round(bar.getBoundingClientRect().bottom)+8)+'px' : ''; }
 }
 document.getElementById('alertbar').addEventListener('click',async e=>{
   const b=e.target.closest('.aack'); if(!b) return;

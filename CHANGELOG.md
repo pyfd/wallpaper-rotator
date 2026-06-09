@@ -5,6 +5,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-09 05:06 BST — Fam3
+
+### Fixed
+- **Alert banner / overlays-menu overlap.** The infra-alert panel (Phase 3) sits
+  in normal flow at the top, but the overlays menu (`.layers`) is `position:fixed`
+  at `top:60px` and was drawing over the **left half of the alert banners** (only
+  the right-hand "…GB free" was visible). `pollAlerts()` now pushes `.layers`
+  down to just below the banner while any alert is active (handles variable
+  banner height) and restores the CSS default when clear — both the banners and
+  the menu are fully visible. Verified in-browser on Fam3.
+
 ## 2026-06-08 22:40 BST — Fam3
 
 ### Added
