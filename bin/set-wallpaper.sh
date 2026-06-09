@@ -960,24 +960,37 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     ASTATE="$STATEDIR/alerts.json"
     if command -v jq >/dev/null 2>&1 && [ -s "$ASTATE" ] \
        && ! find "$ASTATE" -mmin +10 2>/dev/null | grep -q . ; then
-      acrit=$(jq -r '[.active[]?|select(.severity=="critical")]|length' "$ASTATE" 2>/dev/null)
-      awarn=$(jq -r '[.active[]?|select(.severity=="warn")]|length' "$ASTATE" 2>/dev/null)
+      # Stack each active alert on its OWN line (criticals first) so several
+      # alerts read clearly, instead of one joined line that overflows the
+      # screen. Band colour = red if any critical, else amber. Cap the lines and
+      # summarise the rest ("+N more") -- a static wallpaper can't scroll.
+      ncrit=$(jq -r '[.active[]?|select(.severity=="critical")]|length' "$ASTATE" 2>/dev/null)
+      ALINES=$(jq -r '([.active[]?|select(.severity=="critical")]+[.active[]?|select(.severity=="warn")])|.[].title' "$ASTATE" 2>/dev/null)
+      ntot=$(printf '%s\n' "$ALINES" | grep -c .)
       abg=""; atxt=""
-      if [ "${acrit:-0}" -gt 0 ] 2>/dev/null; then
-        abg="#c0392b"
-        atxt=$(jq -r '[.active[]?|select(.severity=="critical")|.title]|join("    •    ")' "$ASTATE" 2>/dev/null)
-      elif [ "${awarn:-0}" -gt 0 ] 2>/dev/null; then
-        abg="#b9770e"
-        atxt=$(jq -r '[.active[]?|select(.severity=="warn")|.title]|join("    •    ")' "$ASTATE" 2>/dev/null)
+      if [ "${ntot:-0}" -gt 0 ] 2>/dev/null; then
+        if [ "${ncrit:-0}" -gt 0 ] 2>/dev/null; then abg="#c0392b"; else abg="#b9770e"; fi
+        MAXL=5; n=0
+        while IFS= read -r t; do
+          [ -z "$t" ] && continue
+          [ "$n" -ge "$MAXL" ] && break
+          [ "${#t}" -gt 80 ] && t="${t:0:77}..."
+          atxt="${atxt}${atxt:+$'\n'}⚠  ${t}"
+          n=$((n+1))
+        done <<EOF
+$ALINES
+EOF
+        extra=$(( ntot - n ))
+        [ "$extra" -gt 0 ] && atxt="${atxt}"$'\n'"      + ${extra} more"
       fi
       if [ -n "$abg" ] && [ -n "$atxt" ]; then
-        [ "${#atxt}" -gt 140 ] && atxt="${atxt:0:137}..."
         aps=$(( ${BASEPS:-30} * 9 / 10 )); [ "$aps" -lt 20 ] && aps=20
         afont=DejaVu-Sans-Bold
         convert -list font 2>/dev/null | grep -q "Font: ${afont}$" || afont=DejaVu-Sans
         ab="$STATEDIR/_alert.$$.png"; ash="$STATEDIR/_alertsh.$$.png"
+        # label: renders the embedded newlines as a centred multi-line block.
         if convert -background "$abg" -fill white -font "$afont" -pointsize "$aps" \
-             label:"⚠   $atxt" -bordercolor "$abg" -border 26x16 "$ab" 2>>"$LOG" \
+             label:"$atxt" -bordercolor "$abg" -border 26x14 "$ab" 2>>"$LOG" \
            && [ -s "$ab" ]; then
           # Soft drop shadow so the badge reads on any wallpaper.
           convert "$ab" -fill black -colorize 100 -channel A -blur 0x6 +channel "$ash" 2>>"$LOG"

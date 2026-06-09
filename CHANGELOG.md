@@ -8,6 +8,12 @@ Entry headers carry the date + local time + machine the change was made on
 ## 2026-06-09 05:06 BST — Fam3
 
 ### Fixed
+- **Wallpaper alert badge overflowed with multiple alerts.** It joined every
+  alert title into one line that ran off both screen edges and was unreadable.
+  Now each alert renders on its **own line** (criticals first, ⚠ per line), the
+  badge is capped at 5 lines with a **"+N more"** summary, and the band colour is
+  red if any critical else amber. A static wallpaper can't scroll, so stacking is
+  the fix. `set-wallpaper.sh`.
 - **Acked banner lingered.** `/alerts.json` served the on-disk cache that
   `check-alerts.sh` only refreshes every 60s, so after an Ack (which succeeds at
   the aggregator → toast fires) `pollAlerts()` re-read the stale cache and
