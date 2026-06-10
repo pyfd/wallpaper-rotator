@@ -5,6 +5,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-10 06:08 BST — Fam1
+
+### Changed
+- **Public-hygiene scrub: removed the last internal-infra references.** A prior
+  scrub cleaned the GUI mockups but left a few stragglers: an example comment in
+  `install.sh` (the `ALERTS_URL` hint), the same internal hostname/endpoint
+  echoed in two older changelog entries, and the author's pulse jq template
+  (`value="…"`) hard-coded in three mockups. Genericised the comment to a
+  `your-aggregator-host` placeholder, redacted the changelog mentions, and
+  swapped the mockup template to a neutral `.items[]`. No installed-code or
+  behaviour change. (Per-machine SCB endpoints live only in the author's private
+  dotfiles, never here.) Working tree now clean of internal hostnames.
+
 ## 2026-06-09 05:06 BST — Fam3
 
 ### Fixed
@@ -72,11 +85,11 @@ Entry headers carry the date + local time + machine the change was made on
 
 ### Changed
 - **Scrubbed internal details from the 6 GUI design mockups** (`mockups/gui-*.html`).
-  They used the author's real setup as the pulse example — `scb-ubuntu` hostname,
-  `http://scb-ubuntu:3000/api/pulse`, "SCB pulse" branding, and live-shaped
-  business metrics — none secret, but internal-infra/business details with no
-  place in a public repo. Genericised to `example.com/status.json` + neutral
-  queue/server stats. Mockups only; no installed-code or behaviour change.
+  They used the author's real setup as the pulse example — a real internal
+  hostname + pulse URL, real branding, and live-shaped business metrics — none
+  secret, but internal-infra/business details with no place in a public repo.
+  Genericised to `example.com/status.json` + neutral queue/server stats. Mockups
+  only; no installed-code or behaviour change.
 
 ## 2026-06-06 04:57 BST — Fam1
 
@@ -286,8 +299,8 @@ Entry headers carry the date + local time + machine the change was made on
   `PULSE_TITLE` config renders a header with a freshness time (cache mtime,
   `@ HH:MM`) over a thin accent rule. Plain lines unchanged — the overlay
   stays generic for any JSON endpoint. Web UI gains a Pulse "title" field
-  (persisted via wallpaper-web; gen-status renders it). Pair with
-  workshop-service `/api/pulse` `.lines_kv[]` for the SCB shape.
+  (persisted via wallpaper-web; gen-status renders it). Pair with any
+  key-value JSON status endpoint (e.g. `.items[]`) for this shape.
 
 ## 2026-06-04 20:25 BST — Fam3
 

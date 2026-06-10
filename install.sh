@@ -301,7 +301,7 @@ CLOCK_24H=1
 CLOCK_DATE=0
 THEME=
 # Infra-alert badge (Phase 1). Empty = off. Point at the aggregator's poll
-# endpoint to enable, e.g. ALERTS_URL=http://scb-ubuntu:3000/admin/alerts.json
+# endpoint to enable, e.g. ALERTS_URL=http://your-aggregator-host:3000/admin/alerts.json
 ALERTS_URL=
 CFG
 fi
