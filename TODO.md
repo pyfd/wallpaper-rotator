@@ -42,6 +42,17 @@
 
 ## Open
 
+- [ ] **Improve SCB pulse content** (added 2026-06-12): the pulse overlay
+  (`pulse.txt`, workshop-service-fed) now ALSO drives the Claude Code
+  statusline on all desktops via `statusline-plus` (dotfiles, see
+  `~/cldev/STATUSLINE.md`) — improvements here flow to both surfaces for
+  free. Paul wants a pass over what it reports: current fields are
+  in-workshop / ready-to-collect / booked-in-today / emails-waiting /
+  WhatsApp-in-today / payments-today / takings-today; statusline currently
+  shows the first two + emails. Think about which numbers actually matter
+  at a glance, freshness cadence, and any new fields worth surfacing
+  (e.g. overdue jobs, today's bookings vs capacity).
+
 - [x] **Option to link the image to the quote** — DONE 2026-06-04 (same day):
   AI-dreamed pairing shipped as sketched (random bag draw → quote-driven
   prompt → `<img>.quote` sidecar → renderer prefers sidecar, marks seen,
