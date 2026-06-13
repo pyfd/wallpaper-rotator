@@ -5,6 +5,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-13 07:28 BST — Fam1
+
+**TODO.md flipped to a generated mirror (todo-system cutover).** `TODO.md` is now
+a generated read-only mirror of the DB-backed todo system (SQLite + audited API
+on scb-ubuntu; see dotfiles `TODO_SYSTEM_DESIGN.md`). Don't hand-edit — manage
+items via `~/cldev/scripts/todo` (regenerated on `go`/`sg`). This repo's 2 todo
+items were migrated into the store.
+
 ## 2026-06-10 06:08 BST — Fam1
 
 ### Changed
