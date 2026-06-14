@@ -1,2 +1,5 @@
 wallpaper-rotator/bin/__pycache__/
 *.pyc
+
+# Generated todo mirror — now local-only (DB + dashboard are the live surfaces, todo #243)
+TODO.md
