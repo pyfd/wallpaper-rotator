@@ -2,6 +2,6 @@
 Type=Application
 Name=Update next GDM login background
 Comment=Rebuild the GDM greeter gresource with a fresh random image for the next login
-Exec=sh -c "sudo @@BIN@@ --refresh"
+Exec=sh -c "sudo @@BIN@@ --refresh --login"
 Terminal=false
 X-GNOME-Autostart-enabled=true

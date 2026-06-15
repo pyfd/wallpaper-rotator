@@ -546,7 +546,8 @@ async function loadLoginBg(){
       <div class=row><span class=lbl>image</span><span class=mut>${d.current_img?esc(d.current_img):'—'}</span></div>
       <div class=row><span class=lbl>refreshed</span><span class=mut>${when}</span></div>
       ${d.has_preview?`<div class=row><img src="/loginbg.jpg?t=${d.target_mtime||Date.now()}" alt="login background" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.12);display:block"></div>`:''}
-      <div class=row><span class=mut>Auto-refreshes on each login.</span></div>
+      <div class=row><label class=tgl><input type=checkbox data-set=login_rotate ${d.rotate?'checked':''}><span class=sw></span></label><span class=lbl>Randomise on each login</span></div>
+      <div class=row><span class=mut>${d.rotate?'A fresh image is picked at every login.':'The login image stays fixed until you refresh.'}</span></div>
       <div class=row><button class=bbtn id=loginbg-refresh>↻ Refresh now</button></div>`;
   }catch(e){ el.innerHTML=`<span class=mut>couldn't load login-bg state: ${esc(e.message)}</span>`; }
 }

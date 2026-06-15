@@ -43,6 +43,18 @@ for bin in gresource glib-compile-resources convert; do
   command -v "$bin" >/dev/null 2>&1 || { echo "ERROR: $bin not found (need libglib2.0-bin, libglib2.0-dev-bin, imagemagick)" >&2; exit 1; }
 done
 
+# --- login-rotate toggle ------------------------------------------------------
+# The per-login autostart passes --login; honour LOGIN_ROTATE only there. A
+# manual rebuild (web UI "Refresh now", or install.sh) omits --login and always
+# rebuilds, so the toggle never blocks an explicit refresh.
+CONFIG="@@CONFIG@@"; [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
+case " $* " in
+  *" --login "*)
+    rot=$(sed -n "s/^LOGIN_ROTATE=['\"]*\([0-9]\).*/\1/p" "$CONFIG" 2>/dev/null | tail -1)
+    [ "$rot" = "0" ] && { log "[gdm] skip (login rotate off)"; exit 0; }
+    ;;
+esac
+
 # --- resolve the image to embed -----------------------------------------------
 case "${1:-}" in
   --refresh) IMAGE="$(find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null | shuf -n 1)" ;;

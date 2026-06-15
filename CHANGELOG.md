@@ -5,6 +5,24 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-15 06:32 BST — Fam1
+
+### Added
+- **"Randomise on each login" toggle in the login-background panel (`:8787`).** The
+  login background previously *always* re-rolled at each login; now it's a setting.
+  New `LOGIN_ROTATE` config key (default `1` = rotate, matching prior behaviour).
+  The per-login autostart entries now pass a **`--login`** flag, and
+  `random-login-bg.sh` / `build-gdm-greeter.sh` read `LOGIN_ROTATE` and no-op on the
+  `--login` path when it's `0` — so login keeps the last image. Crucially the
+  manual **"Refresh now"** button (and `install.sh`) omit `--login`, so an explicit
+  refresh always rebuilds regardless of the toggle. Web side: `LOGIN_ROTATE` added to
+  `CFG_KEYS`/defaults + the `/setone` BOOLS map (`login_rotate`); `/loginbg.json`
+  returns `rotate`; toggling it is config-only (no desktop-wallpaper re-render). The
+  scripts gain a `@@CONFIG@@` placeholder (substituted by `install.sh`) so they can
+  read the toggle when run as root at login. Files: `bin/wallpaper-web.py`,
+  `bin/gen-status.sh`, `bin/random-login-bg.sh`, `bin/build-gdm-greeter.sh`,
+  `autostart/{random-login-bg,gdm-login-bg}.desktop`, `install.sh`.
+
 ## 2026-06-15 06:15 BST — Fam1
 
 ### Added

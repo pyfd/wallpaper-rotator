@@ -2,6 +2,6 @@
 Type=Application
 Name=Update next login background
 Comment=Pick a random image for the next LightDM login screen
-Exec=sh -c "sudo /usr/local/bin/random-login-bg.sh"
+Exec=sh -c "sudo /usr/local/bin/random-login-bg.sh --login"
 Terminal=false
 X-GNOME-Autostart-enabled=true

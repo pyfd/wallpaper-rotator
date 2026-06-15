@@ -60,7 +60,7 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEM
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN", "AI_HORDE_KEY",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
-            "PULSE_TITLE", "WEB_BIND", "ALERTS_URL")
+            "PULSE_TITLE", "WEB_BIND", "ALERTS_URL", "LOGIN_ROTATE")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "QUOTE_THEME": "", "QUOTE_MATCH_IMAGE": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
@@ -87,7 +87,12 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 # not a form field — set in the config file. "" = infra-alert
                 # badge off; an alerts-endpoint URL enables check-alerts.sh.
                 # Listed in CFG_KEYS purely so a web-UI save preserves it.
-                "ALERTS_URL": ""}
+                "ALERTS_URL": "",
+                # 1 = re-roll the login-screen background at each login (default,
+                # matches pre-toggle behaviour); 0 = keep the last login image.
+                # Read by random-login-bg.sh / build-gdm-greeter.sh on the --login
+                # (autostart) path only; the "Refresh now" button ignores it.
+                "LOGIN_ROTATE": "1"}
 
 
 def read_config():
@@ -238,6 +243,7 @@ def login_bg_state():
         "last_refresh": ts,
         "target_mtime": mtime,
         "has_preview": mtime is not None,
+        "rotate": read_config().get("LOGIN_ROTATE", "1") != "0",
     }
 
 
@@ -525,7 +531,7 @@ class Handler(BaseHTTPRequestHandler):
                      "weather_forecast": "OVERLAY_WEATHER_FORECAST",
                      "clock": "OVERLAY_CLOCK", "clock_24h": "CLOCK_24H",
                      "clock_date": "CLOCK_DATE", "ai": "AI_WALLPAPER",
-                     "pulse": "OVERLAY_PULSE"}
+                     "pulse": "OVERLAY_PULSE", "login_rotate": "LOGIN_ROTATE"}
             PICKS = {"quote_pos": ("QUOTE_POS", ALLOWED_POS), "stats_pos": ("STATS_POS", ALLOWED_POS),
                      "weather_pos": ("WEATHER_POS", ALLOWED_POS), "clock_pos": ("CLOCK_POS", ALLOWED_POS),
                      "pulse_pos": ("PULSE_POS", ALLOWED_POS), "size": ("OVERLAY_SIZE", ALLOWED_SIZE),
@@ -590,6 +596,11 @@ class Handler(BaseHTTPRequestHandler):
                     "for i in $(seq 1 7); do %s; done; "
                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --; %s"
                     % (FETCH, POOL, SETWP, FETCH, POOL, GENSTATUS))
+            elif cfg.get("LOGIN_ROTATE") != old.get("LOGIN_ROTATE"):
+                # Login-screen-only setting — the desktop wallpaper is unaffected,
+                # so skip the re-render. The login scripts read it at next login;
+                # the panel reads it live from /loginbg.json.
+                pass
             else:
                 cur = current_image()
                 cmd = "%s '%s'" % (SETWP, cur) if (cur and os.path.isfile(cur)) else SETWP

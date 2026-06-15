@@ -321,6 +321,9 @@ fi
 # Existing configs predate ALERTS_URL — append it so check-alerts.sh has a key
 # to read (kept empty = feature off until set).
 grep -q '^ALERTS_URL=' "$CONFIG_FILE" 2>/dev/null || printf 'ALERTS_URL=\n' >> "$CONFIG_FILE"
+# Existing configs predate LOGIN_ROTATE — default it on (matches prior always-
+# rotate behaviour; the login scripts also treat "unset" as on).
+grep -q '^LOGIN_ROTATE=' "$CONFIG_FILE" 2>/dev/null || printf "LOGIN_ROTATE='1'\n" >> "$CONFIG_FILE"
 
 # Status-page generator.
 TMP="$(mktemp)"
@@ -430,7 +433,7 @@ if [ -n "$GREETER_CONF" ]; then
   echo "==> setting up LightDM login background"
   TMP="$(mktemp)"
   sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@TARGET@@#${TARGET_IMG}#g" -e "s#@@RESOLUTION@@#${RES}#g" \
-      -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/random-login-bg.sh" > "$TMP"
+      -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" "$REPO_DIR/bin/random-login-bg.sh" > "$TMP"
   sudo install -m 0755 -o root -g root "$TMP" "$LOGIN_BIN"
   rm -f "$TMP"
   sudo "$LOGIN_BIN" || echo "    (login image not generated — pool may be empty)"
@@ -463,7 +466,7 @@ elif [ -n "$GDM_GREETER" ]; then
   echo "==> setting up GDM login background (theme gresource rebuild)"
   TMP="$(mktemp)"
   sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@TARGET@@#${TARGET_IMG}#g" -e "s#@@RESOLUTION@@#${RES}#g" \
-      -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/build-gdm-greeter.sh" > "$TMP"
+      -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" "$REPO_DIR/bin/build-gdm-greeter.sh" > "$TMP"
   sudo install -m 0755 -o root -g root "$TMP" "$BUILD_GDM_BIN"
   rm -f "$TMP"
   sudo "$BUILD_GDM_BIN" --refresh \
