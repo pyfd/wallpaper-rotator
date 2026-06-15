@@ -1,7 +1,7 @@
 # wallpaper-rotator
 
 Auto-rotating **desktop wallpaper** (XFCE, GNOME, Cinnamon, MATE, or a `feh`
-fallback) and **LightDM login background**, fed from a single image pool that
+fallback) and **login background** (LightDM or GDM), fed from a single image pool that
 cron refills every 10 minutes from several sources ([Wallhaven](https://wallhaven.cc),
 Bing, [Picsum](https://picsum.photos), or a local folder) with fallback.
 
@@ -45,7 +45,7 @@ One **image pool** (`~/Pictures/online-wallpapers/`) feeds two consumers:
         │
         └──► LOGIN   : random-login-bg.sh resizes a random image to your screen
                        and writes /usr/share/backgrounds/login-random.jpg; the
-                       LightDM greeter points at it. (LightDM only — see below.)
+                       LightDM greeter or GDM gresource points at it. (see below.)
 ```
 
 ---
@@ -63,12 +63,23 @@ One **image pool** (`~/Pictures/online-wallpapers/`) feeds two consumers:
 
 | Display manager | Login background |
 |-----------------|:----------------:|
-| **LightDM** (gtk or slick greeter) | ✅ supported |
-| GDM / SDDM / none | ⏭️ skipped (desktop rotation still works) |
+| **LightDM** (gtk or slick greeter) | ✅ supported (`background=` greeter key) |
+| **GDM** (GNOME) | ✅ supported (rebuilt theme gresource — needs `libglib2.0-dev-bin`) |
+| SDDM / none | ⏭️ skipped (desktop rotation still works) |
 
-Login backgrounds on GDM/SDDM are theme-bound and fragile, so they're
-intentionally out of scope. Everything else still installs and the desktop
-rotates normally.
+GDM has no plain config key for the greeter background — the login wallpaper is
+the GNOME-Shell theme's `#lockDialogGroup` rule baked into a `*.gresource`.
+`bin/build-gdm-greeter.sh` rebuilds the active theme's gresource with a random
+pool image **embedded** as the login-background asset and selects it via
+`update-alternatives` (manual, reversible). Embedding (rather than pointing at an
+external file) is required — St silently fails to load an external `file://`
+background in the greeter, so the image must live inside the gresource, exactly
+like the stock theme. Rotation therefore rebuilds the gresource (`--refresh`),
+which the login autostart does each login (~1-2s) so the next login is fresh.
+Re-run the script after a major `gnome-shell`/theme update to rebase on the new
+theme. (The GNOME **lock screen** already mirrors your current desktop wallpaper
+blurred, independent of this.) SDDM stays out of scope; desktop rotation works
+regardless.
 
 ### Existing wallpaper managers (Variety, Wallch, GNOME slideshow…)
 
@@ -109,7 +120,7 @@ ls -t ~/Pictures/online-wallpapers/ | head      # pool filling
 crontab -l | grep -A4 wallpaper-rotator          # cron jobs present
 /usr/local/bin/set-wallpaper.sh                  # force a desktop change now
 /usr/local/bin/set-wallpaper.sh --version        # installed version + when/where installed
-identify /usr/share/backgrounds/login-random.jpg # login image (LightDM only)
+identify /usr/share/backgrounds/login-random.jpg # login image (LightDM or GDM)
 tail -f ~/.local/state/wallpaper-rotator/wallpaper.log  # activity log (rotate/download/prune + errors)
 ```
 
@@ -300,6 +311,7 @@ wallpaper-rotator/
 │   ├── fetch-wallpaper.sh                   # multi-source pool fetcher w/ fallback (templated)
 │   ├── set-wallpaper.sh                    # DE-aware desktop wallpaper setter (templated)
 │   ├── random-login-bg.sh                  # login-image generator (templated)
+│   ├── build-gdm-greeter.sh                # rebuilds the GDM theme gresource → login bg
 │   ├── gen-status.sh                        # builds state.json + the canvas-editor app shell (templated)
 │   ├── wallpaper-web.py                      # status + control server (serve, POST /set) (templated)
 │   └── wallpaper-web.sh                     # launcher: execs the Python server (templated)
@@ -325,7 +337,7 @@ substitution can't rewrite the guard.)
 |---------|-------|
 | Desktop not changing | Run `/usr/local/bin/set-wallpaper.sh` by hand. If that works but cron doesn't, cron lacks your session bus — confirm `/run/user/$(id -u)/bus` exists and `DISPLAY=:0` is correct for your box. |
 | Wrong DE detected | `echo $XDG_CURRENT_DESKTOP`; the setter also sniffs running `*-session` processes when run from cron. |
-| Login bg never changes | LightDM only. Is `~/.config/autostart/random-login-bg.desktop` present and `sudo /usr/local/bin/random-login-bg.sh` passwordless? |
+| Login bg never changes | Is `~/.config/autostart/random-login-bg.desktop` present and `sudo /usr/local/bin/random-login-bg.sh` passwordless? On GDM also confirm `update-alternatives --query gdm-theme.gresource` shows the `-wr` gresource selected; re-run `bin/build-gdm-greeter.sh` after a `gnome-shell`/theme update. |
 | Pool not filling | `grep download ~/.local/state/wallpaper-rotator/wallpaper.log`; test `curl -fsL https://picsum.photos/1600/900 -o /tmp/t.jpg`. |
 | Desktop config changes but screen doesn't (KDE) | The setter prefers `qdbus … evaluateScript` (applies live); `plasma-apply-wallpaperimage` only updates config and won't repaint a running Plasma 5.x session. Check `backend=` in the log — `plasma-apply(config-only)` means no qdbus was found. |
 | No package manager | Install `imagemagick`, `curl`, and a cron daemon manually, then re-run. |

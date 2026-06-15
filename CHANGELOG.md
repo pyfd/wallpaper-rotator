@@ -5,6 +5,49 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-15 04:00 BST — Fam1
+
+### Added
+- **GDM (GNOME) login-background support.** Until now the rotating login
+  background only worked on LightDM (a plain `background=` greeter key). GDM has
+  no such key — the login wallpaper is the GNOME-Shell theme's `#lockDialogGroup`
+  rule, compiled into a `*.gresource`. New `bin/build-gdm-greeter.sh` rebuilds the
+  *active* theme gresource (rebased on the highest-priority real theme, e.g.
+  ZorinBlue-Dark — not stock GNOME) with our image **embedded** as the
+  `assets/login-background.png` asset, then selects it via `update-alternatives`
+  (manual mode, fully reversible with `--remove`). The image is embedded — not
+  referenced by path — because St (the shell CSS engine) silently fails to render
+  an external `file://` background in the greeter sandbox; embedding is exactly
+  how the stock theme ships its own login image, so it renders reliably. Rotating
+  the login image therefore means rebuilding the gresource (`--refresh` picks a
+  random pool image), which the login autostart does each login (~1-2s) so the
+  next login shows a fresh image. We always rebase on the stock theme, never on
+  our own output, so re-runs don't compound.
+- `install.sh` now detects GDM and wires the GDM path (install
+  `build-gdm-greeter.sh` to `/usr/local/bin`, build+select once, passwordless
+  sudoers + login autostart that re-runs `--refresh`). LightDM keeps its existing
+  `random-login-bg.sh` + `background=` path. GDM requires `gresource` +
+  `glib-compile-resources` (`libglib2.0-bin` + `libglib2.0-dev-bin`) and
+  ImageMagick; if absent it skips the login background with a hint and leaves
+  desktop rotation working.
+- `uninstall.sh` reverts the alternative, removes the custom gresource, the GDM
+  build script, its sudoers entry and autostart.
+
+### Notes
+- The GNOME **lock screen** (locking an active session) already shows the current
+  desktop wallpaper blurred on GNOME 40+, so it tracks the desktop rotation for
+  free — this feature is specifically about the **GDM greeter** (boot / logout /
+  switch-user). A fresh greeter is needed to pick up a rebuilt gresource (log out
+  / reboot; a resident switch-user greeter may show the previous image).
+- An external `file://` background was tried first and rendered only the CSS
+  fallback colour (St limitation) — embedding is the fix.
+- Re-run `build-gdm-greeter.sh` after a major `gnome-shell`/theme package update
+  to rebase on the new stock theme. A postinst running `update-alternatives --auto`
+  could in theory revert the manual selection; the one-line fix is to re-run the
+  script (or `update-alternatives --set`). An apt-hook guard is a possible future
+  hardening, not yet implemented.
+- First shipped on Fam1 (Zorin OS, GNOME Shell 43.9, Wayland, GDM3).
+
 ## 2026-06-13 07:28 BST — Fam1
 
 **TODO.md flipped to a generated mirror (todo-system cutover).** `TODO.md` is now

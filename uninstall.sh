@@ -20,14 +20,17 @@ crontab -l 2>/dev/null \
   | sed '/# >>> wallpaper-rotator >>>/,/# <<< wallpaper-rotator <<</d' \
   | crontab - || true
 
-echo "==> removing autostart entry"
+echo "==> removing autostart entries"
 rm -f "$HOME/.config/autostart/random-login-bg.desktop"
+rm -f "$HOME/.config/autostart/gdm-login-bg.desktop"
 
 echo "==> stopping the status server if running"
 pkill -f /usr/local/bin/wallpaper-web.py 2>/dev/null || true
 
 echo "==> removing scripts + sudoers + login image (sudo)"
 sudo rm -f /usr/local/bin/random-login-bg.sh
+sudo rm -f /usr/local/bin/build-gdm-greeter.sh
+sudo rm -f /etc/sudoers.d/gdm-login-bg
 sudo rm -f /usr/local/bin/set-wallpaper.sh
 sudo rm -f /usr/local/bin/fetch-wallpaper.sh
 sudo rm -f /usr/local/bin/fetch-quotes.sh
@@ -36,6 +39,14 @@ sudo rm -f /usr/local/bin/wallpaper-web
 sudo rm -f /usr/local/bin/wallpaper-web.py
 sudo rm -f /etc/sudoers.d/random-login-bg
 sudo rm -f /usr/share/backgrounds/login-random.jpg
+
+echo "==> reverting GDM greeter gresource (if installed)"
+WR_GDM="/usr/share/gnome-shell/gnome-shell-theme-wr.gresource"
+if [ -f "$WR_GDM" ]; then
+  sudo update-alternatives --remove gdm-theme.gresource "$WR_GDM" 2>/dev/null || true
+  sudo rm -f "$WR_GDM"
+  echo "    removed custom GDM theme; alternatives reverts to the stock/Zorin theme"
+fi
 
 echo "==> disabling XFCE folder-cycle on all known monitor nodes"
 for p in $(xfconf-query -c xfce4-desktop -p /backdrop -l 2>/dev/null | grep 'backdrop-cycle-enable'); do

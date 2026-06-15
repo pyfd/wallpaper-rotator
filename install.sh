@@ -3,8 +3,8 @@
 # wallpaper-rotator installer
 # -------------------------------------------------------------------------
 # Auto-rotating desktop wallpaper on any common Linux desktop (XFCE, GNOME,
-# Cinnamon, MATE, or a feh fallback), plus an auto-rotating LightDM login
-# background where LightDM is the display manager. One image pool, refilled by
+# Cinnamon, MATE, or a feh fallback), plus an auto-rotating login background on
+# LightDM or GDM (GNOME) display managers. One image pool, refilled by
 # cron from several sources (Wallhaven, Bing, Picsum, local) with fallback,
 # drives both.
 #
@@ -36,6 +36,7 @@ USER_HOME="$HOME"
 POOL="$USER_HOME/Pictures/online-wallpapers"
 TARGET_IMG="/usr/share/backgrounds/login-random.jpg"
 LOGIN_BIN="/usr/local/bin/random-login-bg.sh"
+BUILD_GDM_BIN="/usr/local/bin/build-gdm-greeter.sh"
 SETWP_BIN="/usr/local/bin/set-wallpaper.sh"
 FETCH_BIN="/usr/local/bin/fetch-wallpaper.sh"
 FETCHQ_BIN="/usr/local/bin/fetch-quotes.sh"
@@ -99,11 +100,15 @@ if [ -z "$DE" ]; then
 fi
 echo "    desktop: ${DE:-<unknown — will use feh fallback>}"
 
-# --- 2. display manager (login background is LightDM-only) --------------
+# --- 2. display manager (login background: LightDM or GDM) --------------
+# LightDM exposes a plain `background=` greeter key; GDM bakes the login
+# wallpaper into a GNOME-Shell theme gresource, rebuilt by build-gdm-greeter.sh.
+# Both end up pointing at the same fixed TARGET_IMG, refreshed each login.
 DM=""
 [ -f /etc/X11/default-display-manager ] && DM="$(basename "$(cat /etc/X11/default-display-manager 2>/dev/null)")"
 [ -z "$DM" ] && DM="$(systemctl status display-manager 2>/dev/null | grep -oE 'lightdm|gdm[0-9]*|sddm' | head -1)"
 GREETER_CONF=""
+GDM_GREETER=""
 if printf '%s' "$DM" | grep -qi lightdm || command -v lightdm >/dev/null 2>&1; then
   GS="$(grep -hriE '^[[:space:]]*greeter-session=' /etc/lightdm/ 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')"
   case "$GS" in
@@ -113,6 +118,14 @@ if printf '%s' "$DM" | grep -qi lightdm || command -v lightdm >/dev/null 2>&1; t
        else GREETER_CONF=/etc/lightdm/lightdm-gtk-greeter.conf; fi ;;
   esac
   echo "    display manager: LightDM (greeter conf: $GREETER_CONF)"
+elif printf '%s' "$DM" | grep -qi gdm || command -v gdm3 >/dev/null 2>&1 || command -v gdm >/dev/null 2>&1; then
+  if command -v gresource >/dev/null 2>&1 && command -v glib-compile-resources >/dev/null 2>&1; then
+    GDM_GREETER=1
+    echo "    display manager: GDM (login background via gresource rebuild)"
+  else
+    echo "    display manager: GDM — login background needs glib-compile-resources;"
+    echo "      install 'libglib2.0-dev-bin' (+ libglib2.0-bin) then re-run, skipping for now"
+  fi
 else
   echo "    display manager: ${DM:-unknown} — login background NOT supported, will skip (desktop rotation still works)"
 fi
@@ -408,7 +421,11 @@ printf '%s\n%s\n' "$EXISTING" "$NEWCRON" | sed '/^$/N;/^\n$/D' | crontab -
 # Set the desktop now so it isn't blank until the first cron tick.
 [ "$DESKTOP_ENABLED" = 1 ] && "$SETWP_BIN" || true
 
-# --- 8. login background (LightDM only) ---------------------------------
+# --- 8. login background (LightDM conf, or GDM gresource) ---------------
+# LightDM: a refresh script rewrites a fixed image the greeter `background=`
+# points at. GDM: St only renders an image EMBEDDED in the theme gresource, so
+# build-gdm-greeter.sh rebuilds + selects the gresource with a random pool image
+# baked in (re-run at each login). Both refresh via a user autostart entry.
 if [ -n "$GREETER_CONF" ]; then
   echo "==> setting up LightDM login background"
   TMP="$(mktemp)"
@@ -431,6 +448,7 @@ if [ -n "$GREETER_CONF" ]; then
   install -m 0644 "$REPO_DIR/autostart/random-login-bg.desktop" \
     "$USER_HOME/.config/autostart/random-login-bg.desktop"
 
+  echo "==> pointing LightDM greeter at $TARGET_IMG"
   sudo bash -c '
     conf="'"$GREETER_CONF"'"; img="'"$TARGET_IMG"'"
     [ -f "$conf" ] || printf "[greeter]\n" > "$conf"
@@ -441,8 +459,32 @@ if [ -n "$GREETER_CONF" ]; then
       sed -i "0,/^\[greeter\]/s##[greeter]\nbackground=${img}#" "$conf"
     fi
   '
+elif [ -n "$GDM_GREETER" ]; then
+  echo "==> setting up GDM login background (theme gresource rebuild)"
+  TMP="$(mktemp)"
+  sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@TARGET@@#${TARGET_IMG}#g" -e "s#@@RESOLUTION@@#${RES}#g" \
+      -e "s#@@LOG@@#${LOG_FILE}#g" "$REPO_DIR/bin/build-gdm-greeter.sh" > "$TMP"
+  sudo install -m 0755 -o root -g root "$TMP" "$BUILD_GDM_BIN"
+  rm -f "$TMP"
+  sudo "$BUILD_GDM_BIN" --refresh \
+    || echo "    (gresource not built — pool may be empty or build deps missing)"
+
+  TMP="$(mktemp)"
+  sed -e "s#@@USER@@#${TARGET_USER}#g" -e "s#@@BIN@@#${BUILD_GDM_BIN}#g" \
+      "$REPO_DIR/sudoers.d/gdm-login-bg" > "$TMP"
+  if sudo visudo -c -f "$TMP" >/dev/null; then
+    sudo install -m 0440 -o root -g root "$TMP" /etc/sudoers.d/gdm-login-bg
+  else
+    echo "    ERROR: sudoers file failed validation; not installed." >&2
+  fi
+  rm -f "$TMP"
+
+  mkdir -p "$USER_HOME/.config/autostart"
+  sed "s#@@BIN@@#${BUILD_GDM_BIN}#g" "$REPO_DIR/autostart/gdm-login-bg.desktop" \
+    > "$USER_HOME/.config/autostart/gdm-login-bg.desktop"
+  chmod 0644 "$USER_HOME/.config/autostart/gdm-login-bg.desktop"
 else
-  echo "==> SKIPPED login background (no LightDM)."
+  echo "==> SKIPPED login background (no supported display manager)."
 fi
 
 echo
@@ -454,8 +496,10 @@ else
 fi
 if [ -n "$GREETER_CONF" ]; then
   echo "  Login    : refreshes each login (LightDM, $RES)"
+elif [ -n "$GDM_GREETER" ]; then
+  echo "  Login    : refreshes each login (GDM gresource, $RES)"
 else
-  echo "  Login    : skipped (LightDM not detected)"
+  echo "  Login    : skipped (no supported display manager)"
 fi
 echo "  Pool     : $POOL"
 echo "  Version  : $WR_VERSION_ID (CHANGELOG ${WR_V_DATE:-?} ${WR_V_TIME} ${WR_V_TZ}, authored on ${WR_V_HOST:-?})"

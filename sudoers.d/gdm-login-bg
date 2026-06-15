@@ -1,0 +1,5 @@
+# Allow the GDM login-background rebuild to run at login without a password
+# prompt. @@USER@@ and @@BIN@@ are substituted by install.sh. Installed to
+# /etc/sudoers.d/gdm-login-bg (mode 0440). The script rebuilds + selects the
+# greeter theme gresource (writes /usr/share/gnome-shell + update-alternatives).
+@@USER@@ ALL=(root) NOPASSWD: @@BIN@@
