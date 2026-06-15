@@ -355,6 +355,7 @@ const CANVAS_ITEMS={
   rotation:  {ic:'🗂', name:'Rotation & themes'},
   ai:        {ic:'✦', name:'AI dreamed'},
   system:    {ic:'⚙', name:'Status & remote'},
+  login:     {ic:'🔐', name:'Login background'},
 };
 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
@@ -522,12 +523,38 @@ function inspHtml(k){
        pruned ${S.pruned} · miss ${S.miss} / fail ${S.fail}<br>
        sources: ${Object.entries(S.srcs).map(([a,b])=>a+' '+b).join(' · ')}</span></div>
      <pre>${(S.recent||[]).slice(0,8).map(esc).join('\n')}</pre>`;
+  if(k==='login') return `<h3>🔐 Login background</h3>
+     <div id=loginbg-body class=mut>loading…</div>`;
   return '';
+}
+// Login-background card is populated async (its state isn't in S) — fetched
+// from /loginbg.json when the card opens and after a manual refresh.
+async function loadLoginBg(){
+  const el=$('loginbg-body'); if(!el) return;
+  try{
+    const d=await (await fetch('/loginbg.json?t='+Date.now())).json();
+    const dm=d.dm==='gdm'?'GDM':d.dm==='lightdm'?'LightDM':esc(d.dm||'unknown');
+    if(!d.supported){
+      el.innerHTML=`<div class=row><span class=lbl>display mgr</span>${dm}</div>
+        <div class=row><span class=mut>Not supported on this display manager — desktop rotation still works.</span></div>`;
+      return;
+    }
+    const when=d.last_refresh?esc(d.last_refresh):(d.target_mtime?new Date(d.target_mtime*1000).toLocaleString():'—');
+    el.innerHTML=`
+      <div class=row><span class=lbl>display mgr</span>${dm}</div>
+      <div class=row><span class=lbl>status</span><span style="color:#5fd38d">● active</span></div>
+      <div class=row><span class=lbl>image</span><span class=mut>${d.current_img?esc(d.current_img):'—'}</span></div>
+      <div class=row><span class=lbl>refreshed</span><span class=mut>${when}</span></div>
+      ${d.has_preview?`<div class=row><img src="/loginbg.jpg?t=${d.target_mtime||Date.now()}" alt="login background" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.12);display:block"></div>`:''}
+      <div class=row><span class=mut>Auto-refreshes on each login.</span></div>
+      <div class=row><button class=bbtn id=loginbg-refresh>↻ Refresh now</button></div>`;
+  }catch(e){ el.innerHTML=`<span class=mut>couldn't load login-bg state: ${esc(e.message)}</span>`; }
 }
 let inspFor=null;
 function showInsp(k,anchor){
   inspFor=k;
   const p=$('insp'); p.innerHTML=inspHtml(k);
+  if(k==='login') loadLoginBg();
   const r=anchor.getBoundingClientRect();
   let x=r.right+12, y=r.top;
   if(x+260>innerWidth) x=r.left-262;
@@ -570,6 +597,15 @@ document.addEventListener('click',e=>{
     fetch('/pulse_test',{method:'POST',body:new URLSearchParams({url:u,jq:j})})
       .then(r=>r.text()).then(t=>{$('pulse-pre').textContent=t});return}
   if(e.target.id==='dream2'){act('/dream',null,'✦ dreaming… ~40s');hideInsp();return}
+  if(e.target.id==='loginbg-refresh'){
+    const b=e.target; b.disabled=true; b.textContent='refreshing…';
+    fetch('/loginbg-refresh',{method:'POST'}).then(async r=>{
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok) throw new Error(j.error||('HTTP '+r.status));
+      toast('Login background refreshed'); loadLoginBg();
+    }).catch(err=>{toast('refresh failed: '+err.message,1);
+      const x=$('loginbg-refresh'); if(x){x.disabled=false;x.textContent='↻ Refresh now';}});
+    return}
   if(!e.target.closest('.insp')&&!e.target.closest('.obj')) hideInsp();
 });
 document.addEventListener('change',e=>{

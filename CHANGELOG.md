@@ -5,6 +5,26 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-15 06:15 BST — Fam1
+
+### Added
+- **Login-background panel in the web UI (`:8787`).** The canvas-editor settings
+  menu gains a **🔐 Login background** card: display manager (GDM / LightDM /
+  unsupported), active status, the current source image + last-refresh time, a
+  live thumbnail preview, and a **Refresh now** button that re-rolls the next
+  login image on demand. Backend (`bin/wallpaper-web.py`): `GET /loginbg.json`
+  (DM detected via `/etc/X11/default-display-manager` + `systemctl`; source image
+  + timestamp parsed from the `[login]`/`[gdm]` lines in `wallpaper.log`; target
+  mtime), `GET /loginbg.jpg` (serves the current
+  `/usr/share/backgrounds/login-random.jpg` for the preview), and
+  `POST /loginbg-refresh` (runs the *same* refresh the per-login autostart uses —
+  `sudo build-gdm-greeter.sh --refresh` on GDM, `sudo random-login-bg.sh` on
+  LightDM — via the passwordless `/etc/sudoers.d` rule, so no password prompt).
+  Frontend (`bin/gen-status.sh`): new `login` entry in `CANVAS_ITEMS`, rendered by
+  an async `loadLoginBg()` since the state isn't carried in the polled
+  `state.json`. No new config keys — login rotation remains install-managed; the
+  panel is status + on-demand refresh.
+
 ## 2026-06-15 04:00 BST — Fam1
 
 ### Added

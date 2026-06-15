@@ -182,6 +182,65 @@ def newest_pool_image():
         return ""
 
 
+LOG_FILE     = os.path.join(STATE, "wallpaper.log")
+LOGIN_TARGET = "/usr/share/backgrounds/login-random.jpg"
+# DM -> the privileged refresh command (same one the per-login autostart runs;
+# install.sh drops a matching passwordless /etc/sudoers.d rule for each).
+LOGIN_REFRESH = {
+    "gdm":     ["/usr/local/bin/build-gdm-greeter.sh", "--refresh"],
+    "lightdm": ["/usr/local/bin/random-login-bg.sh"],
+}
+_LOGIN_LOG_RE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) \[(?:login|gdm)\] (\w+)(?: img=(.+))?")
+
+
+def detect_dm():
+    """Which display manager owns the login screen: 'gdm' | 'lightdm' | other."""
+    try:
+        with open("/etc/X11/default-display-manager") as f:
+            dm = os.path.basename(f.read().strip()).lower()
+        if "gdm" in dm:
+            return "gdm"
+        if "lightdm" in dm:
+            return "lightdm"
+    except Exception:
+        pass
+    try:
+        out = subprocess.run(["systemctl", "status", "display-manager"],
+                             capture_output=True, text=True, timeout=5).stdout or ""
+        m = re.search(r"lightdm|gdm[0-9]*|sddm", out)
+        if m:
+            return "gdm" if m.group(0).startswith("gdm") else m.group(0)
+    except Exception:
+        pass
+    return "other"
+
+
+def login_bg_state():
+    """Login-background status for the UI panel: display manager, the source
+    image + timestamp of the last refresh (from the wallpaper log), and whether
+    a preview image exists."""
+    dm = detect_dm()
+    ts = status = img = ""
+    try:
+        with open(LOG_FILE, errors="replace") as f:
+            for line in f:                       # keep the LAST matching line
+                m = _LOGIN_LOG_RE.match(line)
+                if m:
+                    ts, status, img = m.group(1), m.group(2), (m.group(3) or "").strip()
+    except Exception:
+        pass
+    mtime = os.path.getmtime(LOGIN_TARGET) if os.path.isfile(LOGIN_TARGET) else None
+    return {
+        "dm": dm,
+        "supported": dm in LOGIN_REFRESH,
+        "current_img": img,
+        "last_status": status,
+        "last_refresh": ts,
+        "target_mtime": mtime,
+        "has_preview": mtime is not None,
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, ctype, body):
         self.send_response(code)
@@ -238,6 +297,14 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     body = b'{"active":[]}'
             self._send(200, ctype, body); return
+        elif path == "/loginbg.json":
+            self._send(200, "application/json; charset=utf-8",
+                       json.dumps(login_bg_state()).encode())
+            return
+        elif path == "/loginbg.jpg":
+            # the current login-screen image (root-owned 0644); falls through to
+            # the generic file send below, 404 if login background isn't set up.
+            fn, ctype = LOGIN_TARGET, "image/jpeg"
         elif path == "/current.jpg":
             fn, ctype = os.path.join(WEBDIR, "current.jpg"), "image/jpeg"
         elif path == "/canvas.jpg":
@@ -323,6 +390,29 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, "application/json; charset=utf-8", r.read())
             except Exception as e:
                 self._send(502, "application/json", ('{"ok":false,"error":%s}' % json.dumps(str(e))).encode())
+            return
+        if path == "/loginbg-refresh":            # re-roll the login-screen background now
+            st = login_bg_state()
+            cmd = LOGIN_REFRESH.get(st["dm"])
+            if not cmd:
+                self._send(400, "application/json",
+                           json.dumps({"ok": False,
+                                       "error": "login background not supported on %s" % st["dm"]}).encode())
+                return
+            try:
+                # sudo -n: the per-login autostart already runs this passwordless
+                # (install.sh installs the matching /etc/sudoers.d rule).
+                p = subprocess.run(["sudo", "-n"] + cmd,
+                                   capture_output=True, text=True, timeout=120)
+                ok = p.returncode == 0
+                body = {"ok": ok, "state": login_bg_state()}
+                if not ok:
+                    body["error"] = (p.stderr or p.stdout or ("exit %d" % p.returncode)).strip()[-300:]
+                self._send(200 if ok else 502, "application/json; charset=utf-8",
+                           json.dumps(body).encode())
+            except Exception as e:
+                self._send(502, "application/json",
+                           json.dumps({"ok": False, "error": str(e)}).encode())
             return
         if path == "/ban":                        # delete current image + rotate
             cur = current_image()
