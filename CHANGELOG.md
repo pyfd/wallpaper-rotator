@@ -5,6 +5,28 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-06-27 06:29 BST — paul-e210
+
+### Fixed
+- **GDM login-background build no longer assumes a flat `gnome-shell.css`
+  (#312).** `build-gdm-greeter.sh` hardcoded the shell stylesheet at
+  `$BUILD/gnome-shell.css` after extracting the source theme gresource, and bailed
+  with `gnome-shell.css not in source gresource` when a distro theme didn't ship it
+  at exactly `/org/gnome/shell/theme/gnome-shell.css` (reported on Fam3, wr-update
+  2026.06.15, ZorinBlue-Dark). It now **discovers** the stylesheet from the
+  extracted tree — preferring an exact `gnome-shell.css` (shallowest match), then a
+  `gnome-shell*.css` variant — so a nested (`<Theme>/gnome-shell.css`) or renamed
+  (`gnome-shell-dark.css`) layout works too. The embedded login-background asset is
+  now placed **alongside the stylesheet** (`CSS_DIR/assets/…`) so its CSS-relative
+  `url()` resolves whether the CSS is flat or nested. On total failure the error now
+  **dumps the actual gresource entry list + source path** instead of a blind
+  message, so a still-unhandled layout is self-diagnosing on the next run.
+  Verified no-regression against Fam1's real ZorinBlue-Dark gresource (Zorin 17.3 —
+  flat `gnome-shell.css`, discovery + paths byte-identical to before) plus synthetic
+  flat/nested/variant/both/none cases. The originating box (Fam3) is offline, so the
+  exact Fam3 layout is still unconfirmed — its next wr-update will either just work
+  or print the real entry list. `bash -n` clean.
+
 ## 2026-06-15 06:32 BST — Fam1
 
 ### Added

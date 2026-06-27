@@ -92,19 +92,43 @@ for res in "${ENTRIES[@]}"; do
   gresource extract "$SRC" "$res" > "$dst"
 done
 
-CSS="$BUILD/gnome-shell.css"
-[ -f "$CSS" ] || { echo "ERROR: gnome-shell.css not in source gresource" >&2; exit 1; }
+# --- locate the shell stylesheet inside the extracted tree --------------------
+# St loads the theme's gnome-shell.css. Stock GNOME ships it flat at
+# $PREFIX/gnome-shell.css, but distro themes nest or rename it — Zorin's
+# ZorinBlue-Dark bundles it under a theme subdir, so the flat path is absent
+# (the old hardcoded "$BUILD/gnome-shell.css" failed here). Discover it from the
+# extracted entries instead: prefer an exact gnome-shell.css (shallowest match),
+# then fall back to a gnome-shell*.css variant (e.g. gnome-shell-dark.css).
+CSS_REL="$(cd "$BUILD" && find . -name 'gnome-shell.css'  -printf '%d\t%P\n' 2>/dev/null | sort -n | head -1 | cut -f2-)"
+[ -n "$CSS_REL" ] || \
+CSS_REL="$(cd "$BUILD" && find . -name 'gnome-shell*.css' -printf '%d\t%P\n' 2>/dev/null | sort -n | head -1 | cut -f2-)"
+if [ -z "$CSS_REL" ]; then
+  echo "ERROR: no gnome-shell stylesheet (gnome-shell.css) found in source gresource: $SRC" >&2
+  echo "       gresource entries were:" >&2
+  printf '         %s\n' "${ENTRIES[@]}" >&2
+  exit 1
+fi
+CSS="$BUILD/$CSS_REL"
+CSS_DIR="$(dirname "$CSS_REL")"               # "." (flat) or e.g. "ZorinBlue-Dark"
+echo "==> shell stylesheet: $CSS_REL"
 
 # --- embed our image as the login-background asset (cover-fit to screen) -------
-mkdir -p "$BUILD/assets"
-convert "$IMAGE" -gravity center -resize "${RES}^" -extent "$RES" "$BUILD/$ASSET"
-# Ensure the asset is in the file list (stock GNOME theme may not ship one).
-HAVE_ASSET=0; for res in "${ENTRIES[@]}"; do [ "${res#"$PREFIX"/}" = "$ASSET" ] && HAVE_ASSET=1; done
-[ "$HAVE_ASSET" = 1 ] || ENTRIES+=("$PREFIX/$ASSET")
+# Sit it alongside the stylesheet (CSS_DIR/assets/…) so the relative url() below
+# resolves whether the CSS is flat or nested under a theme subdir. ASSET stays
+# the CSS-relative reference ("assets/login-background.png"); ASSET_REL is its
+# actual path within the gresource tree.
+if [ "$CSS_DIR" = "." ]; then ASSET_REL="$ASSET"; else ASSET_REL="$CSS_DIR/$ASSET"; fi
+mkdir -p "$BUILD/$(dirname "$ASSET_REL")"
+convert "$IMAGE" -gravity center -resize "${RES}^" -extent "$RES" "$BUILD/$ASSET_REL"
+# Ensure the asset is in the file list (a theme may not ship one at this path).
+HAVE_ASSET=0; for res in "${ENTRIES[@]}"; do [ "${res#"$PREFIX"/}" = "$ASSET_REL" ] && HAVE_ASSET=1; done
+[ "$HAVE_ASSET" = 1 ] || ENTRIES+=("$PREFIX/$ASSET_REL")
 
 # --- ensure a last-wins #lockDialogGroup rule points at that embedded asset ----
-# Resource-relative url() renders reliably (unlike an external file://). Appended
-# so it overrides whatever the theme set, and covers themes with no image rule.
+# url() is relative to the CSS file, so reference "assets/…" (the asset sits in
+# CSS_DIR/assets). Resource-relative renders reliably (unlike an external
+# file://). Appended so it overrides whatever the theme set, and covers themes
+# with no image rule.
 MARKER="wallpaper-rotator GDM login background"
 if ! grep -qF "$MARKER" "$CSS"; then
   printf '\n/* %s */\n#lockDialogGroup { background: #1a1a1a url("%s"); background-size: cover; background-repeat: no-repeat; background-position: center; }\n' \
