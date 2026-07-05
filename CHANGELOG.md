@@ -5,6 +5,24 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-07-05 19:44 BST — pixel-8
+
+### Fixed
+- **GDM login-background build now handles self-contained `gdm.css`-only greeter
+  themes (#312 — completes the 2026-06-27 fix).** With Fam3 back online the actual
+  root cause was confirmed: its GDM greeter theme (`gdm-theme.gresource` →
+  `ZorinBlue-Dark/gnome-shell-theme.gresource`, auto-selected at priority 20) ships
+  **only `gdm.css`** — there is no `gnome-shell.css` or any `gnome-shell*.css`
+  member at all (Zorin flattens the full rule set into the greeter's own
+  `gdm.css`). So the previous discovery, which searched only for
+  `gnome-shell*.css`, still hit the `no gnome-shell stylesheet` error on the box
+  that originally reported the bug. `build-gdm-greeter.sh` now adds a third
+  discovery tier — falling back to **`gdm.css`** (the greeter stylesheet itself)
+  when no in-session sheet is present — and injects the `#lockDialogGroup`
+  background rule there. Unchanged on Fam1/stock (still prefers `gnome-shell.css`,
+  which the greeter's `gdm.css` `@import`s). Verified the 3-tier discovery resolves
+  to `gdm.css` against Fam3's real ZorinBlue-Dark gresource; `bash -n` clean.
+
 ## 2026-06-27 06:29 BST — paul-e210
 
 ### Fixed
