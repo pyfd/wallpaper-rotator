@@ -5,6 +5,21 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-07-14 05:56 BST — Fam1
+
+### Added
+- **Alert banners now carry their date/time.** Each infra-alert banner in the web
+  UI shows when the condition first fired (`13 Jul 18:49`, UK-style, year only
+  when not current) — and, for a cleared-but-unacked critical, `· cleared HH:MM`.
+  Previously a 2-minute blip that auto-recovered was indistinguishable from an
+  ongoing outage until you checked the aggregator.
+- **Per-alert "Copy a Claude investigation prompt" button** (same copy/tick icon
+  pattern as the infra-heatmap's Needs-attention cards): copies a ready-to-paste
+  brief built from the live alert entry — host/check/severity/title/body/value,
+  first/last seen, ACTIVE vs CLEARED-until-acked status, dashboard links, and
+  assess-first instructions. `navigator.clipboard` on secure contexts
+  (127.0.0.1), hidden-textarea `execCommand` fallback for plain-http LAN visits.
+
 ## 2026-07-05 19:44 BST — pixel-8
 
 ### Fixed

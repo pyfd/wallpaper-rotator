@@ -221,6 +221,11 @@ button{font:inherit}
 .alert .atitle{flex:1;min-width:0}
 .alert .aack{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.35);color:inherit;border-radius:7px;padding:3px 11px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
 .alert .aack:hover{background:rgba(0,0,0,.45)}
+.alert .awhen{opacity:.8;font-weight:500;font-size:11px;white-space:nowrap}
+.alert .acopy{display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;padding:0;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.35);color:inherit;border-radius:7px;cursor:pointer}
+.alert .acopy:hover{background:rgba(0,0,0,.45)}
+.alert .acopy.copied,.alert .acopy.copied:hover{border-color:var(--ok);color:var(--ok)}
+.alert .acopy svg{width:13px;height:13px;pointer-events:none}
 /* ── top bar ── */
 .bar{display:flex;align-items:center;gap:12px;padding:9px 16px;background:#15171e;border-bottom:1px solid #23262f;z-index:7;flex-wrap:wrap}
 .bar .ttl{font-weight:700;font-size:13.5px;white-space:nowrap}
@@ -655,6 +660,64 @@ document.addEventListener('pointerup',e=>{
 // active critical/warn alerts with an Ack button. Ack POSTs to /ack, which the
 // server proxies to the aggregator. Self-contained — independent of the main
 // render loop, so an alerts hiccup never affects the rest of the UI.
+// UK-style short datetime ("13 Jul 18:49"; year only when not current; time
+// only when sameDayOf falls on the same calendar day).
+function fmtDT(iso,sameDayOf){
+  if(!iso) return '';
+  const d=new Date(iso); if(isNaN(d)) return '';
+  const t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  if(sameDayOf){const r=new Date(sameDayOf); if(!isNaN(r)&&r.toDateString()===d.toDateString()) return t;}
+  const now=new Date();
+  return d.getDate()+' '+d.toLocaleString([],{month:'short'})
+    +(d.getFullYear()!==now.getFullYear()?' '+d.getFullYear():'')+' '+t;
+}
+// A critical stays on the banner after the condition clears (until acked) —
+// say so, or a 2-minute blip reads like an ongoing outage.
+function alertWhen(a){
+  const f=fmtDT(a.first_seen_at); if(!f) return '';
+  return a.cleared ? f+' · cleared '+fmtDT(a.last_seen_at,a.first_seen_at) : f;
+}
+// Ready-to-paste Claude investigation brief (same idea as the heatmap's
+// Needs-attention copy button) built from the live alert entry.
+function alertPrompt(a){
+  return [
+    'Infra alert from the wallpaper-rotator alert banner (wr web UI :8787) — investigate and propose solutions.',
+    '',
+    'Host: '+(a.host||'?'),
+    'Check: '+(a.key||'?'),
+    'Severity: '+(a.severity||'?'),
+    'Title: '+(a.title||''),
+    a.body?'Detail: '+a.body:null,
+    a.value_num!=null?'Value: '+a.value_num:null,
+    'First seen: '+fmtDT(a.first_seen_at)+' ('+(a.first_seen_at||'?')+')',
+    'Last seen: '+fmtDT(a.last_seen_at)+' ('+(a.last_seen_at||'?')+')',
+    a.cleared
+      ?'Status: the condition has CLEARED (auto-recovered) but stays listed until acked — confirm recovery and root-cause the episode.'
+      :'Status: still ACTIVE.',
+    '',
+    'Dashboards: heatmap http://scb-ubuntu:3000/reports/infra-heatmap/ · status matrix http://scb-ubuntu:3000/reports/infra-status/ · alert log http://scb-ubuntu:3000/reports/alert-log/',
+    '',
+    'Please: (1) confirm the current reading (SSH via the existing aliases / infrastructure docs — read-only checks only); '
+      +'(2) find the root cause — what tripped the check, and whether it points at the host or at the observer; '
+      +'(3) propose solution options with a recommendation. '
+      +'Assess first: report findings and proposed fixes, and make no changes until I give the go-ahead.'
+  ].filter(l=>l!=null).join('\n');
+}
+// navigator.clipboard needs a secure context; 127.0.0.1 qualifies but a LAN-IP
+// visit is plain http, so keep the hidden-textarea fallback.
+function copyText(txt){
+  if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(txt).catch(()=>legacyCopy(txt));return;}
+  legacyCopy(txt);
+}
+function legacyCopy(txt){
+  const ta=document.createElement('textarea');
+  ta.value=txt; ta.setAttribute('readonly',''); ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); }catch(e){}
+  document.body.removeChild(ta);
+}
+const COPY_SVG="<svg viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5'><rect x='5.5' y='5.5' width='8' height='8' rx='1.5'/><path d='M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3.5V9A1.5 1.5 0 0 0 4 10.5h1.5'/></svg>";
+const TICK_SVG="<svg viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='2'><path d='M2.5 8.5l3.5 3.5 7-8'/></svg>";
 async function pollAlerts(){
   let d;
   try{ d=await (await fetch('/alerts.json?t='+Date.now())).json(); }
@@ -662,10 +725,13 @@ async function pollAlerts(){
   const bar=$('alertbar'); if(!bar) return;
   const active=(d.active||[]).filter(a=>a.severity==='critical'||a.severity==='warn');
   active.sort((a,b)=> (a.severity==='critical'?0:1)-(b.severity==='critical'?0:1));
-  bar.innerHTML=active.map(a=>
+  bar._alerts=active;                                   // source for the copy handler
+  bar.innerHTML=active.map((a,i)=>
     `<div class="alert ${a.severity==='critical'?'critical':'warn'}">`+
     `<span class=ahost>${esc(a.host||'')}</span>`+
     `<span class=atitle>${esc(a.title||a.key||'')}</span>`+
+    `<span class=awhen>${esc(alertWhen(a))}</span>`+
+    `<button class=acopy data-i="${i}" title="Copy a Claude investigation prompt" aria-label="Copy a Claude investigation prompt">${COPY_SVG}</button>`+
     `<button class=aack data-h="${esc(a.host||'')}" data-k="${esc(a.key||'')}">Ack</button>`+
     `</div>`).join('');
   // The overlays menu (.layers) is position:fixed at top:60px and would cover
@@ -675,6 +741,17 @@ async function pollAlerts(){
   if(lay){ lay.style.top = active.length ? (Math.round(bar.getBoundingClientRect().bottom)+8)+'px' : ''; }
 }
 document.getElementById('alertbar').addEventListener('click',async e=>{
+  const c=e.target.closest('.acopy');
+  if(c){
+    const a=($('alertbar')._alerts||[])[+c.dataset.i];
+    if(a){
+      copyText(alertPrompt(a));
+      c.classList.add('copied'); c.innerHTML=TICK_SVG;
+      toast('Investigation prompt copied');
+      setTimeout(()=>{c.classList.remove('copied'); c.innerHTML=COPY_SVG;},1400);
+    }
+    return;
+  }
   const b=e.target.closest('.aack'); if(!b) return;
   b.disabled=true; b.textContent='…';
   try{
