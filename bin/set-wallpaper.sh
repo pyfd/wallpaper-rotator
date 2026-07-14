@@ -965,17 +965,34 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       # screen. Band colour = red if any critical, else amber. Cap the lines and
       # summarise the rest ("+N more") -- a static wallpaper can't scroll.
       ncrit=$(jq -r '[.active[]?|select(.severity=="critical")]|length' "$ASTATE" 2>/dev/null)
-      ALINES=$(jq -r '([.active[]?|select(.severity=="critical")]+[.active[]?|select(.severity=="warn")])|.[].title' "$ASTATE" 2>/dev/null)
+      # title \t first_seen \t cleared-flag \t last_seen per alert — the badge
+      # carries the fired date/time, and "· cleared HH:MM" for a critical that
+      # recovered but lingers until acked (else a 2-min blip reads as ongoing).
+      ALINES=$(jq -r '([.active[]?|select(.severity=="critical")]+[.active[]?|select(.severity=="warn")])|.[]|[.title, .first_seen_at//"", (if .cleared then "1" else "0" end), .last_seen_at//""]|@tsv' "$ASTATE" 2>/dev/null)
       ntot=$(printf '%s\n' "$ALINES" | grep -c .)
       abg=""; atxt=""
       if [ "${ntot:-0}" -gt 0 ] 2>/dev/null; then
         if [ "${ncrit:-0}" -gt 0 ] 2>/dev/null; then abg="#c0392b"; else abg="#b9770e"; fi
         MAXL=5; n=0
-        while IFS= read -r t; do
+        TAB=$(printf '\t')
+        while IFS="$TAB" read -r t fs cl ls; do
           [ -z "$t" ] && continue
           [ "$n" -ge "$MAXL" ] && break
-          [ "${#t}" -gt 80 ] && t="${t:0:77}..."
-          atxt="${atxt}${atxt:+$'\n'}⚠  ${t}"
+          [ "${#t}" -gt 64 ] && t="${t:0:61}..."
+          # "13 Jul 19:49" local time (GNU date; silently omitted if unsupported),
+          # cleared time date-less when it falls on the same day as the raise.
+          awhen=""
+          if [ -n "$fs" ]; then
+            awhen=$(date -d "$fs" +"%-d %b %H:%M" 2>/dev/null) || awhen=""
+            if [ -n "$awhen" ] && [ "$cl" = "1" ] && [ -n "$ls" ]; then
+              if [ "$(date -d "$fs" +%Y%m%d 2>/dev/null)" = "$(date -d "$ls" +%Y%m%d 2>/dev/null)" ]; then
+                awhen="$awhen · cleared $(date -d "$ls" +%H:%M 2>/dev/null)"
+              else
+                awhen="$awhen · cleared $(date -d "$ls" +"%-d %b %H:%M" 2>/dev/null)"
+              fi
+            fi
+          fi
+          atxt="${atxt}${atxt:+$'\n'}⚠  ${t}${awhen:+   ${awhen}}"
           n=$((n+1))
         done <<EOF
 $ALINES

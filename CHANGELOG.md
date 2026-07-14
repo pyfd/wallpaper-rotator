@@ -5,6 +5,16 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-07-14 06:45 BST — Fam1
+
+### Added
+- **Desktop badge now carries the alert date/times too** (the 05:56 change only
+  covered the web UI). Each badge line appends when the alert fired
+  (`13 Jul 19:49`) and, for a cleared-but-unacked critical,
+  `· cleared 19:51` (date included when it cleared on a different day).
+  Title cap trimmed 80→64 chars to make room. GNU-`date`-formatted; the suffix
+  is silently omitted where `date -d` is unavailable.
+
 ## 2026-07-14 05:56 BST — Fam1
 
 ### Added
