@@ -339,7 +339,13 @@ if [ -z "$IMG" ]; then
   done
   if [ -n "$IMG" ]; then            # record as seen, bounded to recent history
     printf '%s\n' "$IMG" >> "$ISEEN"
-    tail -n 500 "$ISEEN" > "$ISEEN.tmp" 2>/dev/null && mv "$ISEEN.tmp" "$ISEEN" 2>/dev/null
+    # Cap must exceed POOL_MAX (default 5000) or the no-repeat guarantee breaks:
+    # when the bag drains, it rebuilds from `pool minus seen`, and if seen has
+    # forgotten images shown earlier this cycle they'd resurface before the
+    # cycle truly ends. 50000 covers a very large pool with room to spare and a
+    # trimmed 50k-line path list is still tiny. (Was 500 — fine only while the
+    # pool was hard-capped at 60; that cap is now POOL_MAX.)
+    tail -n 50000 "$ISEEN" > "$ISEEN.tmp" 2>/dev/null && mv "$ISEEN.tmp" "$ISEEN" 2>/dev/null
   fi
   # Belt-and-braces: never end up with nothing while the pool has images.
   [ -z "$IMG" ] && IMG="$(pool_list | shuf -n 1)"

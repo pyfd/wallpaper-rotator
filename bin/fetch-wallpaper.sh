@@ -43,6 +43,49 @@ log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG" 2>/dev/nu
 TMP="$(mktemp --suffix=.img 2>/dev/null || echo /tmp/wall.$$.img)"
 trap 'rm -f "$TMP"' EXIT
 
+# --- perceptual de-duplication ----------------------------------------------
+# The md5 guard further down only catches BYTE-identical re-downloads. Curated
+# feeds also re-serve the SAME picture at a different resolution / JPEG quality
+# / crop -> different bytes -> md5 sees it as new, and the no-repeat shuffle-bag
+# then shows it as a "different" wallpaper (this was the real cause of the déjà
+# vu even with a small pool). An 8x8 average-hash (aHash) is
+# resolution/quality-independent, so near-identical re-serves collapse to a
+# near-identical 64-bit fingerprint and get discarded. Needs ImageMagick; if
+# `convert` is absent we silently fall back to md5-only (no worse than before).
+STATEDIR="$(dirname "$LOG")"
+PHASH_INDEX="$STATEDIR/images.phash"     # "<64-bit-string>\t<path>" per pool image
+PHASH_MAXDIST="${PHASH_MAXDIST:-6}"      # <= this many differing bits => same picture
+
+ahash() {   # $1 = image file -> 64-char 0/1 string on stdout (nothing on failure)
+  convert "$1" -alpha off -resize 8x8! -colorspace Gray -depth 8 txt:- 2>/dev/null \
+    | grep -oP '(?:graya|gray)\(\K[0-9]+' \
+    | awk '{v[NR]=$1; s+=$1} END{ if(NR<64) exit 1; m=s/NR; o="";
+            for(i=1;i<=NR;i++) o=o (v[i]>m?"1":"0"); print o }'
+}
+
+# Keep the fingerprint index in step with the pool: drop entries whose file no
+# longer exists (pruned/banned) and hash any pool image not yet indexed. Cheap
+# in steady state (0-1 new files per fetch); the first run after upgrade pays a
+# one-off cost to seed the existing pool.
+sync_phash_index() {
+  command -v convert >/dev/null 2>&1 || return 0
+  local tmp="$PHASH_INDEX.tmp" h p
+  : > "$tmp"
+  if [ -f "$PHASH_INDEX" ]; then
+    while IFS=$'\t' read -r h p; do
+      [ -n "$p" ] && [ -f "$p" ] && printf '%s\t%s\n' "$h" "$p"
+    done < "$PHASH_INDEX" >> "$tmp"
+  fi
+  mv "$tmp" "$PHASH_INDEX" 2>/dev/null
+  # hash the un-indexed pool files (favourites included, so a re-serve of a
+  # favourited picture is caught too)
+  find "$POOL" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) 2>/dev/null \
+    | grep -vxF -f <(cut -f2 "$PHASH_INDEX" 2>/dev/null) 2>/dev/null \
+    | while IFS= read -r p; do
+        h="$(ahash "$p")" && [ -n "$h" ] && printf '%s\t%s\n' "$h" "$p" >> "$PHASH_INDEX"
+      done
+}
+
 # A file is a usable wallpaper only if it's a non-trivial, decodable image.
 # (Sources sometimes return tiny HTML error bodies with a 200.)
 valid_image() {
@@ -228,12 +271,33 @@ for src in $ORDER; do
         continue
       fi
     fi
+    # Perceptual near-dup guard: same picture re-served at a different
+    # resolution/quality/crop passes the md5 check above (different bytes) but
+    # is caught here by aHash. Skipped entirely (md5-only) when ImageMagick is
+    # unavailable. CAND is reused below to index the accepted image.
+    CAND=""
+    if command -v convert >/dev/null 2>&1; then
+      sync_phash_index
+      CAND="$(ahash "$TMP")"
+      if [ -n "$CAND" ]; then
+        pdup="$(awk -F'\t' -v c="$CAND" -v max="$PHASH_MAXDIST" '
+          { d=0; n=length(c);
+            for(i=1;i<=n;i++) if(substr(c,i,1)!=substr($1,i,1)) d++;
+            if(d<=max){ print $2; exit } }' "$PHASH_INDEX" 2>/dev/null)"
+        if [ -n "$pdup" ]; then
+          log "[download] src=$src near-dup (phash <=$PHASH_MAXDIST bits of $(basename "$pdup")) -- discarded, trying next source"
+          continue
+        fi
+      fi
+    fi
     # AI generations carry provenance in the filename (.ai.jpg) so the
     # renderer can mark them subtly and the GUI can tag them — survives
     # moves to favourites/ with no manifest to maintain.
     ext="jpg"; [ "$src" = ai ] && ext="ai.jpg"
     DEST="$POOL/$(date +%s).$$.$ext"
     mv "$TMP" "$DEST"
+    # Record the accepted image's fingerprint so future fetches dedup against it.
+    [ -n "$CAND" ] && printf '%s\t%s\n' "$CAND" "$DEST" >> "$PHASH_INDEX"
     # Quote-linked gen: persist the quote beside its image; the renderer
     # prefers the sidecar over a fresh bag draw when this image is shown.
     linked=""

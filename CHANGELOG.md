@@ -5,6 +5,42 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-07-17 07:12 BST — Fam1
+
+### Changed
+- **No-repeat cycle stretched from hours to months.** The real cause of the
+  recurring déjà vu was never the shuffle-bag — it was a hard **60-image pool
+  cap** (hourly cron prune) plus web-UI theme/AI flushes that pruned to **12**.
+  At a 10-min rotation the whole pool cycled in well under a day, so the same
+  wallpaper reappeared daily. Three coordinated changes remove the ceiling:
+  - **`POOL_MAX` config knob (default 5000).** The hourly cron prune and every
+    web-UI flush now cap at `POOL_MAX` instead of 60/12; favourites/ stays
+    excluded. 5000 images ≈ **2+ months** of no-repeats at a 10-min rotation
+    (~72 picks/day); raise it for longer, lower to reclaim disk (~1.5 MB/image).
+    Read live from the config, so no reinstall needed to retune. The prune now
+    also counts `.jpeg`/`.png`, not just `.jpg`.
+  - **`images.seen` cap 500 → 50000** (`set-wallpaper.sh`). With a large pool
+    the 500-entry memory would let images shown early in a cycle resurface
+    before the cycle ended; the cap must exceed `POOL_MAX` for the
+    once-per-cycle guarantee to hold.
+
+### Added
+- **Perceptual (aHash) de-duplication at fetch** (`fetch-wallpaper.sh`). The
+  existing md5 guard only catches byte-identical re-downloads; curated feeds
+  re-serve the *same picture* at a different resolution/quality/crop (different
+  bytes → md5 sees it as new → the bag shows it as a "different" wallpaper). An
+  8×8 average-hash is resolution/quality-independent: candidates within
+  `PHASH_MAXDIST` (default 6 of 64 bits) of any pool image are discarded. Backed
+  by a synced `images.phash` fingerprint index (drops pruned files, hashes new
+  ones — cheap in steady state). Verified: a resized+recompressed copy hamming=0
+  (caught) vs 22 between two genuinely different images. Falls back to md5-only
+  when ImageMagick is absent.
+
+**Deploy:** run `wr-update` on each machine — the new 60→`POOL_MAX` cron only
+takes effect after `install.sh` regenerates the crontab; until then the old
+60-cap is still pruning. Pool then grows ~50-140/day toward `POOL_MAX` over a
+few weeks, with the no-repeat window lengthening as it fills.
+
 ## 2026-07-14 06:45 BST — Fam1
 
 ### Added

@@ -60,7 +60,7 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEM
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN", "AI_HORDE_KEY",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
-            "PULSE_TITLE", "WEB_BIND", "ALERTS_URL", "LOGIN_ROTATE")
+            "PULSE_TITLE", "WEB_BIND", "ALERTS_URL", "LOGIN_ROTATE", "POOL_MAX")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "QUOTE_THEME": "", "QUOTE_MATCH_IMAGE": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
@@ -92,7 +92,22 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 # matches pre-toggle behaviour); 0 = keep the last login image.
                 # Read by random-login-bg.sh / build-gdm-greeter.sh on the --login
                 # (autostart) path only; the "Refresh now" button ignores it.
-                "LOGIN_ROTATE": "1"}
+                "LOGIN_ROTATE": "1",
+                # not a form field — config-file only. Max images kept in the
+                # pool (favourites/ excluded). The hourly cron prune and the
+                # theme/AI-change flushes cap at this; a big pool = a long
+                # no-repeat cycle (5000 ≈ 2+ months at a 10-min rotation).
+                "POOL_MAX": "5000"}
+
+
+def pool_keep(cfg):
+    """First line number to PRUNE from a newest-first pool listing, i.e.
+    keep POOL_MAX images. `tail -n +<pool_keep> ` selects the surplus to rm."""
+    try:
+        n = int(cfg.get("POOL_MAX") or CFG_DEFAULTS["POOL_MAX"])
+    except (TypeError, ValueError):
+        n = int(CFG_DEFAULTS["POOL_MAX"])
+    return max(12, n) + 1
 
 
 def read_config():
@@ -589,13 +604,13 @@ class Handler(BaseHTTPRequestHandler):
             elif cfg["AI_WALLPAPER"] == "1" and old.get("AI_WALLPAPER") != "1":
                 _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                     "for i in 1 2 3; do %s; done; "
-                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --; %s"
-                    % (FETCH, POOL, SETWP, FETCH, POOL, GENSTATUS))
+                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
+                    % (FETCH, POOL, SETWP, FETCH, POOL, pool_keep(cfg), GENSTATUS))
             elif set(cfg["THEME"].split()) != set((old.get("THEME") or "").split()):
                 _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                     "for i in $(seq 1 7); do %s; done; "
-                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --; %s"
-                    % (FETCH, POOL, SETWP, FETCH, POOL, GENSTATUS))
+                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
+                    % (FETCH, POOL, SETWP, FETCH, POOL, pool_keep(cfg), GENSTATUS))
             elif cfg.get("LOGIN_ROTATE") != old.get("LOGIN_ROTATE"):
                 # Login-screen-only setting — the desktop wallpaper is unaffected,
                 # so skip the re-render. The login scripts read it at next login;
@@ -712,8 +727,8 @@ class Handler(BaseHTTPRequestHandler):
                     ["bash", "-c",
                      "%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                      "for i in 1 2 3; do %s; done; "
-                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --; %s"
-                     % (FETCH, POOL, SETWP, FETCH, POOL, GENSTATUS)],
+                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
+                     % (FETCH, POOL, SETWP, FETCH, POOL, pool_keep(cfg), GENSTATUS)],
                     start_new_session=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
@@ -739,8 +754,8 @@ class Handler(BaseHTTPRequestHandler):
                 subprocess.Popen(
                     ["bash", "-c",
                      "for i in $(seq 1 7); do %s; done; "
-                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +13 | xargs -r rm --"
-                     % (FETCH, POOL)],
+                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --"
+                     % (FETCH, POOL, pool_keep(cfg))],
                     start_new_session=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
