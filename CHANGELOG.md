@@ -9,12 +9,18 @@ Entry headers carry the date + local time + machine the change was made on
 
 ### Fixed
 - **Deselecting the last theme chip now saves as "any".** Clicking the sole
-  active theme chip (e.g. `nature`) to clear all themes sent `theme:[]`, which
-  `setone()` serialised to an empty POST body — the server saw no keys, so it
-  returned `400 "no valid setting in request"` and the toast read *save failed*.
-  `setone()` now appends the key with an empty value when an array is empty, so
-  the server receives `theme=""`, filters it to no themes, and stores `THEME=""`
-  (= "any") — matching the toast's own "any" wording.
+  active theme chip (e.g. `nature`) to clear all themes returned
+  `400 "no valid setting in request"` and the toast read *save failed*. Two
+  faults compounded, both fixed:
+  - **Client (`gen-status.sh`):** an empty theme array serialised to an *empty*
+    POST body — `setone()` now appends the key with an empty value, so the
+    request carries `theme=""`.
+  - **Server (`wallpaper-web.py`):** `/setone` parsed the body with
+    `parse_qs`'s default `keep_blank_values=False`, which *dropped* `theme=""`
+    before the theme branch could see it — still an empty form → same 400. Now
+    parsed with `keep_blank_values=True`, so the blank survives, filters to no
+    themes, and stores `THEME=""` (= "any"). Verified end-to-end in-browser
+    (200 `{"ok":true}`, toast "themes: any", `THEME=''` persisted).
 
 ## 2026-07-17 07:12 BST — Fam1
 

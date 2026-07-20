@@ -535,7 +535,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}'); return
         if path == "/setone":                    # instant-apply: one or a few settings
             ln = int(self.headers.get("Content-Length") or 0)
-            form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
+            # keep_blank_values so an intentionally-cleared field (e.g. theme="")
+            # survives parsing — else deselecting the last theme chip drops the
+            # key and the request looks empty ("no valid setting in request").
+            form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"),
+                                         keep_blank_values=True)
             cfg = read_config()
             old = dict(cfg)
             BOOLS = {"quote": "OVERLAY_QUOTE", "quote_detail": "OVERLAY_QUOTE_DETAIL",
