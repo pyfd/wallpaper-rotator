@@ -5,6 +5,17 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-07-20 06:06 BST — Fam3
+
+### Fixed
+- **Deselecting the last theme chip now saves as "any".** Clicking the sole
+  active theme chip (e.g. `nature`) to clear all themes sent `theme:[]`, which
+  `setone()` serialised to an empty POST body — the server saw no keys, so it
+  returned `400 "no valid setting in request"` and the toast read *save failed*.
+  `setone()` now appends the key with an empty value when an array is empty, so
+  the server receives `theme=""`, filters it to no themes, and stores `THEME=""`
+  (= "any") — matching the toast's own "any" wording.
+
 ## 2026-07-17 07:12 BST — Fam1
 
 ### Changed

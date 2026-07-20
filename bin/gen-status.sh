@@ -370,7 +370,7 @@ async function setone(kv,msg){
   try{
     const body=new URLSearchParams();
     for(const [k,v] of Object.entries(kv)){
-      if(Array.isArray(v)) v.forEach(x=>body.append(k,x)); else body.append(k,v);
+      if(Array.isArray(v)){ if(v.length) v.forEach(x=>body.append(k,x)); else body.append(k,''); } else body.append(k,v);
     }
     const r=await fetch('/setone',{method:'POST',body});
     if(!r.ok) throw new Error(await r.text());
