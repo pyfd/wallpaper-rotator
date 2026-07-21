@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# pre-commit — CHANGELOG host-tag guard.
+#
+# Entry headers here carry the authoring machine in the header itself:
+#   ## 2026-07-20 06:06 BST — Fam3
+#
+# That host is the only provenance marker an entry has, and the hostname is NOT in
+# Claude's session context — so it gets inferred, and in a repo every machine
+# commits to the neighbouring entries are usually a DIFFERENT machine. The same
+# mistake shipped in workshop-service on 2026-07-21 (corrected in f9be99c).
+#
+# Shared implementation lives in dotfiles so all repos use one copy. Where dotfiles
+# isn't present the check skips with a VISIBLE warning — a check that cannot run
+# must say so, not report "nothing found".
+#
+# Activated by core.hooksPath=.githooks (setup.sh does this per clone).
+# Bypass for a genuine cross-machine backfill: git commit --no-verify
+set -uo pipefail
+
+changelog_guard="$HOME/cldev/scripts/check-changelog-host.sh"
+if [ -x "$changelog_guard" ]; then
+  if ! "$changelog_guard"; then
+    echo >&2
+    echo "✖ pre-commit: changelog host-tag guard failed — see above, or bypass with 'git commit --no-verify'." >&2
+    exit 1
+  fi
+elif git diff --cached --name-only --diff-filter=ACM | grep -qi 'CHANGELOG\.md$'; then
+  echo "⚠ pre-commit: $changelog_guard not found — CHANGELOG host-tag NOT checked." >&2
+fi
+exit 0
