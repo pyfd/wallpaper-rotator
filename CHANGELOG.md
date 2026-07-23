@@ -5,7 +5,18 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
-## 2026-07-23 18:45 BST — Fam1
+## 2026-07-23 18:49 BST — Fam1
+
+### Fixed
+- **Tall overlay teleported to the opposite edge (pulse rendered northeast over
+  stats, config said southeast).** `avoid()` nudges a colliding block along its
+  anchored axis; the taller sectioned pulse board grazed the centred quote's
+  *padding* at southeast, got nudged up past the quote, then past northeast
+  stats, ended off-screen (`y=-658`) — and the final clamp slammed it to `OY=0`:
+  top-right, straight over the stats it had been dodging. Now, if clearing every
+  placed block walks the candidate off-screen, it reverts to its configured
+  anchor and accepts the residual (usually pad-vs-pad) overlap instead of
+  clamping onto the opposite edge. Applies to all overlays, both axes.
 
 ### Changed
 - **`install.sh` auto-migrates `PULSE_JQ` to the sectioned feed.** Machines that

@@ -414,7 +414,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     # the largest style panel (frosted: bw+68/bh+44) so panels clear, not just text.
     PLACED=()
     avoid() {  # $1=gravity ; reads bw/bh/OX, adjusts OY, appends to PLACED
-      local g="$1" pad=36 gap=14 tries=0 r rx ry rw rh hit
+      local g="$1" pad=36 gap=14 tries=0 r rx ry rw rh hit oy0="$OY"
       local x=$((OX-pad)) y=$((OY-pad)) w=$((bw+2*pad)) h=$((bh+2*pad)) dir=1
       case "$g" in South*) dir=-1;; esac
       while [ "$tries" -lt 40 ]; do
@@ -431,8 +431,12 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         tries=$((tries+1))
       done
       OY=$((y+pad))
-      [ "$OY" -lt 0 ] && OY=0
-      [ $((OY+bh)) -gt "$CH" ] && OY=$((CH-bh))
+      # If clearing every placed block walked us off-screen (tall block on a
+      # crowded axis), do NOT clamp onto the opposite edge — that teleports a
+      # southeast block to the top, straight over whatever is anchored there
+      # (sectioned pulse vs northeast stats). Revert to the configured anchor
+      # and accept the residual overlap — it is usually pad-vs-pad only.
+      if [ "$OY" -lt 0 ] || [ $((OY+bh)) -gt "$CH" ]; then OY="$oy0"; fi
       PLACED+=("$x $((OY-pad)) $w $h")   # x unchanged by the nudge; y follows OY
     }
     mktext() {  # out font ps fill width align text -> wrapped transparent PNG
