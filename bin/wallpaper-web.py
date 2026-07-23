@@ -47,6 +47,7 @@ ALLOWED_OVERLAY_STYLE = {"scrim", "frosted", "editorial", "chips"}
 ALLOWED_CLOCK_STYLE = {"digital", "analogue"}
 ALLOWED_CLOCK_FACE = {"classic", "minimal", "dots", "numbers"}
 ALLOWED_PULSE_TTL = {"1", "5", "15", "30"}
+ALLOWED_PULSE_MAX = {"8", "12", "16", "20", "24"}
 # Keep in sync with the qtheme_opts list in gen-status.sh
 ALLOWED_QUOTE_THEME = {"", "love", "life", "inspirational", "humor", "philosophy",
                        "wisdom", "happiness", "hope", "success", "romance",
@@ -60,7 +61,7 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEM
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN", "AI_HORDE_KEY",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
-            "PULSE_TITLE", "WEB_BIND", "ALERTS_URL", "LOGIN_ROTATE", "POOL_MAX")
+            "PULSE_TITLE", "PULSE_MAX", "WEB_BIND", "ALERTS_URL", "LOGIN_ROTATE", "POOL_MAX")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "QUOTE_THEME": "", "QUOTE_MATCH_IMAGE": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
@@ -79,7 +80,7 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 "AI_WALLPAPER": "0", "AI_PROMPT": "", "AI_TOKEN": "", "AI_HORDE_KEY": "",
                 "OVERLAY_PULSE": "0", "PULSE_POS": "east",
                 "PULSE_URL": "", "PULSE_JQ": ".", "PULSE_TTL": "5",
-                "PULSE_TITLE": "",
+                "PULSE_TITLE": "", "PULSE_MAX": "20",
                 # not a form field — set in the config file, needs a service
                 # restart: "" = localhost only, "tailscale" = + tailnet IP,
                 # or an explicit extra IP to bind
@@ -559,6 +560,7 @@ class Handler(BaseHTTPRequestHandler):
                      "clock_style": ("CLOCK_STYLE", ALLOWED_CLOCK_STYLE),
                      "clock_face": ("CLOCK_FACE", ALLOWED_CLOCK_FACE),
                      "pulse_ttl": ("PULSE_TTL", ALLOWED_PULSE_TTL),
+                     "pulse_max": ("PULSE_MAX", ALLOWED_PULSE_MAX),
                      "interval": ("INTERVAL_MIN", ALLOWED_INTERVALS)}
             touched = False
             for k, vals in form.items():

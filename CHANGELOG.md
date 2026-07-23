@@ -5,7 +5,23 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
-## 2026-07-20 06:06 BST — Fam3
+## 2026-07-23 14:15 BST — Pixel-8
+
+### Added
+- **Pulse overlay: section headings + a lifted line cap.** The SCB pulse feed
+  (`workshop-service /api/pulse`) now emits Today / This week / This month
+  sections, so the overlay needed to (a) render group headings and (b) show more
+  than the old hard-coded 8 lines.
+  - **`## Section` header lines** — a pulse line beginning `## ` renders as an
+    accent-coloured heading (a touch larger than the rows, small top gap) instead
+    of a `label|value` row (`set-wallpaper.sh`). Point `PULSE_JQ` at `.display[]`
+    for the sectioned feed; `.lines_kv[]` still gives the flat today-only digest.
+  - **`PULSE_MAX` config knob (default 20)** replaces the hard-coded 8-line cap
+    in the render loop — the old `8` was only a protective guard, not a real
+    limit; the true limit is screen height + font size. Settable from the web UI
+    (Pulse panel → *max lines*: 8/12/16/20/24) and whitelisted in
+    `wallpaper-web.py`. `gen-status.sh`'s live preview reads up to `PULSE_MAX`
+    too. Raise it for a taller board, lower it to keep the overlay compact.
 
 ### Fixed
 - **Deselecting the last theme chip now saves as "any".** Clicking the sole

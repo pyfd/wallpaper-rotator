@@ -35,7 +35,7 @@ OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0; THEME=
 CLOCK_FACE=classic; AI_WALLPAPER=0; AI_PROMPT=
-OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.; PULSE_TTL=5; PULSE_TITLE=""
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.; PULSE_TTL=5; PULSE_TITLE=""; PULSE_MAX=20
 WEB_BIND=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -91,7 +91,7 @@ quote_now=""
 weather_now=""
 [ -f "$STATEDIR/forecast.raw" ] && weather_now="$(head -1 "$STATEDIR/forecast.raw" 2>/dev/null | awk -F'|' '{print $4" "$2"°/"$3"°"}')"
 pulse_now=""
-[ -s "$STATEDIR/pulse.txt" ] && pulse_now="$(head -8 "$STATEDIR/pulse.txt")"
+[ -s "$STATEDIR/pulse.txt" ] && pulse_now="$(head -"${PULSE_MAX:-20}" "$STATEDIR/pulse.txt")"
 pulse_age=""
 [ -s "$STATEDIR/pulse.txt" ] && pulse_age="$(date -r "$STATEDIR/pulse.txt" +%H:%M 2>/dev/null)"
 stats_now="$(hostname) · load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null) · mem $(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')"
@@ -164,6 +164,7 @@ jq -n \
   --arg c_clock_pos "${CLOCK_POS}" --arg c_clock_24h "${CLOCK_24H}" --arg c_clock_date "${CLOCK_DATE}" \
   --arg c_pulse "${OVERLAY_PULSE}" --arg c_pulse_pos "${PULSE_POS}" --arg c_pulse_url "${PULSE_URL}" \
   --arg c_pulse_jq "${PULSE_JQ}" --arg c_pulse_ttl "${PULSE_TTL}" --arg c_pulse_title "${PULSE_TITLE}" \
+  --arg c_pulse_max "${PULSE_MAX}" \
   --arg c_ai "${AI_WALLPAPER}" --arg c_ai_prompt "${AI_PROMPT}" \
   --arg c_style "${OVERLAY_STYLE}" --arg c_size "${OVERLAY_SIZE}" --arg c_text "${OVERLAY_THEME}" --arg c_font "${OVERLAY_FONT}" \
   --arg c_theme "${THEME}" --arg c_web_bind "${WEB_BIND}" \
@@ -187,7 +188,7 @@ jq -n \
     clock:$c_clock, clock_style:$c_clock_style, clock_face:$c_clock_face,
     clock_pos:$c_clock_pos, clock_24h:$c_clock_24h, clock_date:$c_clock_date,
     pulse:$c_pulse, pulse_pos:$c_pulse_pos, pulse_url:$c_pulse_url,
-    pulse_jq:$c_pulse_jq, pulse_ttl:$c_pulse_ttl, pulse_title:$c_pulse_title,
+    pulse_jq:$c_pulse_jq, pulse_ttl:$c_pulse_ttl, pulse_title:$c_pulse_title, pulse_max:$c_pulse_max,
     ai:$c_ai, ai_prompt:$c_ai_prompt,
     style:$c_style, size:$c_size, text:$c_text, font:$c_font,
     theme:$c_theme, web_bind:$c_web_bind
@@ -496,9 +497,10 @@ function inspHtml(k){
      <div class=row>${cb('clock_24h','24h')}${cb('clock_date','Date')}</div>`;
   if(k==='pulse') return head(OVERLAYS[k],'pulse')+
     `<div class=row><span class=lbl>title</span><input type=text data-set=pulse_title value="${esc(c.pulse_title)}" size=12>
-       <span class=lbl>every</span>${sel('pulse_ttl',['1','5','15','30'],c.pulse_ttl)}<span class=lbl>min</span></div>
+       <span class=lbl>every</span>${sel('pulse_ttl',['1','5','15','30'],c.pulse_ttl)}<span class=lbl>min</span>
+       <span class=lbl>max lines</span>${sel('pulse_max',['8','12','16','20','24'],c.pulse_max)}</div>
      <div class=row><span class=lbl>URL</span><input type=text class=wide data-set=pulse_url value="${esc(c.pulse_url)}" placeholder="https://host/api or file:///path.json"></div>
-     <div class=row><span class=lbl>template</span><input type=text class=wide data-set=pulse_jq value="${esc(c.pulse_jq)}" placeholder=".lines[]"></div>
+     <div class=row><span class=lbl>template</span><input type=text class=wide data-set=pulse_jq value="${esc(c.pulse_jq)}" placeholder=".display[] (sectioned) or .lines_kv[]"></div>
      <div class=row><button class=bbtn id=pulse-test>Test</button></div>
      <pre id=pulse-pre>${esc(S.live.pulse||'(no data yet)')}</pre>`;
   if(k==='appearance') return `<h3>🎨 Appearance</h3>

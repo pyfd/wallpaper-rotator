@@ -35,7 +35,7 @@ OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
 OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
 CLOCK_FACE=classic
-OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."; PULSE_TTL=5; PULSE_TITLE=""
+OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."; PULSE_TTL=5; PULSE_TITLE=""; PULSE_MAX=20
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -858,7 +858,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     fi
     if [ "${OVERLAY_PULSE:-0}" = 1 ] && [ -n "${PULSE_URL:-}" ] && command -v jq >/dev/null 2>&1; then
       # "Pulse" overlay: any JSON endpoint + a jq template -> a stats-style text
-      # block (one rendered line per output line, max 8). Generic on purpose —
+      # block (one rendered line per output line, up to PULSE_MAX). Generic —
       # point PULSE_URL at a business/home-automation/CI endpoint and shape the
       # lines with PULSE_JQ. file:// URLs work too (curl), so a local script
       # can feed it. Cached ~5 min so renders don't hammer the endpoint.
@@ -877,6 +877,14 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         while IFS= read -r pline; do
           [ -n "$pline" ] || continue
           case "$pline" in
+            "## "*)
+              # Section heading (endpoint emits "## Today" etc). Rendered on its
+              # own as an accent-coloured label a touch larger than the rows,
+              # with a little top padding so the groups read apart. No label|value
+              # split — it flows into the vertical append as a single image.
+              convert -background none -font "$pf" -pointsize "$(( pps * 11 / 10 ))" -fill "$ACCENT" \
+                label:"${pline#\#\# }" -trim +repage -bordercolor none -border 0x3 \
+                "$PD/$pn.png" 2>>"$LOG" ;;
             *"|"*)
               convert -background none -font "$pf" -pointsize "$pps" -fill "$TXT" \
                 label:"${pline%%|*}" -trim +repage -channel A -evaluate multiply 0.78 +channel \
@@ -887,7 +895,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
               pkv=1 ;;
             *) stat_label "$PD/$pn.png" "$pline" "$pf" "$pps" "$plh" ;;
           esac
-          pn=$((pn+1)); [ "$pn" -ge 8 ] && break
+          pn=$((pn+1)); [ "$pn" -ge "${PULSE_MAX:-20}" ] && break
         done < "$pcache"
         if [ "$pn" -gt 0 ]; then
           # Column widths: align every label column and right-align every value.
