@@ -5,6 +5,21 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-07-23 18:45 BST — Fam1
+
+### Changed
+- **`install.sh` auto-migrates `PULSE_JQ` to the sectioned feed.** Machines that
+  configured the pulse overlay before the section-headings release (14:15 entry
+  below) still had `PULSE_JQ='.lines_kv[]'` in local config, so the new board
+  never appeared — each box needed a hand edit. The installer now does the
+  one-time upgrade itself: if config holds the old `.lines_kv[]` template it
+  probes the configured `PULSE_URL`, and only when the feed actually serves a
+  `.display[]` array rewrites the template and drops the cached `pulse.txt` so
+  the next rotate renders sections. Unreachable/legacy feeds are left untouched
+  (retried at the next install). Net effect: a plain `wr-update` is enough to
+  get the sectioned pulse everywhere. Follows the existing ALERTS_URL /
+  LOGIN_ROTATE config-migration pattern.
+
 ## 2026-07-23 14:15 BST — Pixel-8
 
 ### Added

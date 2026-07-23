@@ -324,6 +324,22 @@ grep -q '^ALERTS_URL=' "$CONFIG_FILE" 2>/dev/null || printf 'ALERTS_URL=\n' >> "
 # Existing configs predate LOGIN_ROTATE — default it on (matches prior always-
 # rotate behaviour; the login scripts also treat "unset" as on).
 grep -q '^LOGIN_ROTATE=' "$CONFIG_FILE" 2>/dev/null || printf "LOGIN_ROTATE='1'\n" >> "$CONFIG_FILE"
+# Existing configs may point PULSE_JQ at a flat `.lines_kv[]` feed whose
+# endpoint has since adopted the sectioned `display` array (## headings,
+# 2026-07-23). One-time upgrade: only if the configured feed actually serves
+# `.display[]`, switch the jq template over and drop the cached render so the
+# next rotate picks up the sectioned board. Offline/unreachable feed = no-op
+# (retried on the next install).
+if grep -Eq "^PULSE_JQ='?\.lines_kv\[\]'?$" "$CONFIG_FILE" 2>/dev/null; then
+  PULSE_URL_CUR="$(sed -n "s/^PULSE_URL=//p" "$CONFIG_FILE" | tr -d \")"
+  PULSE_URL_CUR="${PULSE_URL_CUR//\'/}"
+  if [ -n "$PULSE_URL_CUR" ] && curl -fsS --max-time 5 "$PULSE_URL_CUR" 2>/dev/null \
+       | jq -e '.display | arrays | length > 0' >/dev/null 2>&1; then
+    sed -i "s|^PULSE_JQ=.*|PULSE_JQ='.display[]'|" "$CONFIG_FILE"
+    rm -f "$LOG_DIR/pulse.txt"
+    echo "    pulse: PULSE_JQ upgraded .lines_kv[] -> .display[] (feed serves sections)"
+  fi
+fi
 
 # Status-page generator.
 TMP="$(mktemp)"
