@@ -5,6 +5,71 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-07-26 06:14 BST — Fam3
+
+Started from a UI bug ("dragged overlays spring back after a delay"), which turned
+into a full read of the codebase. Findings, measurements and the reasoning behind
+each fix are written up in `CODE_AUDIT.md`.
+
+### Fixed
+- **Dragged overlays sprang back to their old zone.** Three compounding defects.
+  (1) `gen-status.sh` forked `jq -n` once per pool image — 48.7s of its 54s runtime
+  with 369 images. (2) `regen()`'s 30s timeout therefore killed it every time, and
+  since `state.json` is written atomically at the very end, the poll path could never
+  refresh state at all. (3) The client had no optimistic state: `refresh()` replaced
+  `S` wholesale and rebuilt every overlay from `S.cfg`, so any `state.json` arriving
+  before the server caught up reverted the drop. Measured: drop at 05:26:03, revert
+  05:26:11, correct again 05:27:08. Now the pool list is one `jq` per folder
+  (byte-identical output, differential-tested over 370 files incl. 50 `.ai.jpg`),
+  the regen timeout is 90s, `/state.json` also regenerates when the config is newer
+  than the snapshot, and `/setone` pins written keys over incoming state until the
+  server echoes them back. Verified in a real browser: zero reverts across 5 minutes
+  and ~15 poll cycles, including rapid successive drags. **gen-status 54.1s → 1.9s.**
+- **The 1-minute clock cron re-rendered everything: 10.4s wall / 9.3s CPU** — a trace
+  counted 118 `convert` + 42 `identify` spawns at ~60ms each, rebuilding blocks whose
+  inputs had not moved. Added layer caching: a content-addressed store behind
+  `mktext`/`stat_label` (covers the quote caption, weather line, every stats row and
+  every pulse row; LRU-pruned at `-mtime +2`), block-level caches for the pulse panel
+  and forecast strip, and a memoised framed base. **10.4s → 3.9s**, spawns 118 → 61.
+  Placement is untouched — `avoid()` makes block order significant to layout, so the
+  blocks were deliberately *not* reordered into static/dynamic phases. Verified: base
+  cache pixel-identical to a fresh convert (AE=0); cold vs warm renders differ only
+  inside the stats block, which is live by design.
+- **`write_config()` could be read half-written.** It truncated the config in place
+  while cron sources it every minute, so a render landing mid-write silently fell back
+  to defaults. Now writes a temp file and `os.replace()`s it, and the read-modify-write
+  in `/set` and `/setone` is serialised (two rapid saves could previously lose one).
+- **Temp directories leaked.** `_pl.$$`/`_fc.$$` were removed only on the happy path;
+  7 orphans had accumulated. Added a `trap ... EXIT INT TERM` plus a startup sweep.
+- **A dead `PULSE_URL` cost a 6s curl on every render** (once a minute). Given the same
+  `.fail` back-off fence the weather fetch already had.
+- **`exec 9>lock 2>/dev/null` silenced stderr for the whole script.** `exec` with no
+  command applies its redirections permanently, so the suppression meant to hide a
+  failed lock-open discarded every unredirected error for the rest of the run. Scoped
+  to the lock-open with braces.
+
+### Security
+- **Cross-site POSTs are rejected.** There was no `Origin`/`Referer`/token check, so
+  any site the user visited could POST to `127.0.0.1:8787` on their behalf — including
+  `/ban`, which deletes the on-screen pool image and needs no filename. Same-origin (or
+  header-less, i.e. curl) requests still pass.
+- **`file://` pulse feeds are confined to `$STATE/feeds`.** `/pulse_test` returns the
+  fetched body, so an unrestricted `file://` scheme was an arbitrary local file read for
+  anyone who could reach the port — inert at the default localhost bind, but `WEB_BIND`
+  can put this on the tailnet. `http(s)` feeds are unaffected.
+- **Image paths are `shlex.quote`d** before going into detached shell chains. Pool names
+  are generated so this was latent, but a hand-added `Paul's photo.jpg` would have broken
+  straight out of the quoting.
+
+### Changed
+- **`wallpaper.log` is capped** at 5,000 lines (trimmed in batches). It had no rotation
+  at all while `gen-status` scanned it several times per UI poll. The trim banks the
+  per-source download tallies it drops into `dl-counts` and `gen-status.sh` adds them
+  back, so the UI's source counters don't walk backwards; verified on a synthetic
+  8,000-line log across two trims.
+- **`regen()` coalesces** instead of letting a poll burst spawn concurrent runs — but a
+  waiter only reuses an in-flight run that finished *after* its own request.
+
 ## 2026-07-23 18:49 BST — Fam1
 
 ### Fixed

@@ -236,7 +236,20 @@ the wallpaper, ✕ to return it to the prunable pool.
 
 Overlays are rendered onto a *copy* each tick (pool originals stay clean; stats
 stay live). State lives in `~/.local/state/wallpaper-rotator/config`, read by
-`set-wallpaper.sh`.
+`set-wallpaper.sh` and rewritten atomically by the web UI (cron sources it every
+minute, so a half-written config would silently fall back to defaults).
+
+Rendering is spawn-bound — a full composite is ~160 ImageMagick invocations — so
+finished layers are cached beside the config: `textcache/` (content-addressed, one
+entry per rendered text line, LRU-pruned at 2 days) and `layers/` (the pulse panel
+and forecast strip). The quote, weather and pulse blocks are rebuilt only when their
+inputs change; stats, the clock and the alert badge are never cached because they are
+live. This is what keeps the 1-minute clock refresh affordable. Both caches are
+disposable — delete them and the next render repopulates.
+
+`wallpaper.log` is capped at 5,000 lines. The trim banks the per-source download
+tallies it drops into `dl-counts`, which `gen-status.sh` adds back, so the UI's source
+counters survive a roll.
 
 **Version** — the page shows the installed version in the header (`v2026.06.03`) and
 the full id + install date/host in the footer. The version is **derived from the
@@ -245,9 +258,12 @@ CHANGELOG** (the newest `## YYYY-MM-DD HH:MM TZ — host` entry), stamped into
 entry auto-bumps it and each machine's page tells you what it's running. Query it
 from the shell with `set-wallpaper.sh --version`.
 
-It binds to `127.0.0.1` by default (no network exposure, no auth — localhost
-trust), needs `python3`, and the page soft-refreshes its status every 30s (no
-full reload; form edits survive). It runs always-on under the `wallpaper-web`
+It binds to `127.0.0.1` by default (no auth — localhost trust; `WEB_BIND` can add the
+tailnet IP or an explicit address, which is the only way it reaches the network), needs
+`python3`, and the page soft-refreshes its status every 30s (no full reload; form edits
+survive). State-changing POSTs are same-origin-checked — localhost trust does not cover
+a browser being pointed at `127.0.0.1` by whatever site you happen to be visiting — and
+`file://` pulse feeds are confined to `~/.local/state/wallpaper-rotator/feeds`. It runs always-on under the `wallpaper-web`
 systemd user service (above); after pulling a code update,
 `systemctl --user restart wallpaper-web`. Change the port via `WEB_PORT` in
 `install.sh`.
@@ -304,6 +320,7 @@ The JSON sources (`wallhaven`, `bing`) need `jq` (installed automatically).
 ```
 wallpaper-rotator/
 ├── README.md
+├── CODE_AUDIT.md                          # 2026-07-26 full-codebase review: findings, measurements, what was deliberately left alone
 ├── bootstrap.sh                           # curl one-liner entrypoint
 ├── install.sh                             # idempotent, DE/DM/distro-aware installer
 ├── uninstall.sh

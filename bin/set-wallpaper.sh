@@ -60,9 +60,81 @@ fi
 # Nth minute and would otherwise double-render (wallpaper flicker) and race on the
 # quote bag. Non-blocking — if another run holds the lock, skip this tick. Falls
 # through harmlessly if flock is unavailable.
-if command -v flock >/dev/null 2>&1 && exec 9>"$STATEDIR/.setwp.lock" 2>/dev/null; then
+# The braces matter: `exec 9>file 2>/dev/null` with no command makes BOTH redirections
+# permanent, so the stderr suppression meant to hide a failed lock-open silenced every
+# unredirected error for the rest of the run (a `bash -x` trace died right here).
+# Grouping scopes the suppression to the lock-open alone.
+if command -v flock >/dev/null 2>&1 && { exec 9>"$STATEDIR/.setwp.lock"; } 2>/dev/null; then
   flock -n 9 || exit 0
 fi
+
+# Every temp layer/dir below is named "$STATEDIR/_<what>.$$" (some with an extension).
+# They were removed only on the happy path, so any early exit -- a kill, a convert
+# failing inside a conditional -- leaked one; seven orphaned _pl.*/_fc.* dirs had piled
+# up by 2026-07-26. One trap covers the lot.
+cleanup_tmp() { rm -rf "$STATEDIR"/_*."$$" "$STATEDIR"/_*."$$".* 2>/dev/null; }
+trap cleanup_tmp EXIT INT TERM
+# Sweep leftovers from older runs (pre-trap versions, or a SIGKILL). Safe under the
+# flock above: no other set-wallpaper run can be in flight.
+find "$STATEDIR" -maxdepth 1 -name '_*' -mmin +60 -exec rm -rf {} + 2>/dev/null
+
+# Keep the log bounded. The 1-minute clock cadence adds ~1400 lines/day and nothing
+# ever trimmed it, while gen-status greps the whole file several times per UI poll.
+LOG_MAX_LINES=${LOG_MAX_LINES:-5000}
+trim_log() {
+  local n drop bank="$STATEDIR/dl-counts"
+  n=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+  [ "$n" -gt $((LOG_MAX_LINES + 1000)) ] 2>/dev/null || return 0   # hysteresis: trim in batches
+  drop=$((n - LOG_MAX_LINES))
+  # Bank the per-source download tallies we are about to drop: the UI derives its
+  # source counters by grepping this log, so a naive trim would walk them backwards.
+  { [ -f "$bank" ] && cat "$bank"
+    head -n "$drop" "$LOG" 2>/dev/null | sed -n 's/.*\[download\] src=\([^ ]*\) ok.*/\1 1/p'
+  } | awk 'NF==2{t[$1]+=$2} END{for(k in t) print k, t[k]}' > "$bank.tmp" 2>/dev/null \
+      && mv "$bank.tmp" "$bank" 2>/dev/null || rm -f "$bank.tmp"
+  tail -n "$LOG_MAX_LINES" "$LOG" > "$LOG.trim" 2>/dev/null \
+    && mv "$LOG.trim" "$LOG" 2>/dev/null || rm -f "$LOG.trim"
+}
+trim_log
+
+# ── overlay layer cache ──────────────────────────────────────────────────────
+# The per-minute clock cron re-runs this entire script just to advance the clock:
+# 10.4s wall / 9.3s CPU, and a trace counted 118 `convert` + 42 `identify` spawns at
+# ~60ms each (Fam3, 2026-07-26). There is no hot spot -- the cost IS the spawn count,
+# and most of it rebuilds blocks whose inputs have not moved. So cache each finished
+# block PNG under a key derived from everything that shapes it.
+#
+# Cached: the slow-changing blocks (pulse -- one or more spawns per feed line, up to
+# PULSE_MAX; weather -- hourly; quote -- per rotate). NOT cached: stats, clock and the
+# alert badge, which are meant to be live.
+#
+# Placement is untouched. The cached PNG is composited at the same point by the same
+# pick_grav/style_block calls, and bw/bh still come from the file. That matters:
+# avoid() appends to PLACED in block order, so block order determines LAYOUT, not just
+# z-order -- reordering blocks into static/dynamic phases would move overlays.
+# Caching reorders nothing.
+LCDIR="$STATEDIR/layers"; mkdir -p "$LCDIR" 2>/dev/null
+layer_key() { printf '%s' "$*" | md5sum 2>/dev/null | cut -d' ' -f1; }
+layer_hit() {   # <name> <key> <dest> -> 0 (and populates dest) on a valid cache hit
+  [ -s "$LCDIR/$1.png" ] && [ "$(cat "$LCDIR/$1.key" 2>/dev/null)" = "$2" ] || return 1
+  cp "$LCDIR/$1.png" "$3" 2>/dev/null
+}
+layer_save() {  # <name> <key> <built>
+  [ -s "$3" ] || return 0
+  cp "$3" "$LCDIR/$1.png" 2>/dev/null && printf '%s\n' "$2" > "$LCDIR/$1.key" 2>/dev/null
+}
+
+# Content-addressed store for individual text layers. mktext/stat_label are pure
+# functions of their arguments, so the same line rendered again is a file copy rather
+# than an ImageMagick spawn -- which covers the quote caption (the single slowest step
+# at 0.54s), the weather line, every stats row and every pulse feed row.
+TCDIR="$STATEDIR/textcache"; mkdir -p "$TCDIR" 2>/dev/null
+tc_get() { [ -s "$TCDIR/$1.png" ] || return 1
+           cp "$TCDIR/$1.png" "$2" 2>/dev/null && touch "$TCDIR/$1.png" 2>/dev/null; }
+tc_put() { [ -s "$2" ] && cp "$2" "$TCDIR/$1.png" 2>/dev/null; return 0; }
+# Bound it: stats and clock text change constantly, so entries would accumulate for
+# ever. tc_get touches on hit, so mtime is a last-used stamp and this is plain LRU.
+find "$TCDIR" -maxdepth 1 -name '*.png' -mtime +2 -delete 2>/dev/null
 
 # Map a config position token to an ImageMagick -gravity value ($2 = default).
 imgrav() {
@@ -369,8 +441,12 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
   # Frame the base at the SCREEN resolution first (crop-to-fill) so overlays land
   # where they're actually visible. Otherwise the DE crop-fills the source image
   # and the overlays get pushed off-screen.
-  if { [ -n "$RES" ] && convert "$IMG" -resize "${RES}^" -gravity center -extent "$RES" "$RENDER" 2>>"$LOG"; } \
-       || cp "$IMG" "$RENDER" 2>>"$LOG"; then
+  # Framing is the same crop-to-fill of the same file on every clock-cron tick;
+  # memoise it on (image, mtime, resolution).
+  BASEKEY="$(layer_key "base|$IMG|$(date -r "$IMG" +%s 2>/dev/null)|$RES")"
+  if tc_get "$BASEKEY" "$RENDER" \
+     || { { { [ -n "$RES" ] && convert "$IMG" -resize "${RES}^" -gravity center -extent "$RES" "$RENDER" 2>>"$LOG"; } \
+            || cp "$IMG" "$RENDER" 2>>"$LOG"; } && tc_put "$BASEKEY" "$RENDER"; }; then
     # OVERLAY_STYLE selects the visual treatment; the per-overlay enable toggles,
     # positions (QUOTE_POS/STATS_POS/WEATHER_POS), OVERLAY_SIZE, OVERLAY_THEME
     # (text colour) and OVERLAY_FONT (override) still apply. Styles:
@@ -444,8 +520,11 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       # leaving dead space inside panels (stats was ~68% empty). -trim crops the
       # block to its actual text bbox so panels hug the content; the width arg
       # still bounds wrapping. +repage resets the virtual canvas after the crop.
+      local k; k="$(layer_key "mktext|$2|$3|$4|$5|$6|$7")"
+      tc_get "$k" "$1" && return 0
       convert -background none -font "$2" -pointsize "$3" -fill "$4" -size "${5}x" \
-        -gravity "$6" caption:"$7" -trim +repage "$1" 2>>"$LOG"
+        -gravity "$6" caption:"$7" -trim +repage "$1" 2>>"$LOG" || return 1
+      tc_put "$k" "$1"
     }
     # Accent line+area sparkline (drawn, anti-aliased) from a space-separated
     # series -> PNG at $1. Height tracks the pointsize ($3). Fill is ACCENT at low
@@ -468,8 +547,11 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     # One stats line -> fixed-height ($5), left-aligned, text-colour label PNG, so
     # lines (incl. ones with a sparkline appended) stack with even spacing.
     stat_label() {  # $1=out $2=text $3=font $4=ps $5=lineheight
+      local k; k="$(layer_key "stat_label|$2|$3|$4|$5|$TXT")"
+      tc_get "$k" "$1" && return 0
       convert -background none -font "$3" -pointsize "$4" -fill "$TXT" \
-        label:"$2" -trim +repage -background none -gravity West -extent "x$5" "$1" 2>>"$LOG"
+        label:"$2" -trim +repage -background none -gravity West -extent "x$5" "$1" 2>>"$LOG" || return 1
+      tc_put "$k" "$1"
     }
     # Analogue clock face -> transparent PNG at $1, diameter $2, for time $3:$4
     # (H M). CLOCK_FACE picks the face: classic (ring + 12 ticks), minimal
@@ -518,6 +600,10 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     build_forecast_strip() {  # $1=out $2=pointsize
       local out="$1" fps="$2" struct="$STATEDIR/forecast.struct"
       [ -s "$struct" ] || return 1
+      # ~3 convert spawns per forecast day, rebuilt every minute by the clock cron for
+      # data that only moves every 3 hours. Memoise the finished strip.
+      local fk; fk="$(layer_key "fcast|$fps|$TXT|${OVERLAY_WEATHER_ICON_COLOR:-0}|$(cat "$struct" 2>/dev/null)")"
+      tc_get "$fk" "$out" && return 0
       local fd="$STATEDIR/_fc.$$"; mkdir -p "$fd"
       # -trim drops whitespace, so explicit transparent spacers (not spaces in the
       # labels) provide the gaps; widths scale with the font size.
@@ -544,7 +630,8 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       done
       convert "${args[@]}" -background none -gravity center +append "$out" 2>>"$LOG"
       rm -rf "$fd"
-      [ -s "$out" ]
+      [ -s "$out" ] || return 1
+      tc_put "$fk" "$out"
     }
     # Position + style a READY-MADE block PNG ($3) onto RENDER at gravity $1 (role
     # $2 selects minor tweaks). Shared by emit() (text/icon blocks) and the stats
@@ -867,11 +954,25 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       # lines with PULSE_JQ. file:// URLs work too (curl), so a local script
       # can feed it. Cached ~5 min so renders don't hammer the endpoint.
       pcache="$STATEDIR/pulse.txt"
-      if [ ! -f "$pcache" ] || find "$pcache" -mmin +"${PULSE_TTL:-5}" 2>/dev/null | grep -q .; then
+      # Same .fail fence as the weather fetch: the cache mtime never moves on failure,
+      # so a dead PULSE_URL used to cost a 6s curl inside EVERY render -- once a minute
+      # on the clock cadence. Back off for 10 minutes after a failed attempt.
+      if { [ ! -f "$pcache" ] || find "$pcache" -mmin +"${PULSE_TTL:-5}" 2>/dev/null | grep -q .; } \
+         && ! find "$pcache.fail" -mmin -10 2>/dev/null | grep -q .; then
         curl -fsL --max-time 6 "$PULSE_URL" 2>>"$LOG" | jq -r "${PULSE_JQ:-.}" > "$pcache.tmp" 2>>"$LOG"
-        if [ -s "$pcache.tmp" ]; then mv "$pcache.tmp" "$pcache"; else rm -f "$pcache.tmp"; fi
+        if [ -s "$pcache.tmp" ]; then
+          mv "$pcache.tmp" "$pcache"; rm -f "$pcache.fail"
+        else
+          rm -f "$pcache.tmp"; touch "$pcache.fail"
+        fi
       fi
-      if [ -s "$pcache" ]; then
+      # Key on everything that shapes the panel, including the feed file's content
+      # AND its mtime -- the "@ HH:MM" freshness stamp is baked into the image, so it
+      # must change exactly when the data does and not otherwise.
+      pblock="$STATEDIR/_pulse.$$.png"
+      pkey="$(layer_key "pulse|$STYLE|$BASEPS|$TXT|${FONT_OVERRIDE:-}|$ACCENT|${PULSE_TITLE:-}|${PULSE_MAX:-20}|$(date -r "$pcache" +%s 2>/dev/null)|$(cat "$pcache" 2>/dev/null)")"
+      if layer_hit pulse "$pkey" "$pblock"; then phit=1; else phit=0; fi
+      if [ -s "$pcache" ] && [ "$phit" = 0 ]; then
         pf="$(role_font stats)"; pps=$(( BASEPS * 3 / 4 )); plh=$(( pps * 6 / 5 ))
         PD="$STATEDIR/_pl.$$"; mkdir -p "$PD"; pn=0
         # Lines containing "|" render as a two-column row — muted label left,
@@ -947,11 +1048,15 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
                 fi
               fi
             fi
-            pick_grav "${PULSE_POS:-east}" East
-            style_block "$PG" pulse "$pblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}pulse"
+            layer_save pulse "$pkey" "$pblock"
           fi
         fi
         rm -rf "$PD"
+      fi
+      # Composite whichever way we got the panel -- freshly built, or a cache hit.
+      if [ -s "$pblock" ]; then
+        pick_grav "${PULSE_POS:-east}" East
+        style_block "$PG" pulse "$pblock" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}pulse"
       fi
     fi
     # AI-dreamed images (named *.ai.jpg by fetch-wallpaper) get a subtle

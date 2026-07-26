@@ -96,29 +96,34 @@ pulse_age=""
 [ -s "$STATEDIR/pulse.txt" ] && pulse_age="$(date -r "$STATEDIR/pulse.txt" +%H:%M 2>/dev/null)"
 stats_now="$(hostname) · load $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null) · mem $(free -h 2>/dev/null | awk '/^Mem:/{print $3"/"$2}')"
 
-# Per-source tallies (JSON object).
+# Per-source tallies (JSON object). set-wallpaper.sh caps the log, so add the counts
+# it banked when trimming — otherwise these totals would silently walk backwards
+# every time the log rolled.
+BANK="$STATEDIR/dl-counts"
 src_json="{"
 first=1
 for s in $SOURCES ai; do
   n=$(grep -c "\[download\] src=$s ok" "$LOG" 2>/dev/null); n=${n:-0}
+  b=$(awk -v s="$s" '$1==s{print $2; exit}' "$BANK" 2>/dev/null); n=$((n + ${b:-0}))
   [ $first = 1 ] || src_json="$src_json,"
   src_json="$src_json\"$s\":$n"; first=0
 done
 src_json="$src_json}"
 
 # Pool list (newest first, top-level + favourites), JSON array via jq.
+# One jq per folder, not one per image: the old per-file `jq -n` loop forked
+# once per pool entry and dominated the whole script — 369 images cost 48.7s of
+# the 54s runtime (Fam3, 2026-07-26), which blew past wallpaper-web's regen
+# timeout so state.json could never refresh on the poll path.
+pool_list_json() {   # paths on stdin -> [{n,ai,fav}], fav from $1
+  jq -R -s --argjson fav "$1" \
+    'split("\n") | map(select(length > 0) | split("/") | last)
+     | map({n: ., ai: endswith(".ai.jpg"), fav: $fav})'
+}
 pool_json="$( {
-  ls -t "$POOL"/*.jpg "$POOL"/*.jpeg "$POOL"/*.png 2>/dev/null | while IFS= read -r f; do
-    [ -f "$f" ] || continue
-    b="$(basename "$f")"; ai=false; case "$b" in *.ai.jpg) ai=true;; esac
-    jq -n --arg n "$b" --argjson ai "$ai" '{n:$n, ai:$ai, fav:false}'
-  done
-  ls -t "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png 2>/dev/null | while IFS= read -r f; do
-    [ -f "$f" ] || continue
-    b="$(basename "$f")"; ai=false; case "$b" in *.ai.jpg) ai=true;; esac
-    jq -n --arg n "$b" --argjson ai "$ai" '{n:$n, ai:$ai, fav:true}'
-  done
-} | jq -s . )"
+  ls -t "$POOL"/*.jpg "$POOL"/*.jpeg "$POOL"/*.png 2>/dev/null | pool_list_json false
+  ls -t "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png 2>/dev/null | pool_list_json true
+} | jq -s 'add // []' )"
 [ -n "$pool_json" ] || pool_json="[]"
 
 # Fonts ImageMagick actually has (subset offered in Appearance).
@@ -365,9 +370,44 @@ const CANVAS_ITEMS={
 };
 const esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
+// ── optimistic writes ───────────────────────────────────────
+// /setone returns as soon as the config file is written, but state.json is
+// only rebuilt afterwards by the detached render chain (or a poll-triggered
+// gen-status), so the very next poll still carries the PRE-write value.
+// Rendering that verbatim snapped a just-dragged overlay back to its old zone
+// — measured a 44s stale window on Fam3 (2026-07-26): drop at 05:26:03, revert
+// at 05:26:11, correct again only at 05:27:08. So keys we have written are
+// pinned over incoming state until the server echoes the same value back (or
+// PIN_TTL passes, so a lost or rejected write can't pin a wrong value forever).
+const PIN_TTL=180000;
+const PIN_KEY={overlay_theme:'text', overlay_style:'style'};   // /setone field -> state.json cfg key
+const PIN_NORM={quote_theme:v=>(v==='any'?'':v)};              // UI value -> value as stored
+const pinned=new Map();
+function pin(kv){
+  const now=Date.now(), applied={};
+  for(const [k,v] of Object.entries(kv)){
+    if(Array.isArray(v)) continue;                  // multi-value (theme chips) — no single value to pin
+    const ck=PIN_KEY[k]||k;
+    if(!S||!S.cfg||!(ck in S.cfg)) continue;        // not mirrored in state.json (e.g. login_rotate)
+    const cv=(PIN_NORM[k]||(x=>x))(String(v));
+    pinned.set(ck,{v:cv,at:now}); applied[ck]=cv;
+  }
+  if(S&&S.cfg) Object.assign(S.cfg,applied);        // reflect locally right away
+  return Object.keys(applied);
+}
+function unpin(keys){keys.forEach(k=>pinned.delete(k))}
+function applyPins(cfg){
+  const now=Date.now();
+  for(const [k,p] of pinned){
+    if(now-p.at>PIN_TTL || String(cfg[k])===p.v){pinned.delete(k); continue}   // expired, or server caught up
+    cfg[k]=p.v;
+  }
+}
+
 // ── server I/O ──────────────────────────────────────────────
 async function setone(kv,msg){
   busy(true);
+  const keys=pin(kv);
   try{
     const body=new URLSearchParams();
     for(const [k,v] of Object.entries(kv)){
@@ -377,7 +417,7 @@ async function setone(kv,msg){
     if(!r.ok) throw new Error(await r.text());
     toast(msg||'Saved — rendering…');
     pollSoon();
-  }catch(e){toast('save failed: '+e.message,1)}
+  }catch(e){unpin(keys); toast('save failed: '+e.message,1)}
 }
 async function act(path,form,msg){
   busy(true);
@@ -395,7 +435,12 @@ function pollSoon(){ clearTimeout(pollTimer); let n=0; const seq=++pollSeq;
 async function refresh(){
   try{
     const r=await fetch('/state.json?t='+Date.now());
-    S=await r.json(); render(); busy(false);
+    S=await r.json(); applyPins(S.cfg); busy(false);
+    // Mid-drag, renderObjects() would delete and rebuild every .obj — including
+    // the one under the pointer, leaving drag.el detached and the drop invisible.
+    // Take the state now, paint it at pointerup.
+    if(drag){renderQueued=true; return}
+    render();
   }catch(e){/* server restarting (web_bind) — retry next poll */}
 }
 function busy(b){$('busy').classList.toggle('show',b)}
@@ -628,7 +673,7 @@ $('b-ban').onclick=()=>act('/ban',null,'🚫 banned — rotating…');
 $('b-dream').onclick=()=>act('/dream',null,'✦ dreaming… ~40s');
 
 // drag objects between zones (and out of the auto tray)
-let drag=null;
+let drag=null, renderQueued=false;
 document.addEventListener('pointerdown',e=>{
   const o=e.target.closest('.obj'); if(!o)return;
   drag={el:o,moved:false}; o.classList.add('sel');
@@ -655,6 +700,7 @@ document.addEventListener('pointerup',e=>{
     const pos=ZONES[+o.dataset.z];
     if(S.cfg[ov.posKey]!==pos) setone({[ov.posKey]:pos},`${ov.name} → ${pos}`);
   } else showInsp(k,o);
+  if(renderQueued){renderQueued=false; render()}   // state that arrived mid-drag (setone has pinned the drop by now)
 });
 
 // ── infra-alert banner (Phase 3) ──────────────────────────

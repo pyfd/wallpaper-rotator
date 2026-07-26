@@ -7,11 +7,15 @@
 # set-wallpaper.sh reads, rewrite the rotate line in the user's crontab, apply
 # immediately, and regenerate the page.
 #
-# Bound to 127.0.0.1 — no network exposure, no auth (localhost trust model).
+# Bound to 127.0.0.1 by default (localhost trust model, no auth) — but WEB_BIND can
+# add the tailnet IP or an explicit address, so "no network exposure" is a default,
+# not a guarantee. State-changing POSTs are same-origin-checked (a browser on any
+# site can otherwise reach 127.0.0.1 on your behalf) and file:// pulse feeds are
+# confined to FEEDS_DIR.
 # @@...@@ placeholders are substituted by install.sh; falls back to XDG defaults
 # when run from a raw checkout (guarded by the "@@" prefix check, which the
 # substitution can't reproduce).
-import os, re, shutil, subprocess, threading, time, json, urllib.parse, urllib.request
+import os, re, shlex, shutil, subprocess, threading, time, json, urllib.parse, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WEBDIR    = "@@WEBDIR@@"
@@ -128,15 +132,36 @@ def read_config():
     return cfg
 
 
+# serialises the read-modify-write in /set and /setone: two saves landing together
+# (rapid drags do this) would otherwise both read the old config and one would lose.
+CFG_LOCK = threading.Lock()
+
+
 def write_config(cfg):
+    # Atomic: set-wallpaper.sh and gen-status.sh `. "$CONFIG"` it every minute from
+    # cron, and a plain open(...,"w") leaves the file truncated for the duration of
+    # the write. A source landing in that window reads a half-config and silently
+    # falls back to defaults -- overlays vanish or positions reset for one tick with
+    # nothing logged. Write a temp file in the same directory, then rename over.
     os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
-    with open(CONFIG, "w") as f:
-        f.write("# wallpaper-rotator config (managed by wallpaper-web)\n")
-        for k in CFG_KEYS:
-            # Single-quote + escape so any value (spaces, double quotes in jq
-            # templates, $ signs) survives `. config` sourcing verbatim.
-            v = str(cfg.get(k, CFG_DEFAULTS[k]))
-            f.write("%s='%s'\n" % (k, v.replace("'", "'\\''")))
+    tmp = CONFIG + ".tmp.%d" % os.getpid()
+    try:
+        with open(tmp, "w") as f:
+            f.write("# wallpaper-rotator config (managed by wallpaper-web)\n")
+            for k in CFG_KEYS:
+                # Single-quote + escape so any value (spaces, double quotes in jq
+                # templates, $ signs) survives `. config` sourcing verbatim.
+                v = str(cfg.get(k, CFG_DEFAULTS[k]))
+                f.write("%s='%s'\n" % (k, v.replace("'", "'\\''")))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, CONFIG)          # atomic rename -- readers see old or new, never partial
+    except Exception:
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
+        raise
 
 
 def set_cron_interval(n):
@@ -158,11 +183,39 @@ def set_cron_interval(n):
     subprocess.run(["crontab", "-"], input="\n".join(out) + "\n", text=True)
 
 
+_REGEN_LOCK = threading.Lock()
+
+
 def regen():
+    # 90s, not 30s: gen-status writes state.json atomically at the very end, so
+    # a timeout kills it *without* refreshing anything -- and on a busy box it
+    # competes with set-wallpaper.sh's overlay composite. Fam3 measured 54s
+    # (2026-07-26), i.e. every poll-triggered regen was killed and state.json
+    # stayed minutes stale. The pool-list fix took the baseline well under 30s;
+    # the wider margin keeps a loaded box from silently falling back into that.
+    #
+    # Coalescing, not queueing: this is a ThreadingHTTPServer, so a burst of polls
+    # used to spawn concurrent gen-status runs (the mtime check throttles, but it
+    # does not serialise). Wait for an in-flight run instead of starting a second.
+    #
+    # Then re-check: reusing another thread's run is only sound if it FINISHED after
+    # we asked. A run that started before our caller's config write would hand back
+    # exactly the pre-write snapshot this audit was chasing, so in that case we do
+    # our own pass.
+    req = time.time()
+    if not _REGEN_LOCK.acquire(timeout=90):
+        return
     try:
-        subprocess.run([GENSTATUS], timeout=30)
+        try:
+            if os.path.getmtime(os.path.join(WEBDIR, "state.json")) >= req:
+                return                      # someone else's run covers our request
+        except OSError:
+            pass
+        subprocess.run([GENSTATUS], timeout=90)
     except Exception:
         pass
+    finally:
+        _REGEN_LOCK.release()
 
 
 def _bg(sh):
@@ -173,6 +226,52 @@ def _bg(sh):
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
+
+
+# file:// pulse feeds are confined here: /pulse_test returns the fetched body to the
+# caller, so an unrestricted file:// scheme is an arbitrary-file read for anyone who
+# can reach the port. Harmless while we are 127.0.0.1-only, but WEB_BIND can put this
+# on the tailnet, and PULSE_URL persists -- the wallpaper itself becomes the readback.
+FEEDS_DIR = os.path.join(STATE, "feeds")
+
+
+def feed_url_ok(url):
+    """True if url is a permitted pulse source: any http(s), or a file:// URL that
+    resolves inside FEEDS_DIR. Rejects everything else (including file:// escapes
+    via .. or a symlink out of the directory -- realpath is resolved first)."""
+    if not re.match(r"^(https?|file)://[^\s\"'<>]+$", url or ""):
+        return False
+    if not url.startswith("file://"):
+        return True
+    path = urllib.parse.unquote(urllib.parse.urlparse(url).path or "")
+    if not path:
+        return False
+    real = os.path.realpath(path)
+    return real == os.path.realpath(FEEDS_DIR) or \
+        real.startswith(os.path.realpath(FEEDS_DIR) + os.sep)
+
+
+def same_origin(handler):
+    """True if a state-changing request came from our own page (or from a non-browser
+    client, which sends neither header).
+
+    Without this, any website the user visits can POST to http://127.0.0.1:8787/ on
+    their behalf -- it cannot read the reply (no CORS), but the write lands, and /ban
+    deletes the on-screen pool image without needing to know any filename. "Localhost
+    only" does not cover a browser acting as someone else's deputy."""
+    origin = handler.headers.get("Origin")
+    referer = handler.headers.get("Referer")
+    if not origin and not referer:
+        return True                              # curl / scripts / the install's own calls
+    host = handler.headers.get("Host") or ""
+    allowed = set()
+    for h in ({host} | {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}):
+        if h:
+            allowed.add("http://" + h)
+            allowed.add("https://" + h)
+    if origin:
+        return origin in allowed
+    return any(referer.startswith(a + "/") or referer == a for a in allowed)
 
 
 def current_image():
@@ -283,10 +382,15 @@ class Handler(BaseHTTPRequestHandler):
             fn, ctype = os.path.join(WEBDIR, "index.html"), "text/html; charset=utf-8"
         elif path == "/state.json":
             # The app polls this; regenerate when stale (throttled so a burst of
-            # post-action polls doesn't stack gen-status runs).
+            # post-action polls doesn't stack gen-status runs). "Stale" also means
+            # older than the config: /setone writes the config and returns without
+            # waiting for a render, so within the 5s throttle window we were still
+            # handing back the pre-write snapshot and the UI reverted the setting
+            # the user had just made (Fam3, 2026-07-26).
             fn, ctype = os.path.join(WEBDIR, "state.json"), "application/json; charset=utf-8"
             try:
-                if time.time() - os.path.getmtime(fn) > 5:
+                mt = os.path.getmtime(fn)
+                if time.time() - mt > 5 or mt < os.path.getmtime(CONFIG):
                     regen()
             except OSError:
                 regen()
@@ -392,6 +496,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+        # Every POST here changes state (settings, deletes, rotates) -- none are safe
+        # to accept cross-site. See same_origin().
+        if not same_origin(self):
+            self._send(403, "text/plain", b"cross-site request rejected"); return
         if path == "/next":                       # rotate now
             self._setwp()
             self._done(do_regen=False); return
@@ -498,7 +606,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain", b"not found"); return
             statedir = os.path.dirname(CONFIG)
             if actn == "use":
-                _bg("%s '%s'; %s" % (SETWP, src, GENSTATUS))
+                _bg("%s %s; %s" % (SETWP, shlex.quote(src), GENSTATUS))
             elif actn == "fav" and not in_fav:
                 fav = os.path.join(POOL, "favourites")
                 try:
@@ -532,7 +640,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", b'{"ok":true}'); return
         if path == "/dream":                     # one-shot AI generation, then show it
             _bg("WR_FORCE_SRC=ai %s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); "
-                "[ -n \"$n\" ] && %s \"$n\"; %s" % (FETCH, POOL, SETWP, GENSTATUS))
+                "[ -n \"$n\" ] && %s \"$n\"; %s" % (FETCH, shlex.quote(POOL), SETWP, GENSTATUS))
             self._send(200, "application/json", b'{"ok":true}'); return
         if path == "/setone":                    # instant-apply: one or a few settings
             ln = int(self.headers.get("Content-Length") or 0)
@@ -541,65 +649,69 @@ class Handler(BaseHTTPRequestHandler):
             # key and the request looks empty ("no valid setting in request").
             form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"),
                                          keep_blank_values=True)
-            cfg = read_config()
-            old = dict(cfg)
-            BOOLS = {"quote": "OVERLAY_QUOTE", "quote_detail": "OVERLAY_QUOTE_DETAIL",
-                     "quote_match": "QUOTE_MATCH_IMAGE", "stats": "OVERLAY_STATS",
-                     "sparkline": "STATS_SPARKLINE", "weather": "OVERLAY_WEATHER",
-                     "weather_icon": "OVERLAY_WEATHER_ICON",
-                     "weather_icon_color": "OVERLAY_WEATHER_ICON_COLOR",
-                     "weather_forecast": "OVERLAY_WEATHER_FORECAST",
-                     "clock": "OVERLAY_CLOCK", "clock_24h": "CLOCK_24H",
-                     "clock_date": "CLOCK_DATE", "ai": "AI_WALLPAPER",
-                     "pulse": "OVERLAY_PULSE", "login_rotate": "LOGIN_ROTATE"}
-            PICKS = {"quote_pos": ("QUOTE_POS", ALLOWED_POS), "stats_pos": ("STATS_POS", ALLOWED_POS),
-                     "weather_pos": ("WEATHER_POS", ALLOWED_POS), "clock_pos": ("CLOCK_POS", ALLOWED_POS),
-                     "pulse_pos": ("PULSE_POS", ALLOWED_POS), "size": ("OVERLAY_SIZE", ALLOWED_SIZE),
-                     "overlay_theme": ("OVERLAY_THEME", ALLOWED_THEME), "font": ("OVERLAY_FONT", ALLOWED_FONT),
-                     "overlay_style": ("OVERLAY_STYLE", ALLOWED_OVERLAY_STYLE),
-                     "clock_style": ("CLOCK_STYLE", ALLOWED_CLOCK_STYLE),
-                     "clock_face": ("CLOCK_FACE", ALLOWED_CLOCK_FACE),
-                     "pulse_ttl": ("PULSE_TTL", ALLOWED_PULSE_TTL),
-                     "pulse_max": ("PULSE_MAX", ALLOWED_PULSE_MAX),
-                     "interval": ("INTERVAL_MIN", ALLOWED_INTERVALS)}
-            touched = False
-            for k, vals in form.items():
-                v = vals[0]
-                if k in BOOLS and v in ("0", "1"):
-                    cfg[BOOLS[k]] = v; touched = True
-                elif k in PICKS and v in PICKS[k][1]:
-                    cfg[PICKS[k][0]] = v; touched = True
-                elif k == "quote_theme":
-                    # the UI's select says "any"; the config stores "" for it
-                    v = "" if v == "any" else v
-                    if v in ALLOWED_QUOTE_THEME:
-                        cfg["QUOTE_THEME"] = v; touched = True
-                elif k == "weather_location":
-                    cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", v.strip())[:40]; touched = True
-                elif k == "ai_prompt":
-                    cfg["AI_PROMPT"] = re.sub(r"[^A-Za-z0-9 ,.\-']", "", v.strip())[:100]; touched = True
-                elif k == "pulse_title":
-                    cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", v.strip())[:40]; touched = True
-                elif k == "pulse_url":
-                    pu = v.strip()
-                    cfg["PULSE_URL"] = pu if re.match(r"^(https?|file)://[^\s\"'<>]+$", pu) else ""
-                    touched = True
-                elif k == "pulse_jq":
-                    cfg["PULSE_JQ"] = v.replace("\n", " ").replace("\r", "").strip()[:200] or "."; touched = True
-                elif k == "theme":
-                    themes = [t for t in vals if t and t in ALLOWED_BGTHEME]
-                    cfg["THEME"] = " ".join(dict.fromkeys(themes)); touched = True
-                elif k == "web_bind":
-                    cfg["WEB_BIND"] = (old.get("WEB_BIND") or "tailscale") if v == "1" else ""
-                    touched = True
-            if not touched:
-                self._send(400, "text/plain", b"no valid setting in request"); return
-            if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old.get("PULSE_URL"), old.get("PULSE_JQ")):
-                try:
-                    os.remove(os.path.join(os.path.dirname(CONFIG), "pulse.txt"))
-                except Exception:
-                    pass
-            write_config(cfg)
+            # One writer at a time: read-modify-write on a ThreadingHTTPServer,
+            # so two saves landing together (rapid drags) would both read the
+            # old config and one would silently lose its change.
+            with CFG_LOCK:
+                cfg = read_config()
+                old = dict(cfg)
+                BOOLS = {"quote": "OVERLAY_QUOTE", "quote_detail": "OVERLAY_QUOTE_DETAIL",
+                         "quote_match": "QUOTE_MATCH_IMAGE", "stats": "OVERLAY_STATS",
+                         "sparkline": "STATS_SPARKLINE", "weather": "OVERLAY_WEATHER",
+                         "weather_icon": "OVERLAY_WEATHER_ICON",
+                         "weather_icon_color": "OVERLAY_WEATHER_ICON_COLOR",
+                         "weather_forecast": "OVERLAY_WEATHER_FORECAST",
+                         "clock": "OVERLAY_CLOCK", "clock_24h": "CLOCK_24H",
+                         "clock_date": "CLOCK_DATE", "ai": "AI_WALLPAPER",
+                         "pulse": "OVERLAY_PULSE", "login_rotate": "LOGIN_ROTATE"}
+                PICKS = {"quote_pos": ("QUOTE_POS", ALLOWED_POS), "stats_pos": ("STATS_POS", ALLOWED_POS),
+                         "weather_pos": ("WEATHER_POS", ALLOWED_POS), "clock_pos": ("CLOCK_POS", ALLOWED_POS),
+                         "pulse_pos": ("PULSE_POS", ALLOWED_POS), "size": ("OVERLAY_SIZE", ALLOWED_SIZE),
+                         "overlay_theme": ("OVERLAY_THEME", ALLOWED_THEME), "font": ("OVERLAY_FONT", ALLOWED_FONT),
+                         "overlay_style": ("OVERLAY_STYLE", ALLOWED_OVERLAY_STYLE),
+                         "clock_style": ("CLOCK_STYLE", ALLOWED_CLOCK_STYLE),
+                         "clock_face": ("CLOCK_FACE", ALLOWED_CLOCK_FACE),
+                         "pulse_ttl": ("PULSE_TTL", ALLOWED_PULSE_TTL),
+                         "pulse_max": ("PULSE_MAX", ALLOWED_PULSE_MAX),
+                         "interval": ("INTERVAL_MIN", ALLOWED_INTERVALS)}
+                touched = False
+                for k, vals in form.items():
+                    v = vals[0]
+                    if k in BOOLS and v in ("0", "1"):
+                        cfg[BOOLS[k]] = v; touched = True
+                    elif k in PICKS and v in PICKS[k][1]:
+                        cfg[PICKS[k][0]] = v; touched = True
+                    elif k == "quote_theme":
+                        # the UI's select says "any"; the config stores "" for it
+                        v = "" if v == "any" else v
+                        if v in ALLOWED_QUOTE_THEME:
+                            cfg["QUOTE_THEME"] = v; touched = True
+                    elif k == "weather_location":
+                        cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", v.strip())[:40]; touched = True
+                    elif k == "ai_prompt":
+                        cfg["AI_PROMPT"] = re.sub(r"[^A-Za-z0-9 ,.\-']", "", v.strip())[:100]; touched = True
+                    elif k == "pulse_title":
+                        cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", v.strip())[:40]; touched = True
+                    elif k == "pulse_url":
+                        pu = v.strip()
+                        cfg["PULSE_URL"] = pu if feed_url_ok(pu) else ""
+                        touched = True
+                    elif k == "pulse_jq":
+                        cfg["PULSE_JQ"] = v.replace("\n", " ").replace("\r", "").strip()[:200] or "."; touched = True
+                    elif k == "theme":
+                        themes = [t for t in vals if t and t in ALLOWED_BGTHEME]
+                        cfg["THEME"] = " ".join(dict.fromkeys(themes)); touched = True
+                    elif k == "web_bind":
+                        cfg["WEB_BIND"] = (old.get("WEB_BIND") or "tailscale") if v == "1" else ""
+                        touched = True
+                if not touched:
+                    self._send(400, "text/plain", b"no valid setting in request"); return
+                if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old.get("PULSE_URL"), old.get("PULSE_JQ")):
+                    try:
+                        os.remove(os.path.join(os.path.dirname(CONFIG), "pulse.txt"))
+                    except Exception:
+                        pass
+                write_config(cfg)
             # side-effects mirror /set, but everything slow runs detached so the
             # UI gets its 200 instantly and just polls /state.json for results
             if cfg["INTERVAL_MIN"] != old.get("INTERVAL_MIN"):
@@ -611,12 +723,12 @@ class Handler(BaseHTTPRequestHandler):
                 _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                     "for i in 1 2 3; do %s; done; "
                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
-                    % (FETCH, POOL, SETWP, FETCH, POOL, pool_keep(cfg), GENSTATUS))
+                    % (FETCH, shlex.quote(POOL), SETWP, FETCH, shlex.quote(POOL), pool_keep(cfg), GENSTATUS))
             elif set(cfg["THEME"].split()) != set((old.get("THEME") or "").split()):
                 _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                     "for i in $(seq 1 7); do %s; done; "
                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
-                    % (FETCH, POOL, SETWP, FETCH, POOL, pool_keep(cfg), GENSTATUS))
+                    % (FETCH, shlex.quote(POOL), SETWP, FETCH, shlex.quote(POOL), pool_keep(cfg), GENSTATUS))
             elif cfg.get("LOGIN_ROTATE") != old.get("LOGIN_ROTATE"):
                 # Login-screen-only setting — the desktop wallpaper is unaffected,
                 # so skip the re-render. The login scripts read it at next login;
@@ -624,7 +736,10 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             else:
                 cur = current_image()
-                cmd = "%s '%s'" % (SETWP, cur) if (cur and os.path.isfile(cur)) else SETWP
+                # shlex.quote, not bare '%s': pool names are generated as
+                # <epoch>.<pid>.<ext> so they are tame, but a hand-added
+                # "Paul's photo.jpg" would break straight out of the quoting.
+                cmd = "%s %s" % (SETWP, shlex.quote(cur)) if (cur and os.path.isfile(cur)) else SETWP
                 _bg("%s; %s" % (cmd, GENSTATUS))
             self._send(200, "application/json", b'{"ok":true}'); return
         if path == "/pulse_test":                # dry-run a pulse URL + template
@@ -632,8 +747,9 @@ class Handler(BaseHTTPRequestHandler):
             form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
             url = form.get("url", [""])[0].strip()
             jqf = form.get("jq", ["."])[0].replace("\n", " ").replace("\r", "").strip()[:200] or "."
-            if not re.match(r"^(https?|file)://[^\s\"'<>]+$", url):
-                self._send(400, "text/plain; charset=utf-8", b"invalid URL"); return
+            if not feed_url_ok(url):
+                self._send(400, "text/plain; charset=utf-8",
+                           ("invalid URL — http(s), or file:// under %s" % FEEDS_DIR).encode()); return
             try:
                 p = subprocess.run(
                     ["bash", "-c", 'curl -fsL --max-time 6 "$1" | jq -r "$2"', "_", url, jqf],
@@ -646,75 +762,79 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, "text/plain", b"not found"); return
         ln = int(self.headers.get("Content-Length") or 0)
         form = urllib.parse.parse_qs(self.rfile.read(ln).decode("utf-8", "replace"))
-        cfg = read_config()
-        old_theme = cfg.get("THEME", "")
-        old_ai = cfg.get("AI_WALLPAPER", "0")
-        old_bind = cfg.get("WEB_BIND", "")
-        old_pulse_url = cfg.get("PULSE_URL", "")
-        old_pulse_jq = cfg.get("PULSE_JQ", ".")
-        iv = form.get("interval", ["10"])[0]
-        if iv in ALLOWED_INTERVALS:
-            cfg["INTERVAL_MIN"] = iv
-        cfg["OVERLAY_QUOTE"] = "1" if form.get("quote") else "0"
-        cfg["OVERLAY_QUOTE_DETAIL"] = "1" if form.get("quote_detail") else "0"
-        cfg["OVERLAY_STATS"] = "1" if form.get("stats") else "0"
-        cfg["STATS_SPARKLINE"] = "1" if form.get("sparkline") else "0"
-        cfg["OVERLAY_WEATHER"] = "1" if form.get("weather") else "0"
-        cfg["OVERLAY_WEATHER_ICON"] = "1" if form.get("weather_icon") else "0"
-        cfg["OVERLAY_WEATHER_ICON_COLOR"] = "1" if form.get("weather_icon_color") else "0"
-        cfg["OVERLAY_WEATHER_FORECAST"] = "1" if form.get("weather_forecast") else "0"
-        cfg["OVERLAY_CLOCK"] = "1" if form.get("clock") else "0"
-        cfg["CLOCK_24H"] = "1" if form.get("clock_24h") else "0"
-        cfg["CLOCK_DATE"] = "1" if form.get("clock_date") else "0"
-        cfg["AI_WALLPAPER"] = "1" if form.get("ai") else "0"
-        cfg["OVERLAY_PULSE"] = "1" if form.get("pulse") else "0"
-        # Tailnet toggle: ON keeps an existing explicit value (advanced users may
-        # have set an IP); OFF clears. A change needs a server restart to rebind —
-        # scheduled detached below, after the response has gone out.
-        if form.get("web_bind"):
-            cfg["WEB_BIND"] = old_bind or "tailscale"
-        else:
-            cfg["WEB_BIND"] = ""
+        # One writer at a time: read-modify-write on a ThreadingHTTPServer,
+        # so two saves landing together (rapid drags) would both read the
+        # old config and one would silently lose its change.
+        with CFG_LOCK:
+            cfg = read_config()
+            old_theme = cfg.get("THEME", "")
+            old_ai = cfg.get("AI_WALLPAPER", "0")
+            old_bind = cfg.get("WEB_BIND", "")
+            old_pulse_url = cfg.get("PULSE_URL", "")
+            old_pulse_jq = cfg.get("PULSE_JQ", ".")
+            iv = form.get("interval", ["10"])[0]
+            if iv in ALLOWED_INTERVALS:
+                cfg["INTERVAL_MIN"] = iv
+            cfg["OVERLAY_QUOTE"] = "1" if form.get("quote") else "0"
+            cfg["OVERLAY_QUOTE_DETAIL"] = "1" if form.get("quote_detail") else "0"
+            cfg["OVERLAY_STATS"] = "1" if form.get("stats") else "0"
+            cfg["STATS_SPARKLINE"] = "1" if form.get("sparkline") else "0"
+            cfg["OVERLAY_WEATHER"] = "1" if form.get("weather") else "0"
+            cfg["OVERLAY_WEATHER_ICON"] = "1" if form.get("weather_icon") else "0"
+            cfg["OVERLAY_WEATHER_ICON_COLOR"] = "1" if form.get("weather_icon_color") else "0"
+            cfg["OVERLAY_WEATHER_FORECAST"] = "1" if form.get("weather_forecast") else "0"
+            cfg["OVERLAY_CLOCK"] = "1" if form.get("clock") else "0"
+            cfg["CLOCK_24H"] = "1" if form.get("clock_24h") else "0"
+            cfg["CLOCK_DATE"] = "1" if form.get("clock_date") else "0"
+            cfg["AI_WALLPAPER"] = "1" if form.get("ai") else "0"
+            cfg["OVERLAY_PULSE"] = "1" if form.get("pulse") else "0"
+            # Tailnet toggle: ON keeps an existing explicit value (advanced users may
+            # have set an IP); OFF clears. A change needs a server restart to rebind —
+            # scheduled detached below, after the response has gone out.
+            if form.get("web_bind"):
+                cfg["WEB_BIND"] = old_bind or "tailscale"
+            else:
+                cfg["WEB_BIND"] = ""
 
-        def pick(field, allowed, default):
-            v = form.get(field, [default])[0]
-            return v if v in allowed else default
-        cfg["QUOTE_POS"]     = pick("quote_pos", ALLOWED_POS, "south")
-        cfg["STATS_POS"]     = pick("stats_pos", ALLOWED_POS, "northeast")
-        cfg["WEATHER_POS"]   = pick("weather_pos", ALLOWED_POS, "north")
-        cfg["OVERLAY_SIZE"]  = pick("size", ALLOWED_SIZE, "medium")
-        cfg["OVERLAY_THEME"] = pick("overlay_theme", ALLOWED_THEME, "light")
-        cfg["OVERLAY_FONT"]  = pick("font", ALLOWED_FONT, "default")
-        cfg["OVERLAY_STYLE"] = pick("overlay_style", ALLOWED_OVERLAY_STYLE, "scrim")
-        cfg["CLOCK_STYLE"]   = pick("clock_style", ALLOWED_CLOCK_STYLE, "digital")
-        cfg["CLOCK_FACE"]    = pick("clock_face", ALLOWED_CLOCK_FACE, "classic")
-        cfg["CLOCK_POS"]     = pick("clock_pos", ALLOWED_POS, "northwest")
-        # THEME is multi-select: checked boxes arrive as repeated theme=...
-        # fields; store as a space-separated list (none checked = "" = any).
-        themes = [t for t in form.get("theme", []) if t and t in ALLOWED_BGTHEME]
-        cfg["THEME"] = " ".join(dict.fromkeys(themes))
-        wl = form.get("weather_location", [""])[0].strip()
-        cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", wl)[:40]
-        cfg["PULSE_POS"] = pick("pulse_pos", ALLOWED_POS, "east")
-        ap = form.get("ai_prompt", [""])[0].strip()
-        cfg["AI_PROMPT"] = re.sub(r"[^A-Za-z0-9 ,.\-']", "", ap)[:100]
-        pu = form.get("pulse_url", [""])[0].strip()
-        cfg["PULSE_URL"] = pu if re.match(r"^(https?|file)://[^\s\"'<>]+$", pu) else ""
-        pj = form.get("pulse_jq", ["."])[0].replace("\n", " ").replace("\r", "").strip()
-        cfg["PULSE_JQ"] = pj[:200] or "."
-        cfg["PULSE_TTL"] = pick("pulse_ttl", ALLOWED_PULSE_TTL, "5")
-        pt = form.get("pulse_title", [""])[0].strip()
-        cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", pt)[:40]
-        cfg["QUOTE_THEME"] = pick("quote_theme", ALLOWED_QUOTE_THEME, "")
-        cfg["QUOTE_MATCH_IMAGE"] = "1" if form.get("quote_match") else "0"
-        # Pulse settings changed -> drop the cached lines so the re-render that
-        # follows this Apply fetches fresh with the new URL/template.
-        if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old_pulse_url, old_pulse_jq):
-            try:
-                os.remove(os.path.join(os.path.dirname(CONFIG), "pulse.txt"))
-            except Exception:
-                pass
-        write_config(cfg)
+            def pick(field, allowed, default):
+                v = form.get(field, [default])[0]
+                return v if v in allowed else default
+            cfg["QUOTE_POS"]     = pick("quote_pos", ALLOWED_POS, "south")
+            cfg["STATS_POS"]     = pick("stats_pos", ALLOWED_POS, "northeast")
+            cfg["WEATHER_POS"]   = pick("weather_pos", ALLOWED_POS, "north")
+            cfg["OVERLAY_SIZE"]  = pick("size", ALLOWED_SIZE, "medium")
+            cfg["OVERLAY_THEME"] = pick("overlay_theme", ALLOWED_THEME, "light")
+            cfg["OVERLAY_FONT"]  = pick("font", ALLOWED_FONT, "default")
+            cfg["OVERLAY_STYLE"] = pick("overlay_style", ALLOWED_OVERLAY_STYLE, "scrim")
+            cfg["CLOCK_STYLE"]   = pick("clock_style", ALLOWED_CLOCK_STYLE, "digital")
+            cfg["CLOCK_FACE"]    = pick("clock_face", ALLOWED_CLOCK_FACE, "classic")
+            cfg["CLOCK_POS"]     = pick("clock_pos", ALLOWED_POS, "northwest")
+            # THEME is multi-select: checked boxes arrive as repeated theme=...
+            # fields; store as a space-separated list (none checked = "" = any).
+            themes = [t for t in form.get("theme", []) if t and t in ALLOWED_BGTHEME]
+            cfg["THEME"] = " ".join(dict.fromkeys(themes))
+            wl = form.get("weather_location", [""])[0].strip()
+            cfg["WEATHER_LOCATION"] = re.sub(r"[^A-Za-z0-9 ,.\-]", "", wl)[:40]
+            cfg["PULSE_POS"] = pick("pulse_pos", ALLOWED_POS, "east")
+            ap = form.get("ai_prompt", [""])[0].strip()
+            cfg["AI_PROMPT"] = re.sub(r"[^A-Za-z0-9 ,.\-']", "", ap)[:100]
+            pu = form.get("pulse_url", [""])[0].strip()
+            cfg["PULSE_URL"] = pu if feed_url_ok(pu) else ""
+            pj = form.get("pulse_jq", ["."])[0].replace("\n", " ").replace("\r", "").strip()
+            cfg["PULSE_JQ"] = pj[:200] or "."
+            cfg["PULSE_TTL"] = pick("pulse_ttl", ALLOWED_PULSE_TTL, "5")
+            pt = form.get("pulse_title", [""])[0].strip()
+            cfg["PULSE_TITLE"] = re.sub(r"[^A-Za-z0-9 ,.\-':&]", "", pt)[:40]
+            cfg["QUOTE_THEME"] = pick("quote_theme", ALLOWED_QUOTE_THEME, "")
+            cfg["QUOTE_MATCH_IMAGE"] = "1" if form.get("quote_match") else "0"
+            # Pulse settings changed -> drop the cached lines so the re-render that
+            # follows this Apply fetches fresh with the new URL/template.
+            if (cfg["PULSE_URL"], cfg["PULSE_JQ"]) != (old_pulse_url, old_pulse_jq):
+                try:
+                    os.remove(os.path.join(os.path.dirname(CONFIG), "pulse.txt"))
+                except Exception:
+                    pass
+            write_config(cfg)
         set_cron_interval(cfg["INTERVAL_MIN"])
         if cfg["WEB_BIND"] != old_bind:
             try:
@@ -734,7 +854,7 @@ class Handler(BaseHTTPRequestHandler):
                      "%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                      "for i in 1 2 3; do %s; done; "
                      "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
-                     % (FETCH, POOL, SETWP, FETCH, POOL, pool_keep(cfg), GENSTATUS)],
+                     % (FETCH, shlex.quote(POOL), SETWP, FETCH, shlex.quote(POOL), pool_keep(cfg), GENSTATUS)],
                     start_new_session=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
@@ -761,7 +881,7 @@ class Handler(BaseHTTPRequestHandler):
                     ["bash", "-c",
                      "for i in $(seq 1 7); do %s; done; "
                      "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --"
-                     % (FETCH, POOL, pool_keep(cfg))],
+                     % (FETCH, shlex.quote(POOL), pool_keep(cfg))],
                     start_new_session=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
