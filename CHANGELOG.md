@@ -5,6 +5,39 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-08-03 16:54 BST — Fam1
+
+### Added
+- **Weather: "use current location"** (`WEATHER_AUTO_LOCATION`, default off) — the
+  overlay can now follow a machine that travels instead of a town pinned months
+  ago. Resolves the location by IP (ipinfo.io over HTTPS; ip-api.com as fallback,
+  which is HTTP-only without a key, hence second), caches the fix ~6h in
+  `geoip.txt` as `lat,lon|Town` with the same `.fail` backoff the weather
+  fetchers use, and asks wttr.in by **coordinates**. The resolved town name is
+  carried separately for display because wttr.in, asked by coordinates, echoes
+  those coordinates back as `%l` — "50.83,-0.27" is no use on a wallpaper.
+  Both current-conditions and 3-day forecast honour it. The typed location stays
+  editable and is the fallback whenever the lookup fails, so an offline or
+  rate-limited machine degrades to its old behaviour rather than a blank overlay.
+- The web UI shows the fix it resolved (`geo-IP · London (51.5085,-0.1257)`) next
+  to the toggle, and the canvas object labels itself with the resolved town.
+  Deliberately visible, because **IP geolocation locates the connection, not the
+  machine**: measured from a Shoreham line, ipinfo returned London and wttr.in's
+  own built-in geo-IP returned Granborough — 75–110km out, carrier egress rather
+  than the premises. Auto is right for a machine that moves; a machine that stays
+  put is better off pinned, which is why the default is off.
+
+### Fixed
+- **Changing the weather location kept showing the old town** — pre-existing, and
+  it would have made auto-location look broken. `weather.txt` (~1h) and
+  `forecast.raw` (~3h) are keyed by nothing on disk, so editing the field in the
+  web UI left the previous town's conditions on the wallpaper until the TTL
+  expired. Each fetcher now stamps the location it used (`weather.loc`,
+  `forecast.loc`) and refreshes when that differs — which is also what makes a
+  moving machine's overlay follow it. Verified: a warm Shoreham cache switched to
+  Manchester on the next render, while an unchanged location still reused its
+  cache (no extra fetch).
+
 ## 2026-07-26 06:14 BST — Fam3
 
 Started from a UI bug ("dragged overlays spring back after a delay"), which turned

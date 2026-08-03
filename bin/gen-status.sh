@@ -32,7 +32,7 @@ STATEDIR="$(dirname "$CONFIG")"
 INTERVAL_MIN=10; OVERLAY_QUOTE=0; OVERLAY_QUOTE_DETAIL=0; QUOTE_THEME=""; QUOTE_MATCH_IMAGE=0; OVERLAY_STATS=0
 QUOTE_POS=south; STATS_POS=northeast; OVERLAY_SIZE=medium; OVERLAY_THEME=dark; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
-STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
+STATS_SPARKLINE=0; OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; WEATHER_AUTO_LOCATION=0; OVERLAY_WEATHER_ICON=0; OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0; THEME=
 CLOCK_FACE=classic; AI_WALLPAPER=0; AI_PROMPT=
 OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.; PULSE_TTL=5; PULSE_TITLE=""; PULSE_MAX=20
@@ -90,6 +90,15 @@ quote_now=""
 [ -f "$STATEDIR/.quote" ] && quote_now="$(tail -n +2 "$STATEDIR/.quote" 2>/dev/null | head -4)"
 weather_now=""
 [ -f "$STATEDIR/forecast.raw" ] && weather_now="$(head -1 "$STATEDIR/forecast.raw" 2>/dev/null | awk -F'|' '{print $4" "$2"°/"$3"°"}')"
+# Where auto-location currently thinks we are ("Town (lat,lon)"), so the UI can
+# show the fix rather than leaving the user guessing which place it resolved to
+# — the whole point of surfacing it is that geo-IP is often a town or two out.
+weather_geo_now=""
+if [ "${WEATHER_AUTO_LOCATION:-0}" = 1 ] && [ -s "$STATEDIR/geoip.txt" ]; then
+  weather_geo_now="$(awk -F'|' '{print ($2==""?"?":$2)" ("$1")"}' "$STATEDIR/geoip.txt" 2>/dev/null)"
+elif [ "${WEATHER_AUTO_LOCATION:-0}" = 1 ]; then
+  weather_geo_now="not resolved yet"
+fi
 pulse_now=""
 [ -s "$STATEDIR/pulse.txt" ] && pulse_now="$(head -"${PULSE_MAX:-20}" "$STATEDIR/pulse.txt")"
 pulse_age=""
@@ -154,6 +163,7 @@ jq -n \
   --arg cur "$cur_img" --arg rotate_when "${rotate_when:-}" --arg dl_when "${dl_when:-}" \
   --arg pool_size "${pool_size:-?}" --arg remote "$remote_url" --arg sources "$SOURCES" \
   --arg quote_now "$quote_now" --arg weather_now "$weather_now" --arg pulse_now "$pulse_now" \
+  --arg weather_geo_now "$weather_geo_now" \
   --arg pulse_age "$pulse_age" --arg stats_now "$stats_now" \
   --argjson pool_count "${pool_count:-0}" --argjson fav_count "${fav_count:-0}" \
   --argjson pruned "${pruned_total:-0}" --argjson miss "${dl_miss:-0}" --argjson fail "${dl_fail:-0}" \
@@ -164,6 +174,7 @@ jq -n \
   --arg c_quote_theme "${QUOTE_THEME}" --arg c_quote_match "${QUOTE_MATCH_IMAGE}" --arg c_quote_pos "${QUOTE_POS}" \
   --arg c_stats "${OVERLAY_STATS}" --arg c_sparkline "${STATS_SPARKLINE}" --arg c_stats_pos "${STATS_POS}" \
   --arg c_weather "${OVERLAY_WEATHER}" --arg c_weather_pos "${WEATHER_POS}" --arg c_weather_location "${WEATHER_LOCATION}" \
+  --arg c_weather_auto_location "${WEATHER_AUTO_LOCATION}" \
   --arg c_weather_icon "${OVERLAY_WEATHER_ICON}" --arg c_weather_icon_color "${OVERLAY_WEATHER_ICON_COLOR}" --arg c_weather_forecast "${OVERLAY_WEATHER_FORECAST}" \
   --arg c_clock "${OVERLAY_CLOCK}" --arg c_clock_style "${CLOCK_STYLE}" --arg c_clock_face "${CLOCK_FACE}" \
   --arg c_clock_pos "${CLOCK_POS}" --arg c_clock_24h "${CLOCK_24H}" --arg c_clock_date "${CLOCK_DATE}" \
@@ -182,13 +193,14 @@ jq -n \
   quote_cache:$quote_cache, quote_bag:$quote_bag,
   srcs:$srcs, pool:$pool, fonts:$fonts, recent:$recent,
   remote:$remote, sources:$sources,
-  live:{quote:$quote_now, weather:$weather_now, pulse:$pulse_now, pulse_age:$pulse_age, stats:$stats_now},
+  live:{quote:$quote_now, weather:$weather_now, weather_geo:$weather_geo_now, pulse:$pulse_now, pulse_age:$pulse_age, stats:$stats_now},
   cfg:{
     interval:$c_interval,
     quote:$c_quote, quote_detail:$c_quote_detail, quote_theme:$c_quote_theme,
     quote_match:$c_quote_match, quote_pos:$c_quote_pos,
     stats:$c_stats, sparkline:$c_sparkline, stats_pos:$c_stats_pos,
     weather:$c_weather, weather_pos:$c_weather_pos, weather_location:$c_weather_location,
+    weather_auto_location:$c_weather_auto_location,
     weather_icon:$c_weather_icon, weather_icon_color:$c_weather_icon_color, weather_forecast:$c_weather_forecast,
     clock:$c_clock, clock_style:$c_clock_style, clock_face:$c_clock_face,
     clock_pos:$c_clock_pos, clock_24h:$c_clock_24h, clock_date:$c_clock_date,
@@ -468,7 +480,14 @@ function renderLayers(){
 function objBody(k){
   const c=S.cfg,L=S.live;
   if(k==='quote')  return esc(L.quote||'— next quote draws at rotate —');
-  if(k==='weather')return '☀ '+esc((c.weather_location||'?')+' '+(L.weather||''));
+  if(k==='weather'){
+    // Auto-location: show the town the geo-IP fix resolved to (live.weather_geo
+    // is "Town (lat,lon)"), not the now-unused pinned field.
+    const loc=c.weather_auto_location==='1'
+      ? ((L.weather_geo||'').split(' (')[0]||c.weather_location||'?')
+      : (c.weather_location||'?');
+    return '☀ '+esc(loc+' '+(L.weather||''));
+  }
   if(k==='stats')  return esc(L.stats||'');
   if(k==='clock')  return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',hour12:c.clock_24h!=='1'})+' · '+esc(c.clock_style);
   if(k==='pulse'){
@@ -532,7 +551,12 @@ function inspHtml(k){
      <div class=row>${cb('quote_match','Match image to quote')}</div>
      <div class=row><span class=mut>pool ${S.quote_cache.toLocaleString()} quotes · bag ${S.quote_bag.toLocaleString()} left</span></div>`;
   if(k==='weather') return head(OVERLAYS[k],'weather')+
-    `<div class=row><input type=text data-set=weather_location value="${esc(c.weather_location)}" placeholder=Location size=12></div>
+    // The location field stays EDITABLE while auto-location is on: it is the
+    // fallback used when the geo-IP lookup fails. (It must also stay enabled —
+    // a disabled input isn't submitted, so a full Apply would save it as "".)
+    `<div class=row><input type=text data-set=weather_location value="${esc(c.weather_location)}" placeholder="${c.weather_auto_location==='1'?'Fallback location':'Location'}" size=12></div>
+     <div class=row>${cb('weather_auto_location','Use current location')}</div>
+     ${c.weather_auto_location==='1'?`<div class=row><span class=mut>geo-IP · ${esc(S.live.weather_geo||'not resolved yet')}<br>locates the connection, not the machine — can be 100km out. Falls back to the location above.</span></div>`:''}
      <div class=row>${cb('weather_icon','Icon')}${cb('weather_icon_color','Colour')}${cb('weather_forecast','Forecast')}</div>`;
   if(k==='stats') return head(OVERLAYS[k],'stats')+
     `<div class=row>${cb('sparkline','Sparklines')}</div>

@@ -185,6 +185,19 @@ rotate cron line where relevant, and re-renders immediately):
   glyph in a condition colour (gold sun, blue rain, grey cloud, …). A **forecast**
   toggle adds a second, smaller line with a compact 3-day outlook
   (`Today ☀ 24/14 · Thu ☀ 24/16 · Fri ☀ 24/17`, hi/lo °C, cached ~3h).
+  **Use current location** (`WEATHER_AUTO_LOCATION=1`) makes the overlay follow a
+  machine that travels instead of a town pinned months ago: the location is
+  resolved by IP (ipinfo.io over HTTPS, ip-api.com as a fallback), cached ~6h in
+  `geoip.txt`, and wttr.in is then asked by **coordinates** — the resolved town
+  name is what gets displayed, since wttr.in echoes coordinates back verbatim in
+  `%l`. Both weather caches are keyed by the location in force, so moving (or
+  editing the field) refreshes them instead of showing the old town for an hour.
+  **Accuracy caveat:** this locates the *connection*, not the machine — measured
+  from a Shoreham line on 2026-08-03, ipinfo said London and wttr.in's own
+  built-in geo-IP said Granborough, 75–110km out (carrier egress, not the
+  premises). The web UI shows the resolved fix so you can see when it's wrong.
+  A machine that stays put is better off pinned; the typed location remains the
+  fallback whenever the lookup fails.
 - **Clock** — **digital** (big time, optional date, 12/24h) or **analogue** (drawn
   dial with a choice of **faces**: classic ticks, minimal quarter-ticks, dots, or
   12/3/6/9 numerals). Since the wallpaper is a static render, a 1-minute cron

@@ -60,8 +60,8 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEM
             "QUOTE_MATCH_IMAGE", "OVERLAY_STATS",
             "QUOTE_POS", "STATS_POS", "OVERLAY_SIZE", "OVERLAY_THEME", "OVERLAY_FONT",
             "OVERLAY_STYLE", "STATS_SPARKLINE", "OVERLAY_WEATHER", "WEATHER_POS",
-            "WEATHER_LOCATION", "OVERLAY_WEATHER_ICON", "OVERLAY_WEATHER_ICON_COLOR",
-            "OVERLAY_WEATHER_FORECAST",
+            "WEATHER_LOCATION", "WEATHER_AUTO_LOCATION", "OVERLAY_WEATHER_ICON",
+            "OVERLAY_WEATHER_ICON_COLOR", "OVERLAY_WEATHER_FORECAST",
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN", "AI_HORDE_KEY",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
@@ -71,7 +71,8 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
                 "OVERLAY_SIZE": "medium", "OVERLAY_THEME": "light", "OVERLAY_FONT": "default",
                 "OVERLAY_STYLE": "scrim", "STATS_SPARKLINE": "0", "OVERLAY_WEATHER": "0",
-                "WEATHER_POS": "north", "WEATHER_LOCATION": "", "OVERLAY_WEATHER_ICON": "0",
+                "WEATHER_POS": "north", "WEATHER_LOCATION": "",
+                "WEATHER_AUTO_LOCATION": "0", "OVERLAY_WEATHER_ICON": "0",
                 "OVERLAY_WEATHER_ICON_COLOR": "0", "OVERLAY_WEATHER_FORECAST": "0",
                 "OVERLAY_CLOCK": "0",
                 "CLOCK_STYLE": "digital", "CLOCK_FACE": "classic",
@@ -661,6 +662,7 @@ class Handler(BaseHTTPRequestHandler):
                          "weather_icon": "OVERLAY_WEATHER_ICON",
                          "weather_icon_color": "OVERLAY_WEATHER_ICON_COLOR",
                          "weather_forecast": "OVERLAY_WEATHER_FORECAST",
+                         "weather_auto_location": "WEATHER_AUTO_LOCATION",
                          "clock": "OVERLAY_CLOCK", "clock_24h": "CLOCK_24H",
                          "clock_date": "CLOCK_DATE", "ai": "AI_WALLPAPER",
                          "pulse": "OVERLAY_PULSE", "login_rotate": "LOGIN_ROTATE"}
@@ -783,6 +785,7 @@ class Handler(BaseHTTPRequestHandler):
             cfg["OVERLAY_WEATHER_ICON"] = "1" if form.get("weather_icon") else "0"
             cfg["OVERLAY_WEATHER_ICON_COLOR"] = "1" if form.get("weather_icon_color") else "0"
             cfg["OVERLAY_WEATHER_FORECAST"] = "1" if form.get("weather_forecast") else "0"
+            cfg["WEATHER_AUTO_LOCATION"] = "1" if form.get("weather_auto_location") else "0"
             cfg["OVERLAY_CLOCK"] = "1" if form.get("clock") else "0"
             cfg["CLOCK_24H"] = "1" if form.get("clock_24h") else "0"
             cfg["CLOCK_DATE"] = "1" if form.get("clock_date") else "0"

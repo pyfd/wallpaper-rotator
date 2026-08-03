@@ -31,7 +31,7 @@ QUOTE_POS=south; STATS_POS=northeast
 OVERLAY_SIZE=medium; OVERLAY_THEME=light; OVERLAY_FONT=default
 OVERLAY_STYLE=scrim
 STATS_SPARKLINE=0
-OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; OVERLAY_WEATHER_ICON=0
+OVERLAY_WEATHER=0; WEATHER_POS=north; WEATHER_LOCATION=; WEATHER_AUTO_LOCATION=0; OVERLAY_WEATHER_ICON=0
 OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
 CLOCK_FACE=classic
@@ -297,24 +297,102 @@ weather_icon_color() {
   esac
 }
 
+# Resolve where this machine actually IS (WEATHER_AUTO_LOCATION=1), so a machine
+# that travels reports its own weather instead of a town pinned months ago.
+# Cached ~6h in geoip.txt as "lat,lon|Town" — a fix only moves when the machine
+# does — with the same .fail backoff as the fetchers below.
+#
+# Two providers, in order: ipinfo.io speaks HTTPS on the free tier and returns
+# "loc":"lat,lon" ready-made; ip-api.com is the fallback, and is HTTP-ONLY
+# without a key (its https endpoint 403s), which is why it is second.
+#
+# wttr.in is asked by COORDINATES, not by town name: its own blank-location
+# geo-IP placed a Shoreham machine in Granborough, ~110km out (measured
+# 2026-08-03), and passing a name back would just re-run someone else's lookup.
+# The town name is kept for DISPLAY only — when asked by coordinates wttr.in's
+# %l echoes those coordinates straight back, which is no use on a wallpaper.
+#
+# Caveat worth knowing before trusting it: IP geolocation locates the
+# CONNECTION, not the machine. On the line measured above BOTH providers landed
+# 75-110km off (carrier egress, not the premises). This is the right default for
+# a machine that moves; a machine that stays put is better off pinned.
+weather_geo() {
+  [ "${WEATHER_AUTO_LOCATION:-0}" = 1 ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  local cache="$STATEDIR/geoip.txt" j=""
+  if { [ ! -f "$cache" ] || find "$cache" -mmin +360 2>/dev/null | grep -q .; } \
+     && ! find "$cache.fail" -mmin -10 2>/dev/null | grep -q .; then
+    # Clear any .new left by a run that died between write and mv — otherwise
+    # the "did provider 1 produce anything?" test below reads last time's file
+    # and could promote a stale fix.
+    rm -f "$cache.new"
+    j="$(curl -fsL --max-time 10 'https://ipinfo.io/json' 2>>"$LOG")"
+    [ -n "$j" ] && printf '%s' "$j" | jq -er \
+      'if ((.loc // "") | test("^-?[0-9.]+,-?[0-9.]+$")) then "\(.loc)|\(.city // "")" else empty end' \
+      > "$cache.new" 2>/dev/null
+    if [ ! -s "$cache.new" ]; then
+      j="$(curl -fsL --max-time 10 'http://ip-api.com/json/?fields=status,city,lat,lon' 2>>"$LOG")"
+      [ -n "$j" ] && printf '%s' "$j" | jq -er \
+        'select(.status == "success") | "\(.lat),\(.lon)|\(.city // "")"' \
+        > "$cache.new" 2>/dev/null
+    fi
+    if [ -s "$cache.new" ] && grep -qE '^-?[0-9.]+,-?[0-9.]+\|' "$cache.new"; then
+      mv "$cache.new" "$cache"; rm -f "$cache.fail"
+      log "[weather] geo-ip fix $(cat "$cache" 2>/dev/null)"
+    else
+      rm -f "$cache.new"; touch "$cache.fail"
+      log "[weather] geo-ip lookup failed — falling back to WEATHER_LOCATION='${WEATHER_LOCATION:-}'"
+    fi
+  fi
+  cat "$cache" 2>/dev/null
+}
+
+# What the fetchers should ASK wttr.in for: the geo-IP fix (coordinates) when
+# auto-location is on and resolved, else the pinned town. An unresolvable fix
+# falls through to the pin rather than leaving the overlay blank.
+weather_query() {
+  local g=""
+  g="$(weather_geo)"
+  if [ -n "$g" ]; then printf '%s' "${g%%|*}"; else printf '%s' "${WEATHER_LOCATION:-}"; fi
+}
+
+# Town name to SHOW when we asked by coordinates (empty = keep wttr.in's %l).
+weather_geo_name() {
+  local g=""
+  g="$(weather_geo)"; [ -n "$g" ] || return 0
+  printf '%s' "${g#*|}"
+}
+
+# The weather caches carry no key of their own, so a location change — the
+# auto fix moving with the machine, or an edit in the web UI — would keep
+# serving the OLD town's conditions for up to an hour (3h for the forecast).
+# Each fetcher stamps the query it used and refreshes when that differs.
+weather_loc_changed() {   # $1 = sentinel file, $2 = query in force
+  [ "$(cat "$1" 2>/dev/null)" != "$2" ]
+}
+
 # Local weather via wttr.in (no key); cached ~1h so we don't hammer it. Cached as
 # structured fields ("loc|condition|metrics") so the location can be title-cased
 # and the icon toggled at render time without re-fetching. Outputs three TAB-
 # separated fields: "glyph<TAB>colour<TAB>text" (glyph/colour empty when the icon
 # is off) so the caller can render a COLOURED icon separately from the text.
 weather_line() {
-  local cache="$STATEDIR/weather.txt" loc="${WEATHER_LOCATION:-}"
-  # Refresh if missing, >60min old, OR in the pre-structured legacy format (no '|')
-  # — so a cache left over from an older version self-heals on upgrade.
+  local cache="$STATEDIR/weather.txt" sentinel="$STATEDIR/weather.loc" loc
+  loc="$(weather_query)"
+  # Refresh if missing, >60min old, the location changed under us, OR in the
+  # pre-structured legacy format (no '|') — so a cache left over from an older
+  # version self-heals on upgrade.
   # .fail marker = 10-min backoff after a failed fetch. Without it a flaky/down
   # wttr.in is re-attempted INLINE on every render (the cache mtime never moves),
   # taxing each rotate with up to 12s of curl (seen 2026-06-05 on Fam3).
   if { [ ! -f "$cache" ] || find "$cache" -mmin +60 2>/dev/null | grep -q . \
-       || ! grep -q '|' "$cache" 2>/dev/null; } \
+       || ! grep -q '|' "$cache" 2>/dev/null \
+       || weather_loc_changed "$sentinel" "$loc"; } \
      && ! find "$cache.fail" -mmin -10 2>/dev/null | grep -q .; then
     if curl -fsL --max-time 12 "https://wttr.in/${loc// /+}?format=%l|%C|%t,+%h,+%w" \
          -o "$cache.new" 2>>"$LOG" && [ -s "$cache.new" ]; then
       mv "$cache.new" "$cache"; rm -f "$cache.fail"
+      printf '%s' "$loc" > "$sentinel" 2>/dev/null
     else
       rm -f "$cache.new"; touch "$cache.fail"
     fi
@@ -327,6 +405,10 @@ weather_line() {
   esac
   IFS='|' read -r wl wc wm <<< "$raw"
   wc="${wc%"${wc##*[![:space:]]}"}"   # wttr's %C carries a trailing space -> trim it
+  # Asked by coordinates, wttr.in returns them verbatim as %l ("50.83,-0.27").
+  # Show the resolver's town name instead; keep %l when it gave a real name.
+  local gname; gname="$(weather_geo_name)"
+  [ -n "$gname" ] && wl="$gname"
   # Title-case the location ("shoreham" -> "Shoreham", "new york" -> "New York").
   wl="$(printf '%s' "$wl" | awk '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')"
   if [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ]; then
@@ -341,8 +423,10 @@ weather_line() {
 # render time without re-fetching). Returns the structured text (empty if none).
 # Needs jq.
 weather_forecast() {
-  local cache="$STATEDIR/forecast.struct" raw="$STATEDIR/forecast.raw" loc="${WEATHER_LOCATION:-}"
+  local cache="$STATEDIR/forecast.struct" raw="$STATEDIR/forecast.raw" loc
+  local sentinel="$STATEDIR/forecast.loc"
   command -v jq >/dev/null 2>&1 || return 0
+  loc="$(weather_query)"
   # raw holds "date|hi|lo|condition" straight from the API, cached ~3h — but
   # only ~30min while its first day is already in the past (wttr.in serves
   # yesterday-led data pre-rollover early in the morning), so the dropped-day
@@ -350,11 +434,12 @@ weather_forecast() {
   local ttl=180 today; today="$(date +%F)"
   [ -f "$raw" ] && [[ "$(head -c10 "$raw" 2>/dev/null)" < "$today" ]] && ttl=30
   # Same 10-min failure backoff as weather_line (15s inline curl otherwise).
-  if { [ ! -f "$raw" ] || find "$raw" -mmin +$ttl 2>/dev/null | grep -q .; } \
+  if { [ ! -f "$raw" ] || find "$raw" -mmin +$ttl 2>/dev/null | grep -q . \
+       || weather_loc_changed "$sentinel" "$loc"; } \
      && ! find "$raw.fail" -mmin -10 2>/dev/null | grep -q .; then
     if curl -fsL --max-time 15 "https://wttr.in/${loc// /+}?format=j1" -o "$cache.json" 2>>"$LOG" && [ -s "$cache.json" ]; then
       jq -r '.weather[0:3][] | "\(.date)|\(.maxtempC)|\(.mintempC)|\(.hourly[4].weatherDesc[0].value)"' "$cache.json" 2>/dev/null > "$raw.tmp"
-      [ -s "$raw.tmp" ] && { mv "$raw.tmp" "$raw"; rm -f "$raw.fail"; }
+      [ -s "$raw.tmp" ] && { mv "$raw.tmp" "$raw"; rm -f "$raw.fail"; printf '%s' "$loc" > "$sentinel" 2>/dev/null; }
     else
       touch "$raw.fail"
     fi
