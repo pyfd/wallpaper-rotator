@@ -233,6 +233,14 @@ rotate cron line where relevant, and re-renders immediately):
   top-centre badge over the wallpaper (re-rendered within ~60s of a change) until
   it clears. Config-file only, empty = off. Turns the desktop into a passive
   status surface for infra/CI/home-automation alerts.
+  **Staleness fails loud.** If the endpoint cannot be reached, the cached alert
+  set is not silently shown as current: once it is more than 10 minutes old, both
+  the wallpaper badge and the `:8787` panel draw a muted **grey** band naming the
+  last good fetch — plus the reason, which `check-alerts.sh` records to
+  `alerts.fail` on a failed poll (it names a stopped local Tailscale node when it
+  finds one, since these endpoints are often tailnet-only). An alerting surface
+  must never render "I cannot see" as "nothing is wrong", so a blank desktop or an
+  empty panel is not an acceptable failure mode.
 - **Position** — place each overlay at any corner/edge/centre (per-overlay), or
   **auto**: the renderer ranks the image's 9 anchor regions by visual busyness
   and gives each auto overlay the calmest remaining spot (explicit positions

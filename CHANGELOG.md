@@ -5,6 +5,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-09-02 04:41 BST — Fam3
+
+README: document the fail-loud staleness band on the alerts badge
+
+### Changed
+The Alerts badge section described only the red/amber active-alert behaviour, which was the whole blind spot: it did not say what happens when the endpoint cannot be reached. Now records that staleness fails loud on BOTH surfaces (wallpaper badge + :8787 panel) with the grey band, the 10-minute threshold, the alerts.fail reason, and the rule that an alerting surface must never render "I cannot see" as "nothing is wrong".
+
+Also assessed a suspected image repeat on Fam3 this session and found none — 101 true rotation events over 17h44m gave 101 distinct images, zero re-shows, so the shuffle-bag works as documented. The deja vu was cross-machine: 38 percent of the Fam3 pool also exists on Fam1 under different (epoch-based) filenames, so a filename comparison misleadingly shows zero overlap. That investigation did surface a genuine defect in the download-time dedup, filed as todo #679 rather than fixed here.
+
 ## 2026-09-02 04:31 BST — Fam3
 
 web UI: the alert panel now says when it is showing cached or missing data
