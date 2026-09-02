@@ -27,14 +27,35 @@ SIGFILE="$STATEDIR/alerts.sig"
 command -v jq >/dev/null 2>&1 || exit 0
 mkdir -p "$STATEDIR"
 
+FAILFILE="$STATEDIR/alerts.fail"
+
 tmp="$OUT.tmp.$$"
 if curl -fsL --max-time 8 "$ALERTS_URL" -o "$tmp" 2>/dev/null \
    && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
   mv "$tmp" "$OUT"
+  rm -f "$FAILFILE"
 else
-  # Endpoint unreachable / bad payload: keep the previous file. set-wallpaper's
-  # 10-min freshness guard drops a stale badge on its own.
+  # Endpoint unreachable / bad payload: keep the previous file so the last known
+  # alert set stays on screen, but RECORD WHY we could not refresh it. This
+  # script is the only thing that actually observes the failure -- without a
+  # note, set-wallpaper can only say "stale" and the operator is left guessing.
+  #
+  # Most aggregator URLs here are tailnet-only, so a stopped local Tailscale
+  # node is the single most common cause (Fam3, 2026-09-02: node down for hours,
+  # a live critical silently unshown). Name it when we see it, but as an
+  # observation rather than a diagnosis -- ALERTS_URL may not be a tailnet host.
   rm -f "$tmp"
+  reason="endpoint unreachable"
+  if command -v tailscale >/dev/null 2>&1; then
+    tsstate="$(tailscale status --json 2>/dev/null | jq -r '.BackendState // empty' 2>/dev/null)"
+    case "$tsstate" in
+      Running|"") : ;;
+      Stopped)    reason="tailscale stopped" ;;
+      NeedsLogin) reason="tailscale needs login" ;;
+      *)          reason="tailscale $tsstate" ;;
+    esac
+  fi
+  printf '%s' "$reason" > "$FAILFILE" 2>/dev/null
   exit 0
 fi
 

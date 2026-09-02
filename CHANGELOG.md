@@ -5,6 +5,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-09-02 04:22 BST — Fam3
+
+alerts: staleness fails loud, and names the cause (tailscale) instead of blanking
+
+### Fixed
+The infra-alert badge suppressed itself whenever alerts.json went stale (>10 min), so an unreachable ALERTS_URL painted a BLANK desktop — and on an alerting surface "nothing on screen" is indistinguishable from "nothing wrong". Found on Fam3 2026-09-02: the local Tailscale node was stopped, every check-alerts.sh poll failed silently, and a live critical (btn-beryl-laravel at 10.79/core) went unshown for hours. The :8787 web UI still listed it the whole time — it reads the same file with NO freshness gate, so the two surfaces disagreed about the same data.
+
+set-wallpaper.sh: a stale or never-fetched cache now draws a muted grey band ("infra alerts STALE — last good fetch 2 Sep 03:40") instead of skipping the block. Gated on ALERTS_URL being set, so machines not using alerts stay clean; ALERTS_URL added to the defaults block.
+
+check-alerts.sh: on failure it now records WHY into $STATEDIR/alerts.fail (cleared on success) — it is the only component that actually observes the failure, so the renderer displays a recorded reason rather than re-deriving one a minute later. Since these aggregator URLs are tailnet-only, it checks the local node via `tailscale status --json .BackendState` (82ms, once/min) and reports "tailscale stopped" / "tailscale needs login" — phrased as an observation, not a diagnosis, because ALERTS_URL need not be a tailnet host. The badge appends it: "… · tailscale stopped".
+
+Verified on Fam3 by back-dating alerts.json: grey band with and without a recorded reason, then a real refresh restoring the red critical band unchanged. bash -n clean on both scripts.
+
 ## 2026-08-03 16:54 BST — Fam1
 
 ### Added

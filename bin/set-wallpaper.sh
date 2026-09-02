@@ -36,6 +36,9 @@ OVERLAY_WEATHER_ICON_COLOR=0; OVERLAY_WEATHER_FORECAST=0
 OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DATE=0
 CLOCK_FACE=classic
 OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=""; PULSE_JQ="."; PULSE_TTL=5; PULSE_TITLE=""; PULSE_MAX=20
+# Set in the config by the web UI; the alert badge stays off entirely when empty,
+# and only reports staleness when it is set (see the infra-alert badge below).
+ALERTS_URL=""
 THEME=
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
@@ -1162,12 +1165,41 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
     # Infra-alert badge (Phase 1 of the wr-alerting design). check-alerts.sh
     # polls the aggregator and writes $STATEDIR/alerts.json; here we render a
     # loud top-centre badge when an active critical (red) or warn (amber) alert
-    # is present and the state file is fresh (<10 min old). Text only — no
-    # rotation takeover yet (that's Phase 3). Drawn last so it sits over every
-    # other overlay.
+    # is present. Text only — no rotation takeover yet (that's Phase 3). Drawn
+    # last so it sits over every other overlay.
+    #
+    # Staleness FAILS LOUD. The freshness guard used to skip this whole block
+    # when alerts.json was >10 min old, so an unreachable ALERTS_URL painted a
+    # BLANK desktop -- and on an alerting surface "nothing on screen" is
+    # indistinguishable from "nothing wrong". Observed on Fam3 2026-09-02: the
+    # tailnet node was down, the fetch failed silently, and a live critical
+    # (btn-beryl-laravel at 10.79/core) went unshown while the web UI -- which
+    # reads the same file with no freshness gate -- still listed it. A stale or
+    # missing cache now draws a muted grey band naming the last good fetch.
     ASTATE="$STATEDIR/alerts.json"
-    if command -v jq >/dev/null 2>&1 && [ -s "$ASTATE" ] \
-       && ! find "$ASTATE" -mmin +10 2>/dev/null | grep -q . ; then
+    if command -v jq >/dev/null 2>&1; then
+      # 0 = fresh · 1 = stale (>10 min) · 2 = never fetched.
+      astale=0
+      if [ ! -s "$ASTATE" ]; then astale=2
+      elif find "$ASTATE" -mmin +10 2>/dev/null | grep -q . ; then astale=1
+      fi
+      if [ "$astale" != 0 ]; then
+        # Only complain when the feature is actually configured -- an unset
+        # ALERTS_URL means "not using alerts", not "alerts are broken".
+        abg=""; atxt=""
+        if [ -n "${ALERTS_URL:-}" ]; then
+          abg="#4a4f5a"
+          # check-alerts.sh records WHY the last refresh failed (commonly a
+          # stopped local Tailscale node, since the aggregator is tailnet-only).
+          areason="$(cat "$STATEDIR/alerts.fail" 2>/dev/null)"
+          if [ "$astale" = 2 ]; then
+            atxt="⚠  infra alerts unavailable — never fetched"
+          else
+            atxt="⚠  infra alerts STALE — last good fetch $(date -r "$ASTATE" +"%-d %b %H:%M" 2>/dev/null)"
+          fi
+          [ -n "$areason" ] && atxt="$atxt  ·  $areason"
+        fi
+      else
       # Stack each active alert on its OWN line (criticals first) so several
       # alerts read clearly, instead of one joined line that overflows the
       # screen. Band colour = red if any critical, else amber. Cap the lines and
@@ -1207,6 +1239,7 @@ $ALINES
 EOF
         extra=$(( ntot - n ))
         [ "$extra" -gt 0 ] && atxt="${atxt}"$'\n'"      + ${extra} more"
+      fi
       fi
       if [ -n "$abg" ] && [ -n "$atxt" ]; then
         aps=$(( ${BASEPS:-30} * 9 / 10 )); [ "$aps" -lt 20 ] && aps=20
