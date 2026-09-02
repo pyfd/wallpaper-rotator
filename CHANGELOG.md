@@ -5,6 +5,23 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-09-02 04:31 BST — Fam3
+
+web UI: the alert panel now says when it is showing cached or missing data
+
+### Fixed
+Completes the fail-loud pass — the :8787 panel had the same blind spot as the wallpaper badge, by a different mechanism.
+
+CORRECTION to this mornings earlier entry, which said the web UI "reads the same file with NO freshness gate". That was wrong about the mechanism. GET /alerts.json actually fetches LIVE from the aggregator and falls back to the on-disk cache only when that fails — but the fallback was SILENT, so cached data rendered as though it were current. Worse, a missing cache returned {"active":[]}, which the panel paints as a confident "no alerts": a hard failure producing an all-clear, the worst outcome an alerting surface can have. The conclusion in that entry (the two surfaces disagreed, and the web UI showed stale data as live) stands; the reason was different.
+
+wallpaper-web.py: every /alerts.json response now carries a "_wr" block — {source: live|cache|none, stale, age_s, reason} — using the SAME 10-min threshold as the wallpaper badge so the two surfaces cannot disagree, and reading the reason from alerts.fail. Only populated when ALERTS_URL is set.
+
+gen-status.sh: pollAlerts paints a muted grey .alert.stale banner above the alert list from that block ("infra alerts STALE — last good fetch 2h 0m ago · tailscale stopped"). The overlays menu offset now keys on bar.children rather than active.length, so a lone staleness banner still displaces it.
+
+Verified on Fam3 by pointing ALERTS_URL at a dead port: live -> {source:live,stale:false}; cache -> {source:cache,stale:true,age_s:7282,reason:"endpoint unreachable"}; no cache -> {source:none,stale:true}. Note the reason correctly said "endpoint unreachable" rather than blaming Tailscale, which was up at the time. The banner JS was then extracted from the GENERATED index.html and run against all five payloads (incl. a _wr-less response from an old server) — correct in every case. py_compile + bash -n clean.
+
+Not verified in a real browser on this host: the Chrome extension available to the session drives a browser on Fam1, and :8787 binds localhost, so Fam3 UI is not reachable from it.
+
 ## 2026-09-02 04:22 BST — Fam3
 
 alerts: staleness fails loud, and names the cause (tailscale) instead of blanking

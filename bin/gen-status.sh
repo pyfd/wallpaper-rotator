@@ -235,6 +235,9 @@ button{font:inherit}
 .alert{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;font-size:12.5px;font-weight:600}
 .alert.critical{background:#c0392b;color:#fff}
 .alert.warn{background:#3a2f12;color:#ffd23f;border:1px solid #6b551c}
+/* Staleness banner — the panel is showing cached or missing data, not live.
+   Deliberately muted: it reports that we cannot see, not that something broke. */
+.alert.stale{background:#3a3f4a;color:#c9d1de;border:1px solid #4a4f5a}
 .alert .ahost{opacity:.85;font-weight:700;font-size:11px;text-transform:uppercase}
 .alert .atitle{flex:1;min-width:0}
 .alert .aack{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.35);color:inherit;border-radius:7px;padding:3px 11px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
@@ -798,7 +801,23 @@ async function pollAlerts(){
   const active=(d.active||[]).filter(a=>a.severity==='critical'||a.severity==='warn');
   active.sort((a,b)=> (a.severity==='critical'?0:1)-(b.severity==='critical'?0:1));
   bar._alerts=active;                                   // source for the copy handler
-  bar.innerHTML=active.map((a,i)=>
+  // Staleness banner. The endpoint tells us whether it served live data, the
+  // on-disk cache, or nothing at all — without this the panel renders cached
+  // (or empty) data as though it were current, which is how a stopped Tailscale
+  // node hid a live critical for hours on 2026-09-02. Mirrors the wallpaper badge.
+  const w=d._wr||{};
+  let pre='';
+  if(w.stale){
+    let when='never fetched';
+    if(w.source!=='none'&&w.age_s!=null){
+      const m=Math.round(w.age_s/60);
+      when='last good fetch '+(m<60?m+'m':Math.floor(m/60)+'h '+(m%60)+'m')+' ago';
+    }
+    pre=`<div class="alert stale"><span class=ahost>alerts</span>`+
+        `<span class=atitle>⚠ infra alerts ${w.source==='none'?'unavailable':'STALE'} — ${esc(when)}`+
+        `${w.reason?' · '+esc(w.reason):''}</span></div>`;
+  }
+  bar.innerHTML=pre+active.map((a,i)=>
     `<div class="alert ${a.severity==='critical'?'critical':'warn'}">`+
     `<span class=ahost>${esc(a.host||'')}</span>`+
     `<span class=atitle>${esc(a.title||a.key||'')}</span>`+
@@ -810,7 +829,8 @@ async function pollAlerts(){
   // the left of the banners. Push it below the banner while alerts are present
   // (variable height: 1+ banners), restore the CSS default when clear.
   const lay=$('layers');
-  if(lay){ lay.style.top = active.length ? (Math.round(bar.getBoundingClientRect().bottom)+8)+'px' : ''; }
+  // bar.children, not active.length — a lone staleness banner still needs clearing.
+  if(lay){ lay.style.top = bar.children.length ? (Math.round(bar.getBoundingClientRect().bottom)+8)+'px' : ''; }
 }
 document.getElementById('alertbar').addEventListener('click',async e=>{
   const c=e.target.closest('.acopy');

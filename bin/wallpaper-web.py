@@ -402,10 +402,19 @@ class Handler(BaseHTTPRequestHandler):
             # banners linger. Falls back to that cache if the aggregator is
             # unreachable. Also refreshes the cache so the wallpaper badge stays
             # current between check-alerts runs.
+            #
+            # The fallback used to be SILENT: a dead aggregator served the cache
+            # as if it were live, and a missing cache served {"active":[]} --
+            # which the panel renders as a confident "no alerts". A hard failure
+            # producing an all-clear is the worst outcome an alerting surface
+            # can have. Every response now carries a "_wr" block saying where
+            # the data came from and how old it is, and the panel paints a grey
+            # staleness banner from it (matching the wallpaper badge).
             ctype = "application/json; charset=utf-8"
             cache = os.path.join(STATE, "alerts.json")
             aurl = read_config().get("ALERTS_URL", "")
             body = None
+            source = "live"
             if aurl:
                 try:
                     with urllib.request.urlopen(aurl, timeout=3) as r:
@@ -418,12 +427,40 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     body = None
             if body is None:
+                source = "cache"
                 try:
                     with open(cache, "rb") as f:
                         body = f.read()
                 except Exception:
-                    body = b'{"active":[]}'
-            self._send(200, ctype, body); return
+                    body = None
+                    source = "none"
+            meta = {"source": source, "stale": False}
+            if aurl and source != "live":
+                # Same 10-min threshold the wallpaper badge uses, so the two
+                # surfaces never disagree about whether the data is current.
+                age = None
+                try:
+                    age = int(time.time() - os.path.getmtime(cache))
+                except OSError:
+                    pass
+                meta["age_s"] = age
+                meta["stale"] = age is None or age > 600 or source == "none"
+                try:
+                    with open(os.path.join(STATE, "alerts.fail")) as f:
+                        r = f.read().strip()[:120]
+                        if r:
+                            meta["reason"] = r
+                except OSError:
+                    pass
+            try:
+                doc = json.loads(body) if body else {}
+                if not isinstance(doc, dict):
+                    doc = {}
+            except Exception:
+                doc = {}
+            doc.setdefault("active", [])
+            doc["_wr"] = meta
+            self._send(200, ctype, json.dumps(doc).encode()); return
         elif path == "/loginbg.json":
             self._send(200, "application/json; charset=utf-8",
                        json.dumps(login_bg_state()).encode())
