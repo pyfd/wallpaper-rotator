@@ -5,6 +5,23 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-09-20 20:49 BST — Fam1
+
+weather: drawn vector icons, ~2.5x bigger, replacing the font glyphs
+
+### Changed
+The weather overlay prepended a DejaVu glyph at text weight and text size, which on a photo read as a smudge: at the default large size the current-conditions icon was a ~25px monochrome character, and the forecast line's were ~17px. DejaVu also has no partly-cloudy glyph at all, so every 'partly cloudy' fell back to the sun-with-rays ☼ — the single most common British condition rendered as the wrong symbol.
+
+Replaced with icons DRAWN as MVG vector art, the same technique as the analogue clock face: draw_wx_icon() emits one -draw program per condition bucket (sun, partly, cloud, rain, snow, thunder, fog) with coordinates as fractions of the box, so one geometry serves any size. Current conditions now render at ~2.5x the line's text size (~62-75px), the forecast days at ~1.7x theirs (~29px). Fog/mist/haze gains its own symbol instead of borrowing the plain cloud, and a clear sky after 20:00 / before 06:00 draws a crescent moon rather than a sun.
+
+Colour mode paints each element separately — blue drops on a grey cloud, yellow bolt, gold sun — instead of tinting one flat glyph. Monochrome mode draws the same shapes in the text colour: every shape is drawn OPAQUE and separation comes from draw order, because the obvious alternative (a translucent cloud so the sun shows through) seams visibly where the three puff circles overlap, and with one colour that patchwork is all you see.
+
+With the forecast line on, the current icon is now prepended to the WHOLE two-line block rather than to the top line, sized to span both and vertically centred, so the panel reads icon-first.
+
+weather_line() now emits 'condition<TAB>text' instead of 'glyph<TAB>colour<TAB>text' — the renderer needs the condition to draw from. Icons go through the existing content-addressed layer cache (1 convert spawn on a miss, a file copy after, vs 3 label spawns for the old forecast glyphs), keyed on bucket/size/night/mono/colour. The glyph path is kept as a fallback if the draw fails.
+
+Verified on Fam1: rendered all seven buckets plus both night variants in colour and monochrome, then full renders through the real config for both the two-line (forecast on, coloured) and single-line (forecast off, monochrome) paths.
+
 ## 2026-09-02 04:41 BST — Fam3
 
 README: document the fail-loud staleness band on the alerts badge

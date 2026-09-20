@@ -376,9 +376,10 @@ weather_loc_changed() {   # $1 = sentinel file, $2 = query in force
 
 # Local weather via wttr.in (no key); cached ~1h so we don't hammer it. Cached as
 # structured fields ("loc|condition|metrics") so the location can be title-cased
-# and the icon toggled at render time without re-fetching. Outputs three TAB-
-# separated fields: "glyph<TAB>colour<TAB>text" (glyph/colour empty when the icon
-# is off) so the caller can render a COLOURED icon separately from the text.
+# and the icon toggled at render time without re-fetching. Outputs two TAB-
+# separated fields: "condition<TAB>text" — the raw CONDITION (empty when the icon
+# is off), because the renderer now DRAWS the icon from it rather than picking a
+# font glyph here.
 weather_line() {
   local cache="$STATEDIR/weather.txt" sentinel="$STATEDIR/weather.loc" loc
   loc="$(weather_query)"
@@ -400,11 +401,11 @@ weather_line() {
       rm -f "$cache.new"; touch "$cache.fail"
     fi
   fi
-  local raw wl wc wm glyph="" color=""
+  local raw wl wc wm cond=""
   raw="$(cat "$cache" 2>/dev/null)"; [ -n "$raw" ] || return 0
   case "$raw" in
     *"|"*) : ;;                                  # new structured format
-    *) printf '\t\t%s' "$raw"; return 0 ;;       # legacy single-line cache: text only
+    *) printf '\t%s' "$raw"; return 0 ;;         # legacy single-line cache: text only
   esac
   IFS='|' read -r wl wc wm <<< "$raw"
   wc="${wc%"${wc##*[![:space:]]}"}"   # wttr's %C carries a trailing space -> trim it
@@ -414,10 +415,8 @@ weather_line() {
   [ -n "$gname" ] && wl="$gname"
   # Title-case the location ("shoreham" -> "Shoreham", "new york" -> "New York").
   wl="$(printf '%s' "$wl" | awk '{for(i=1;i<=NF;i++)$i=toupper(substr($i,1,1)) tolower(substr($i,2))}1')"
-  if [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ]; then
-    glyph="$(weather_icon "$wc")"; color="$(weather_icon_color "$wc")"
-  fi
-  printf '%s\t%s\t%s: %s %s' "$glyph" "$color" "$wl" "$wc" "$wm"
+  [ "${OVERLAY_WEATHER_ICON:-0}" = 1 ] && cond="$wc"
+  printf '%s\t%s: %s %s' "$cond" "$wl" "$wc" "$wm"
 }
 
 # 3-day daily forecast from wttr.in's JSON (j1), cached ~3h (forecasts move
@@ -681,6 +680,130 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
         printf "stroke none fill %c%s%c circle %.1f,%.1f %.1f,%.1f", 39,acc,39, cx,cy, cx,cy+3.2 }')"
       convert -size "${d}x${d}" xc:none -font DejaVu-Sans -pointsize "$(( d / 7 ))" -draw "$prog" "$out" 2>>"$LOG"
     }
+    # Which drawn icon a condition gets. Same precedence as weather_icon()
+    # ('partly' before the generic 'cloud'), but fog/mist/haze now earns its own
+    # symbol instead of borrowing the cloud.
+    wx_bucket() {  # $1=condition text -> sun|partly|cloud|rain|snow|thunder|fog
+      local c; c="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+      case "$c" in
+        *thunder*|*storm*)                        printf 'thunder' ;;
+        *snow*|*sleet*|*blizzard*|*ice*|*freez*)  printf 'snow' ;;
+        *rain*|*drizzle*|*shower*)                printf 'rain' ;;
+        *fog*|*mist*|*haze*)                      printf 'fog' ;;
+        *partly*|*partial*)                       printf 'partly' ;;
+        *overcast*|*cloud*)                       printf 'cloud' ;;
+        *clear*|*sunny*)                          printf 'sun' ;;
+        *)                                        printf 'partly' ;;
+      esac
+    }
+    # Weather icon as DRAWN vector art -> transparent PNG at $1, $2 px square.
+    # The font glyphs it replaces (☀ ☁ ☔ ❄ ⚡) render at text weight, so at any
+    # legible text size they read as smudges on a photo -- and DejaVu has no ⛅ at
+    # all, so "partly cloudy" fell back to ☼ (measured 2026-09-20, Fam1). Drawn
+    # shapes scale to whatever size we ask for, keep their weight, and can carry
+    # per-element colour (blue drops on a grey cloud, not one flat glyph).
+    #
+    # Coordinates are FRACTIONS of the box, so one geometry serves every size.
+    # Every shape is drawn OPAQUE and separation comes from draw ORDER (sun/moon,
+    # then the cloud over it, then rain/snow/bolt in front): the obvious
+    # alternative -- a translucent cloud so the sun reads through it -- seams
+    # visibly where the three puff circles overlap, and in monochrome
+    # (OVERLAY_WEATHER_ICON_COLOR=0), where every shape shares one colour, that
+    # patchwork is all you see. Opaque, the rays poking out past the cloud carry
+    # "partly" on their own.
+    draw_wx_icon() {  # $1=out $2=size(px) $3=condition [$4=night 0/1]
+      local out="$1" s="$2" cond="$3" night="${4:-0}" b mono prog k
+      [ "$s" -ge 10 ] 2>/dev/null || return 1
+      b="$(wx_bucket "$cond")"
+      mono=1; [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ] && mono=0
+      # Pure function of these inputs -> the content-addressed layer cache covers
+      # the 1-min clock re-render (this is 1 spawn, not the 3 the glyphs cost).
+      k="$(layer_key "wxicon|v1|$b|$s|$night|$mono|$TXT")"
+      tc_get "$k" "$out" && return 0
+      prog="$(awk -v S="$s" -v b="$b" -v night="$night" -v mono="$mono" -v txt="$TXT" '
+        function C(c)    { return mono ? txt : c }
+        function dot(cx,cy,r,col) {
+          printf "stroke none fill %c%s%c circle %.2f,%.2f %.2f,%.2f ",
+            q,C(col),q, cx*S,cy*S, cx*S,(cy+r)*S }
+        function bar(x1,y1,x2,y2,rad,col) {
+          printf "stroke none fill %c%s%c roundrectangle %.2f,%.2f,%.2f,%.2f,%.2f,%.2f ",
+            q,C(col),q, x1*S,y1*S,x2*S,y2*S, rad*S,rad*S }
+        function ln(x1,y1,x2,y2,w,col) {
+          printf "fill none stroke-linecap round stroke %c%s%c stroke-width %.2f line %.2f,%.2f %.2f,%.2f ",
+            q,C(col),q, w*S, x1*S,y1*S, x2*S,y2*S }
+        function poly(pts,col) {
+          printf "stroke none fill %c%s%c polygon %s ", q,C(col),q, pts }
+        # Sun: solid disc + eight rays that stop short of it.
+        function sun(cx,cy,r,   i,a) {
+          for(i=0;i<8;i++){ a=i/8*2*pi;
+            ln(cx+1.42*r*cos(a), cy+1.42*r*sin(a), cx+2.00*r*cos(a), cy+2.00*r*sin(a), 0.075*r/0.20, "#ffd23f") }
+          dot(cx,cy,r,"#ffd23f") }
+        # Crescent: one filled path (outer arc out, smaller arc back), authored in
+        # a 24-unit box and scaled by k so it can sit anywhere in the icon.
+        # ox,oy = top-left of the box (fractions of S); kf = its width (ditto).
+        function moon(ox,oy,kf,   u,x,y) {
+          u=kf*S/24; x=ox*S; y=oy*S;
+          printf "stroke none fill %c%s%c path %cM %.2f,%.2f A %.2f,%.2f 0 1 1 %.2f,%.2f A %.2f,%.2f 0 0 0 %.2f,%.2f Z%c ",
+            q,C("#e9eeff"),q, q,
+            x+21.0*u, y+12.79*u, 9.0*u,9.0*u, x+11.21*u, y+3.0*u,
+            7.0*u,7.0*u, x+21.0*u, y+12.79*u, q }
+        # Three puffs + a flat base. w = overall width; (cx,cy) = visual centre.
+        function cloud(cx,cy,w,col) {
+          dot(cx-0.28*w, cy+0.05*w, 0.22*w, col);
+          dot(cx-0.01*w, cy-0.08*w, 0.30*w, col);
+          dot(cx+0.29*w, cy+0.06*w, 0.20*w, col);
+          bar(cx-0.49*w, cy+0.02*w, cx+0.49*w, cy+0.26*w, 0.12*w, col) }
+        # Six-armed flake (three crossed strokes).
+        function flake(cx,cy,r,   i,a) {
+          for(i=0;i<3;i++){ a=i/3*pi;
+            ln(cx-r*cos(a), cy-r*sin(a), cx+r*cos(a), cy+r*sin(a), 0.042, "#dff1ff") } }
+        BEGIN{
+          pi=3.14159265; q=sprintf("%c",39);
+          if(b=="sun"){
+            if(night) moon(0.05,0.05,0.90); else sun(0.50,0.48,0.21)
+          } else if(b=="cloud"){
+            cloud(0.50,0.46,0.90,"#dfe6f0")
+          } else if(b=="partly"){
+            if(night) moon(0.44,0.00,0.54); else sun(0.70,0.30,0.155)
+            cloud(0.46,0.60,0.80,"#e3e9f2")
+          } else if(b=="rain"){
+            cloud(0.50,0.38,0.84,"#ccd6e4")
+            ln(0.38,0.70, 0.31,0.94, 0.055,"#5aa9e6")
+            ln(0.56,0.70, 0.49,0.94, 0.055,"#5aa9e6")
+            ln(0.74,0.70, 0.67,0.94, 0.055,"#5aa9e6")
+          } else if(b=="snow"){
+            cloud(0.50,0.36,0.84,"#ccd6e4")
+            flake(0.34,0.80,0.085); flake(0.58,0.88,0.085); flake(0.78,0.76,0.070)
+          } else if(b=="thunder"){
+            cloud(0.50,0.34,0.84,"#b9c4d4")
+            poly(sprintf("%.2f,%.2f %.2f,%.2f %.2f,%.2f %.2f,%.2f %.2f,%.2f %.2f,%.2f",
+              0.58*S,0.56*S, 0.34*S,0.86*S, 0.47*S,0.86*S, 0.40*S,1.00*S,
+              0.68*S,0.72*S, 0.53*S,0.72*S), "#ffe14d")
+          } else if(b=="fog"){
+            cloud(0.50,0.32,0.82,"#cfd8e3")
+            ln(0.16,0.72, 0.84,0.72, 0.062,"#cfd8e3")
+            ln(0.26,0.90, 0.76,0.90, 0.062,"#cfd8e3")
+          }
+        }')"
+      [ -n "$prog" ] || return 1
+      convert -size "${s}x${s}" xc:none -draw "$prog" "$out" 2>>"$LOG" || return 1
+      [ -s "$out" ] || return 1
+      tc_put "$k" "$out"
+    }
+    # Night = before sunrise / after sunset, near enough for an icon (the clear-sky
+    # icon becomes a crescent rather than a sun at 22:00).
+    wx_is_night() { local h; h="$(date +%-H)"; if [ "$h" -ge 20 ] || [ "$h" -lt 6 ]; then echo 1; else echo 0; fi; }
+    # Icon PNG for a condition, drawn if we can and glyph-rendered if we can't
+    # (an ImageMagick without MVG path support would fail the draw, and a weather
+    # line with no icon at all is worse than a small one).
+    wx_icon_png() {  # $1=out $2=size(px) $3=condition [$4=night]
+      local out="$1" s="$2" cond="$3" night="${4:-0}" g col
+      draw_wx_icon "$out" "$s" "$cond" "$night" && return 0
+      g="$(weather_icon "$cond")"; [ -n "$g" ] || return 1
+      if [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then col="$(weather_icon_color "$cond")"; else col="$TXT"; fi
+      convert -background none -font DejaVu-Sans -pointsize "$s" -fill "$col" \
+        label:"$g" -trim +repage "$out" 2>>"$LOG" && [ -s "$out" ]
+    }
     # Compose the forecast line PNG from the structured cache so each day's glyph
     # can take its CONDITION COLOUR (when OVERLAY_WEATHER_ICON_COLOR=1; else the
     # text colour). Each day = "label " + glyph + " hi/lo", days joined by " · ",
@@ -690,7 +813,7 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       [ -s "$struct" ] || return 1
       # ~3 convert spawns per forecast day, rebuilt every minute by the clock cron for
       # data that only moves every 3 hours. Memoise the finished strip.
-      local fk; fk="$(layer_key "fcast|$fps|$TXT|${OVERLAY_WEATHER_ICON_COLOR:-0}|$(cat "$struct" 2>/dev/null)")"
+      local fk; fk="$(layer_key "fcast|v2|$fps|$TXT|${OVERLAY_WEATHER_ICON_COLOR:-0}|$(cat "$struct" 2>/dev/null)")"
       tc_get "$fk" "$out" && return 0
       local fd="$STATEDIR/_fc.$$"; mkdir -p "$fd"
       # -trim drops whitespace, so explicit transparent spacers (not spaces in the
@@ -699,13 +822,16 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       convert -size "${g}x1"  xc:none "$fd/g.png"  2>>"$LOG"
       convert -size "${gs}x1" xc:none "$fd/gs.png" 2>>"$LOG"
       convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT" label:"·" -trim +repage "$fd/sep.png" 2>>"$LOG"
-      local n=0 label cond hi lo glyph gcol
+      # Each day's icon is DRAWN at ~1.7x the forecast text size — at text size a
+      # glyph is a smudge, and this line is read at a glance from across a room.
+      local fisz=$(( fps * 17 / 10 )); [ "$fisz" -lt 18 ] && fisz=18
+      local n=0 label cond hi lo
       while IFS=$'\t' read -r label cond hi lo; do
         [ -n "$label" ] || continue
-        glyph="$(weather_icon "$cond")"
-        if [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then gcol="$(weather_icon_color "$cond")"; else gcol="$TXT"; fi
         convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT"  label:"$label"      -trim +repage "$fd/${n}a.png" 2>>"$LOG"
-        convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$gcol" label:"$glyph"      -trim +repage "$fd/${n}b.png" 2>>"$LOG"
+        # Daytime icons throughout: each forecast day is sampled at midday.
+        wx_icon_png "$fd/${n}b.png" "$fisz" "$cond" 0 \
+          || convert -size 1x1 xc:none "$fd/${n}b.png" 2>>"$LOG"   # +append needs the file
         convert -background none -font DejaVu-Sans -pointsize "$fps" -fill "$TXT"  label:"${hi}/${lo}" -trim +repage "$fd/${n}c.png" 2>>"$LOG"
         n=$((n+1))
       done < "$struct"
@@ -770,9 +896,9 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       esac
       rm -f "$t"
     }
-    emit() {  # $1=gravity $2=role $3=text [$4=icon glyph $5=icon colour]
-      #         Build a text block (optional coloured icon prepended) then style it.
-      local g="$1" role="$2" txt="$3" icon="${4:-}" icol="${5:-}" f ps align maxw t
+    emit() {  # $1=gravity $2=role $3=text [$4=weather condition -> drawn icon]
+      #         Build a text block (optional icon prepended) then style it.
+      local g="$1" role="$2" txt="$3" cond="${4:-}" f ps align maxw t isz
       f="$(role_font "$role")"
       case "$role" in quote) ps=$BASEPS;; *) ps=$(( BASEPS * 3 / 4 ));; esac
       case "$STYLE" in
@@ -783,13 +909,13 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       if [ "$role" = quote ]; then maxw=$(( CW * 60 / 100 )); else maxw=$(( CW * 44 / 100 )); fi
       t="$STATEDIR/_ovl.$$.png"
       mktext "$t" "$f" "$ps" "$TXT" "$maxw" "$align" "$txt" || { rm -f "$t"; return 1; }
-      # Coloured icon: render the glyph in its own colour (DejaVu-Sans has the
-      # weather glyphs) and prepend it, vertically centred, with a small gap.
-      if [ -n "$icon" ] && [ -n "$icol" ]; then
+      # Drawn icon at ~2x the text size, prepended and vertically centred.
+      if [ -n "$cond" ]; then
         local icn="$STATEDIR/_icn.$$.png"
-        if convert -background none -font DejaVu-Sans -pointsize "$ps" -fill "$icol" \
-             label:"$icon" -trim +repage "$icn" 2>>"$LOG" && [ -s "$icn" ]; then
-          convert "$icn" \( -size 12x1 xc:none \) "$t" -background none -gravity center +append "$t" 2>>"$LOG"
+        isz=$(( ps * 5 / 2 )); [ "$isz" -lt 28 ] && isz=28
+        if wx_icon_png "$icn" "$isz" "$cond" "$(wx_is_night)"; then
+          convert "$icn" \( -size $(( isz / 4 ))x1 xc:none \) "$t" \
+            -background none -gravity center +append "$t" 2>>"$LOG"
         fi
         rm -f "$icn"
       fi
@@ -955,36 +1081,23 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       emit "$PG" quote "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
     fi
     if [ "${OVERLAY_WEATHER:-0}" = 1 ]; then
-      # weather_line emits "glyph<TAB>colour<TAB>text" (glyph/colour empty if icon off)
-      IFS=$'\t' read -r wicon wcolor wtext < <(weather_line)
+      # weather_line emits "condition<TAB>text" (condition empty if the icon is off)
+      IFS=$'\t' read -r wcond wtext < <(weather_line)
       if [ -n "$wtext" ]; then
         pick_grav "${WEATHER_POS:-north}" North; wgrav="$PG"
         fcast=""; [ "${OVERLAY_WEATHER_FORECAST:-0}" = 1 ] && fcast="$(weather_forecast)"
         if [ -z "$fcast" ]; then
-          # single current-conditions line (unchanged path)
-          if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then
-            emit "$wgrav" weather "$wtext" "$wicon" "$wcolor"    # coloured icon, separate
-          elif [ -n "$wicon" ]; then
-            emit "$wgrav" weather "$wicon $wtext"                # monochrome icon, inline
-          else
-            emit "$wgrav" weather "$wtext"
-          fi && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
+          # single current-conditions line — emit() draws and prepends the icon
+          emit "$wgrav" weather "$wtext" "$wcond" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
         else
           # current line + a smaller forecast line, composed into one block
           wf="$(role_font weather)"; wps=$(( BASEPS * 3 / 4 )); wmaxw=$(( CW * 52 / 100 ))
           wc1="$STATEDIR/_wxc.$$.png"; wc2="$STATEDIR/_wxf.$$.png"; wblk="$STATEDIR/_wx.$$.png"
-          if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then ctext="$wtext"; else ctext="${wicon:+$wicon }$wtext"; fi
-          if mktext "$wc1" "$wf" "$wps" "$TXT" "$wmaxw" West "$ctext"; then
-            if [ -n "$wicon" ] && [ "${OVERLAY_WEATHER_ICON_COLOR:-0}" = 1 ]; then
-              icn="$STATEDIR/_wxi.$$.png"
-              if convert -background none -font DejaVu-Sans -pointsize "$wps" -fill "$wcolor" label:"$wicon" -trim +repage "$icn" 2>>"$LOG" && [ -s "$icn" ]; then
-                convert "$icn" \( -size 12x1 xc:none \) "$wc1" -background none -gravity center +append "$wc1" 2>>"$LOG"
-              fi
-              rm -f "$icn"
-            fi
+          if mktext "$wc1" "$wf" "$wps" "$TXT" "$wmaxw" West "$wtext"; then
             # forecast line: clearly SECONDARY — smaller + slightly dimmed (so the
             # panel reads as "now" + a quiet outlook). Composed per-day so each
-            # glyph can be coloured; dimmed only lightly so the colours still read.
+            # icon can take its condition colour; dimmed only lightly so the
+            # colours still read.
             fps=$(( wps * 7 / 10 )); [ "$fps" -lt 13 ] && fps=13
             if build_forecast_strip "$wc2" "$fps"; then
               convert "$wc2" -channel A -evaluate multiply 0.85 +channel "$wc2" 2>>"$LOG"
@@ -993,6 +1106,20 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
               convert "$wc1" \( -size 1x14 xc:none \) "$wc2" -background none -gravity center -append "$wblk" 2>>"$LOG"
             else
               cp "$wc1" "$wblk" 2>>"$LOG"
+            fi
+            # The current icon is prepended to the WHOLE two-line block (not to the
+            # top line), so it can be big enough to span both and still sit
+            # centred against them — the panel then reads icon-first.
+            if [ -n "$wcond" ] && [ -s "$wblk" ]; then
+              wisz=$(identify -format '%h' "$wblk" 2>/dev/null); [ -n "$wisz" ] || wisz=$(( wps * 2 ))
+              [ "$wisz" -gt $(( wps * 3 )) ] && wisz=$(( wps * 3 ))
+              [ "$wisz" -lt $(( wps * 2 )) ] && wisz=$(( wps * 2 ))
+              icn="$STATEDIR/_wxi.$$.png"
+              if wx_icon_png "$icn" "$wisz" "$wcond" "$(wx_is_night)"; then
+                convert "$icn" \( -size $(( wisz / 5 ))x1 xc:none \) "$wblk" \
+                  -background none -gravity center +append "$wblk" 2>>"$LOG"
+              fi
+              rm -f "$icn"
             fi
             [ -s "$wblk" ] && style_block "$wgrav" weather "$wblk" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}weather"
           fi

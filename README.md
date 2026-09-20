@@ -180,11 +180,16 @@ rotate cron line where relevant, and re-renders immediately):
   **sparklines** toggle adds anti-aliased line + area trend graphs (accent
   colour) beside load/mem/rx/tx, drawn from a rolling history.
 - **Weather** — a local-weather overlay (wttr.in, no key) showing **current**
-  conditions, with a location field (title-cased on display) and an **icon** toggle
-  that prepends a condition glyph (`☀ ☁ ☼ ☔ ❄ ⚡`); a **colour** toggle renders that
-  glyph in a condition colour (gold sun, blue rain, grey cloud, …). A **forecast**
+  conditions, with a location field (title-cased on display) and an **icon**
+  toggle that prepends a **drawn** condition symbol — sun, crescent moon (after
+  20:00 / before 06:00), cloud, sun-behind-cloud, rain, snow, thunder, fog —
+  rendered as vector art at ~2.5× the text size rather than as a font glyph, so
+  it reads across a room. A **colour** toggle gives each symbol its condition
+  colours (gold sun, blue drops on a grey cloud, yellow bolt, …); with it off
+  the same shapes are drawn in the text colour. A **forecast**
   toggle adds a second, smaller line with a compact 3-day outlook
-  (`Today ☀ 24/14 · Thu ☀ 24/16 · Fri ☀ 24/17`, hi/lo °C, cached ~3h).
+  (`Today ☀ 24/14 · Thu ☀ 24/16 · Fri ☀ 24/17`, hi/lo °C, cached ~3h) — its
+  per-day icons are drawn too, at ~1.7× that line's text size.
   **Use current location** (`WEATHER_AUTO_LOCATION=1`) makes the overlay follow a
   machine that travels instead of a town pinned months ago: the location is
   resolved by IP (ipinfo.io over HTTPS, ip-api.com as a fallback), cached ~6h in
