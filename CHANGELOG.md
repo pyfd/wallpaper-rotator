@@ -5,6 +5,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-10-04 12:46 BST — cc-desktop
+
+set-wallpaper: under cron, take DISPLAY from the running desktop session instead of assuming :0
+
+### Fixed
+Cron gives the script no DISPLAY, and it assumed `:0`. An xrdp desktop is `:10` (cc-desktop), so anything needing the X display would have talked to a screen that isn't there. The XFCE wallpaper itself was unaffected, because xfconf goes over the session bus. The script now reads DISPLAY from the user's own desktop-session process (xfce4-session, cinnamon-session, mate-session, plasmashell, gnome-shell, gnome-session*). It falls back to `:0` only when none is found, and a DISPLAY that is already set wins.
+
+The process match is anchored to the program at the start of the command line. A bare `pgrep -f name` also matched the test's own shell, whose arguments contained the pattern: the negative control caught it.
+
 ## 2026-09-20 20:49 BST — Fam1
 
 weather: drawn vector icons, ~2.5x bigger, replacing the font glyphs

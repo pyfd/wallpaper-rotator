@@ -1392,7 +1392,18 @@ EOF
   fi
 fi
 
-# Cron has no session bus / display; assume the usual single-user session.
+# Cron has no session bus / display. Borrow DISPLAY from the user's running
+# desktop session: an xrdp desktop is :10, not :0 (cc-desktop, 4 Oct 2026).
+# Only when nothing is found, assume the usual single-user session.
+if [ -z "${DISPLAY:-}" ]; then
+  # Anchored to the program at the START of the command line: a bare
+  # `pgrep -f name` also matches any shell whose arguments merely contain it.
+  for _p in $(pgrep -u "$(id -u)" -f '^(/[^ ]*/)?(xfce4-session|cinnamon-session|mate-session|plasmashell|gnome-shell|gnome-session[^ ]*)( |$)' 2>/dev/null); do
+    _d="$(tr '\0' '\n' < "/proc/$_p/environ" 2>/dev/null | sed -n 's/^DISPLAY=//p' | head -1)"
+    [ -n "$_d" ] && { export DISPLAY="$_d"; break; }
+  done
+  unset _p _d
+fi
 [ -z "${DISPLAY:-}" ] && export DISPLAY=:0
 # XDG_RUNTIME_DIR holds the session-bus socket; Qt/KDE tools
 # (plasma-apply-wallpaperimage) need it and the bus path below derives from it.
