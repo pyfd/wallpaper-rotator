@@ -3,7 +3,14 @@
 All notable changes to wallpaper-rotator are recorded here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
-(`## YYYY-MM-DD HH:MM TZ — <host>`).
+(`## 2026-10-06 17:13 BST — paul-HP-ProDesk-400-G4-SFF
+
+gen-status: the web UI's filmstrip showed nothing but broken images once the pool grew past a few thousand
+
+### Fixed
+- `gen-status.sh` passed the whole pool list to `jq` as one `--argjson` argument. Linux caps a single argument at 128 KB, so once the pool passed roughly 1,700 images `jq` failed with "Argument list too long" on every run. `state.json` stopped updating, and the cron line discards errors, so nothing said so. The UI kept serving the last good list, and every thumbnail in it had since been pruned (404). The list now goes to `jq` as a file (`--slurpfile`), compact, so the pool size no longer matters.
+
+## YYYY-MM-DD HH:MM TZ — <host>`).
 
 ## 2026-10-04 12:46 BST — cc-desktop
 

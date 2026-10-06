@@ -129,11 +129,16 @@ pool_list_json() {   # paths on stdin -> [{n,ai,fav}], fav from $1
     'split("\n") | map(select(length > 0) | split("/") | last)
      | map({n: ., ai: endswith(".ai.jpg"), fav: $fav})'
 }
-pool_json="$( {
+# The pool list goes to jq as a FILE (--slurpfile below), never as an argument: one
+# argument is capped at 128 KB (MAX_ARG_STRLEN), and a pool of a few thousand images is
+# bigger than that. As an argument, jq failed with "Argument list too long" on every run,
+# state.json stopped updating, and the filmstrip showed images long since pruned (all 404).
+pool_file="$WEBDIR/pool.json.tmp"
+{
   ls -t "$POOL"/*.jpg "$POOL"/*.jpeg "$POOL"/*.png 2>/dev/null | pool_list_json false
   ls -t "$POOL"/favourites/*.jpg "$POOL"/favourites/*.jpeg "$POOL"/favourites/*.png 2>/dev/null | pool_list_json true
-} | jq -s 'add // []' )"
-[ -n "$pool_json" ] || pool_json="[]"
+} | jq -c -s 'add // []' > "$pool_file"
+[ -s "$pool_file" ] || echo '[]' > "$pool_file"
 
 # Fonts ImageMagick actually has (subset offered in Appearance).
 fonts_json="$( {
@@ -168,7 +173,7 @@ jq -n \
   --argjson pool_count "${pool_count:-0}" --argjson fav_count "${fav_count:-0}" \
   --argjson pruned "${pruned_total:-0}" --argjson miss "${dl_miss:-0}" --argjson fail "${dl_fail:-0}" \
   --argjson quote_cache "${quote_cache:-0}" --argjson quote_bag "${quote_bag:-0}" \
-  --argjson srcs "$src_json" --argjson pool "$pool_json" --argjson fonts "$fonts_json" --argjson recent "$recent_json" \
+  --argjson srcs "$src_json" --slurpfile pool "$pool_file" --argjson fonts "$fonts_json" --argjson recent "$recent_json" \
   --arg c_interval "${INTERVAL_MIN}" \
   --arg c_quote "${OVERLAY_QUOTE}" --arg c_quote_detail "${OVERLAY_QUOTE_DETAIL}" \
   --arg c_quote_theme "${QUOTE_THEME}" --arg c_quote_match "${QUOTE_MATCH_IMAGE}" --arg c_quote_pos "${QUOTE_POS}" \
@@ -191,7 +196,7 @@ jq -n \
   pool_count:$pool_count, pool_size:$pool_size, fav_count:$fav_count,
   pruned:$pruned, miss:$miss, fail:$fail,
   quote_cache:$quote_cache, quote_bag:$quote_bag,
-  srcs:$srcs, pool:$pool, fonts:$fonts, recent:$recent,
+  srcs:$srcs, pool:$pool[0], fonts:$fonts, recent:$recent,
   remote:$remote, sources:$sources,
   live:{quote:$quote_now, weather:$weather_now, weather_geo:$weather_geo_now, pulse:$pulse_now, pulse_age:$pulse_age, stats:$stats_now},
   cfg:{
@@ -211,6 +216,7 @@ jq -n \
     theme:$c_theme, web_bind:$c_web_bind
   }
 }' > "$WEBDIR/state.json.tmp" && mv "$WEBDIR/state.json.tmp" "$WEBDIR/state.json"
+rm -f "$pool_file"
 
 # --- emit the static app shell (same bytes every run) ------------------------
 favicon_svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect x="2" y="5" width="28" height="22" rx="5" fill="#14161a" stroke="#7cc4ff" stroke-width="2"/><circle cx="11" cy="12" r="3" fill="#ffd23f"/><path d="M3 25 L12 16 L18 21 L23 15 L29 25 Z" fill="#5fd17a"/></svg>'
