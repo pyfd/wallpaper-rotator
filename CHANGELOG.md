@@ -5,6 +5,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-10-14 15:53 BST — cc-desktop-2
+
+weather: the overlay was never drawn with the weather icon turned off
+
+### Fixed
+`weather_line` prints `condition<TAB>text`, with the condition left empty when the icon is off. The renderer split it with `IFS=$'\t' read -r wcond wtext`, but tab counts as IFS whitespace, so `read` dropped the empty first field. The text landed in `wcond`, `wtext` came out empty, and the weather block was skipped without any error. This has been the case since the 2026-09-20 drawn-icons change, on every machine with `OVERLAY_WEATHER_ICON=0`. The line is now split by hand. Tested with the icon off, the icon on and empty output, against the old line as a negative control.
+
 ## 2026-10-06 17:13 BST — paul-HP-ProDesk-400-G4-SFF
 
 gen-status: the web UI's filmstrip showed nothing but broken images once the pool grew past a few thousand

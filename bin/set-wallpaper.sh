@@ -1081,8 +1081,12 @@ if { [ "${OVERLAY_QUOTE:-0}" = 1 ] || [ "${OVERLAY_STATS:-0}" = 1 ] || [ "${OVER
       emit "$PG" quote "$quote" && OVERLAYS="${OVERLAYS:+$OVERLAYS+}quote"
     fi
     if [ "${OVERLAY_WEATHER:-0}" = 1 ]; then
-      # weather_line emits "condition<TAB>text" (condition empty if the icon is off)
-      IFS=$'\t' read -r wcond wtext < <(weather_line)
+      # weather_line emits "condition<TAB>text" (condition empty if the icon is off).
+      # Split by hand: tab is IFS whitespace, so `IFS=$'\t' read a b` drops an empty
+      # first field and the text lands in the condition slot (no weather drawn).
+      IFS= read -r wline < <(weather_line)
+      wcond="${wline%%$'\t'*}"; wtext="${wline#*$'\t'}"
+      [ "$wline" = "${wline#*$'\t'}" ] && { wcond=""; wtext="$wline"; }
       if [ -n "$wtext" ]; then
         pick_grav "${WEATHER_POS:-north}" North; wgrav="$PG"
         fcast=""; [ "${OVERLAY_WEATHER_FORECAST:-0}" = 1 ] && fcast="$(weather_forecast)"
