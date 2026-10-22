@@ -5,6 +5,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-10-22 10:15 BST — cc-desktop-3
+
+alert banner: the investigation prompt's dashboard links point at scb-cloud, the canonical store
+
+### Fixed
+The copy-prompt on each banner alert listed heatmap, status matrix and alert log URLs on scb-ubuntu:3000, the aggregator retired at the July cutover; anyone pasting it investigated against a stale copy. Now scb-cloud:3000.
+
 ## 2026-10-14 15:53 BST — cc-desktop-2
 
 weather: the overlay was never drawn with the weather icon turned off

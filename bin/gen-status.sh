@@ -776,7 +776,7 @@ function alertPrompt(a){
       ?'Status: the condition has CLEARED (auto-recovered) but stays listed until acked — confirm recovery and root-cause the episode.'
       :'Status: still ACTIVE.',
     '',
-    'Dashboards: heatmap http://scb-ubuntu:3000/reports/infra-heatmap/ · status matrix http://scb-ubuntu:3000/reports/infra-status/ · alert log http://scb-ubuntu:3000/reports/alert-log/',
+    'Dashboards: heatmap http://scb-cloud:3000/reports/infra-heatmap/ · status matrix http://scb-cloud:3000/reports/infra-status/ · alert log http://scb-cloud:3000/reports/alert-log/',
     '',
     'Please: (1) confirm the current reading (SSH via the existing aliases / infrastructure docs — read-only checks only); '
       +'(2) find the root cause — what tripped the check, and whether it points at the host or at the observer; '
