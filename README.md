@@ -35,7 +35,7 @@ One **image pool** (`~/Pictures/online-wallpapers/`) feeds two consumers:
 
 ```
                     ┌─ cron 10-minutely : fetch-wallpaper.sh (multi-source) → pool
-   IMAGE POOL  ◄────┼─ cron hourly      : prune to 30 newest
+   IMAGE POOL  ◄────┼─ cron hourly      : prune-pool.sh → POOL_MAX newest (+ POOL_MAX_MB cap)
    ~/Pictures/      └─ cron 10-minutely : set-wallpaper.sh → desktop (random pick)
    online-wallpapers
         │
@@ -327,7 +327,22 @@ The JSON sources (`wallhaven`, `bing`) need `jq` (installed automatically).
   top of `install.sh`, then re-run it. Or edit the substituted values at the top of
   `/usr/local/bin/fetch-wallpaper.sh` directly.
 - **Rotation/download frequency** — change the `*/10` schedules in `cron/wallpaper.cron`.
-- **Pool size** — change `tail -n +31` (keep-30).
+- **Pool size** — web UI, *Rotation & themes* card (or the config file):
+  - **Keep newest** (`POOL_MAX`, default 5000): the most images kept. 5000 is about
+    2 months with no repeat at a 10-minute rotation.
+  - **Size cap** (`POOL_MAX_MB`, default none): the most disk the pool may use.
+  - Both prune **oldest first**, hourly (`prune-pool.sh`) and straight away when you
+    change a cap. Never pruned: `favourites/`, the image on screen, the newest 12.
+    `prune-pool.sh --dry-run` lists what would go.
+  - **Shrink new images** (`POOL_SHRINK`, default off): resizes each new download
+    so it still covers the box, as the desktop crops it. Levels: `4k` (3840×2160,
+    q92), `1440hq` (2560×1440, q92), `screen` (this screen's size, q88). Only
+    images bigger than the box are touched, and a shrunk file keeps its original
+    date, so pruning order is unchanged. On a 40-image sample (3 Nov 2026) they
+    saved 62%, 77% and 89% of the bytes.
+  - Shrinking applies to **new** downloads. To shrink what's already there, run
+    `shrink-image.sh --pool` once (add `--dry-run` first to see the saving,
+    `--level` to pick a level other than the configured one).
 - **Login resolution** — auto-detected via `xrandr` (falls back to 1920×1080); override `RESOLUTION=` in `/usr/local/bin/random-login-bg.sh`.
 
 ---
@@ -352,12 +367,15 @@ wallpaper-rotator/
 ├── uninstall.sh
 ├── bin/
 │   ├── fetch-wallpaper.sh                   # multi-source pool fetcher w/ fallback (templated)
+│   ├── prune-pool.sh                        # prunes the pool to POOL_MAX / POOL_MAX_MB, oldest first (templated)
+│   ├── shrink-image.sh                      # shrink-on-fetch + one-off pool shrink (templated)
 │   ├── set-wallpaper.sh                    # DE-aware desktop wallpaper setter (templated)
 │   ├── random-login-bg.sh                  # login-image generator (templated)
 │   ├── build-gdm-greeter.sh                # rebuilds the GDM theme gresource → login bg
 │   ├── gen-status.sh                        # builds state.json + the canvas-editor app shell (templated)
 │   ├── wallpaper-web.py                      # status + control server (serve, POST /set) (templated)
 │   └── wallpaper-web.sh                     # launcher: execs the Python server (templated)
+├── tests/test-pool-controls.sh             # prune + shrink against a scratch pool
 ├── cron/wallpaper.cron                     # download + prune + rotate (templated)
 ├── systemd/user/wallpaper-web.service       # always-on web UI as a user service (templated)
 ├── autostart/random-login-bg.desktop       # refresh login image at login
@@ -366,7 +384,7 @@ wallpaper-rotator/
 ```
 
 Templated files use `@@POOL@@`, `@@SETWP@@`, `@@FETCH@@`, `@@GENSTATUS@@`,
-`@@PYBIN@@`, `@@WEB_BIN@@`, `@@LOG@@`, `@@WEBDIR@@`, `@@PORT@@`, `@@CONFIG@@`, `@@INTERVAL@@`,
+`@@PRUNE@@`, `@@PYBIN@@`, `@@WEB_BIN@@`, `@@LOG@@`, `@@WEBDIR@@`, `@@PORT@@`, `@@CONFIG@@`, `@@INTERVAL@@`,
 `@@RES@@`, `@@SOURCES@@`, `@@LOCALDIR@@`, `@@TARGET@@`, `@@RESOLUTION@@`,
 `@@USER@@` placeholders that `install.sh` substitutes per-machine. (The scripts
 guard the un-substituted form with split literals like `"@@POOL""@@"` so the

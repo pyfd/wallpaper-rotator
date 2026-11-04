@@ -36,6 +36,8 @@ if GENSTATUS.startswith("@@"): GENSTATUS = os.path.join(HERE, "gen-status.sh")
 if SETWP.startswith("@@"):     SETWP     = os.path.join(HERE, "set-wallpaper.sh")
 if FETCH.startswith("@@"):     FETCH     = os.path.join(HERE, "fetch-wallpaper.sh")
 if POOL.startswith("@@"):      POOL      = os.path.join(HOME, "Pictures/online-wallpapers")
+# Pool size controls (#1786): installed beside the fetcher, so found from it.
+PRUNE = os.path.join(os.path.dirname(FETCH), "prune-pool.sh")
 PORT = int(PORT)
 
 ALLOWED_INTERVALS = {"3", "5", "10", "15", "30", "60"}
@@ -52,6 +54,10 @@ ALLOWED_CLOCK_STYLE = {"digital", "analogue"}
 ALLOWED_CLOCK_FACE = {"classic", "minimal", "dots", "numbers"}
 ALLOWED_PULSE_TTL = {"1", "5", "15", "30"}
 ALLOWED_PULSE_MAX = {"8", "12", "16", "20", "24"}
+# Pool size controls (#1786). Keep in sync with the Rotation card in gen-status.sh.
+ALLOWED_POOL_MAX = {"300", "600", "1200", "2500", "5000", "10000"}
+ALLOWED_POOL_MAX_MB = {"0", "500", "1000", "2000", "4000", "8000"}     # 0 = no size cap
+ALLOWED_POOL_SHRINK = {"off", "4k", "1440hq", "screen"}             # levels: shrink-image.sh
 # Keep in sync with the qtheme_opts list in gen-status.sh
 ALLOWED_QUOTE_THEME = {"", "love", "life", "inspirational", "humor", "philosophy",
                        "wisdom", "happiness", "hope", "success", "romance",
@@ -65,7 +71,8 @@ CFG_KEYS = ("INTERVAL_MIN", "OVERLAY_QUOTE", "OVERLAY_QUOTE_DETAIL", "QUOTE_THEM
             "OVERLAY_CLOCK", "CLOCK_STYLE", "CLOCK_FACE", "CLOCK_POS", "CLOCK_24H",
             "CLOCK_DATE", "THEME", "AI_WALLPAPER", "AI_PROMPT", "AI_TOKEN", "AI_HORDE_KEY",
             "OVERLAY_PULSE", "PULSE_POS", "PULSE_URL", "PULSE_JQ", "PULSE_TTL",
-            "PULSE_TITLE", "PULSE_MAX", "WEB_BIND", "ALERTS_URL", "LOGIN_ROTATE", "POOL_MAX")
+            "PULSE_TITLE", "PULSE_MAX", "WEB_BIND", "ALERTS_URL", "LOGIN_ROTATE", "POOL_MAX",
+            "POOL_MAX_MB", "POOL_SHRINK")
 CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAIL": "0",
                 "QUOTE_THEME": "", "QUOTE_MATCH_IMAGE": "0",
                 "OVERLAY_STATS": "0", "QUOTE_POS": "south", "STATS_POS": "northeast",
@@ -99,21 +106,17 @@ CFG_DEFAULTS = {"INTERVAL_MIN": "10", "OVERLAY_QUOTE": "0", "OVERLAY_QUOTE_DETAI
                 # Read by random-login-bg.sh / build-gdm-greeter.sh on the --login
                 # (autostart) path only; the "Refresh now" button ignores it.
                 "LOGIN_ROTATE": "1",
-                # not a form field — config-file only. Max images kept in the
-                # pool (favourites/ excluded). The hourly cron prune and the
-                # theme/AI-change flushes cap at this; a big pool = a long
-                # no-repeat cycle (5000 ≈ 2+ months at a 10-min rotation).
-                "POOL_MAX": "5000"}
+                # Pool caps (Rotation card; #1786). prune-pool.sh enforces both,
+                # oldest first, hourly from cron and after a theme/AI flush.
+                # POOL_MAX: max images kept (favourites/ excluded); a big pool =
+                # a long no-repeat cycle (5000 ≈ 2+ months at a 10-min rotation).
+                # POOL_MAX_MB: total size cap, "0" = none.
+                "POOL_MAX": "5000", "POOL_MAX_MB": "0",
+                # Shrink-on-fetch level for NEW images (shrink-image.sh): off,
+                # 4k, 1440hq or screen. Existing images are left alone; the
+                # one-off pass is `shrink-image.sh --pool`.
+                "POOL_SHRINK": "off"}
 
-
-def pool_keep(cfg):
-    """First line number to PRUNE from a newest-first pool listing, i.e.
-    keep POOL_MAX images. `tail -n +<pool_keep> ` selects the surplus to rm."""
-    try:
-        n = int(cfg.get("POOL_MAX") or CFG_DEFAULTS["POOL_MAX"])
-    except (TypeError, ValueError):
-        n = int(CFG_DEFAULTS["POOL_MAX"])
-    return max(12, n) + 1
 
 
 def read_config():
@@ -712,7 +715,10 @@ class Handler(BaseHTTPRequestHandler):
                          "clock_face": ("CLOCK_FACE", ALLOWED_CLOCK_FACE),
                          "pulse_ttl": ("PULSE_TTL", ALLOWED_PULSE_TTL),
                          "pulse_max": ("PULSE_MAX", ALLOWED_PULSE_MAX),
-                         "interval": ("INTERVAL_MIN", ALLOWED_INTERVALS)}
+                         "interval": ("INTERVAL_MIN", ALLOWED_INTERVALS),
+                         "pool_max": ("POOL_MAX", ALLOWED_POOL_MAX),
+                         "pool_max_mb": ("POOL_MAX_MB", ALLOWED_POOL_MAX_MB),
+                         "pool_shrink": ("POOL_SHRINK", ALLOWED_POOL_SHRINK)}
                 touched = False
                 for k, vals in form.items():
                     v = vals[0]
@@ -761,13 +767,21 @@ class Handler(BaseHTTPRequestHandler):
             elif cfg["AI_WALLPAPER"] == "1" and old.get("AI_WALLPAPER") != "1":
                 _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                     "for i in 1 2 3; do %s; done; "
-                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
-                    % (FETCH, shlex.quote(POOL), SETWP, FETCH, shlex.quote(POOL), pool_keep(cfg), GENSTATUS))
+                    "%s; %s"
+                    % (FETCH, shlex.quote(POOL), SETWP, FETCH, PRUNE, GENSTATUS))
             elif set(cfg["THEME"].split()) != set((old.get("THEME") or "").split()):
                 _bg("%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                     "for i in $(seq 1 7); do %s; done; "
-                    "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
-                    % (FETCH, shlex.quote(POOL), SETWP, FETCH, shlex.quote(POOL), pool_keep(cfg), GENSTATUS))
+                    "%s; %s"
+                    % (FETCH, shlex.quote(POOL), SETWP, FETCH, PRUNE, GENSTATUS))
+            elif (cfg.get("POOL_MAX"), cfg.get("POOL_MAX_MB")) != (old.get("POOL_MAX"), old.get("POOL_MAX_MB")):
+                # A cap changed: prune to it now (a lowered cap frees the disk at
+                # once, not at the next hourly run), then refresh the pool count.
+                # The desktop is unaffected, so no re-render.
+                _bg("%s; %s" % (PRUNE, GENSTATUS))
+            elif cfg.get("POOL_SHRINK") != old.get("POOL_SHRINK"):
+                # Applies to the NEXT downloads only; nothing to redo now.
+                regen()
             elif cfg.get("LOGIN_ROTATE") != old.get("LOGIN_ROTATE"):
                 # Login-screen-only setting — the desktop wallpaper is unaffected,
                 # so skip the re-render. The login scripts read it at next login;
@@ -893,8 +907,8 @@ class Handler(BaseHTTPRequestHandler):
                     ["bash", "-c",
                      "%s; n=$(ls -t %s/*.jpg 2>/dev/null | head -1); [ -n \"$n\" ] && %s \"$n\"; "
                      "for i in 1 2 3; do %s; done; "
-                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --; %s"
-                     % (FETCH, shlex.quote(POOL), SETWP, FETCH, shlex.quote(POOL), pool_keep(cfg), GENSTATUS)],
+                     "%s; %s"
+                     % (FETCH, shlex.quote(POOL), SETWP, FETCH, PRUNE, GENSTATUS)],
                     start_new_session=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
@@ -919,9 +933,8 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 subprocess.Popen(
                     ["bash", "-c",
-                     "for i in $(seq 1 7); do %s; done; "
-                     "ls -tp %s/*.jpg 2>/dev/null | tail -n +%d | xargs -r rm --"
-                     % (FETCH, shlex.quote(POOL), pool_keep(cfg))],
+                     "for i in $(seq 1 7); do %s; done; %s"
+                     % (FETCH, PRUNE)],
                     start_new_session=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:

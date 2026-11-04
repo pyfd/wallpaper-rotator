@@ -33,6 +33,8 @@ sudo rm -f /usr/local/bin/build-gdm-greeter.sh
 sudo rm -f /etc/sudoers.d/gdm-login-bg
 sudo rm -f /usr/local/bin/set-wallpaper.sh
 sudo rm -f /usr/local/bin/fetch-wallpaper.sh
+sudo rm -f /usr/local/bin/prune-pool.sh
+sudo rm -f /usr/local/bin/shrink-image.sh
 sudo rm -f /usr/local/bin/fetch-quotes.sh
 sudo rm -f /usr/local/bin/gen-status.sh
 sudo rm -f /usr/local/bin/wallpaper-web

@@ -31,7 +31,7 @@ LOCALDIR="@@LOCALDIR@@"       # local image folder (used only if it exists + has
 CONFIG="@@CONFIG@@"
 [ "$CONFIG" = "@@CONFIG""@@" ] && CONFIG="${XDG_STATE_HOME:-$HOME/.local/state}/wallpaper-rotator/config"
 THEME=""; AI_WALLPAPER=0; AI_PROMPT=""; AI_TOKEN=""; AI_HORDE_KEY=""
-OVERLAY_QUOTE=0; QUOTE_MATCH_IMAGE=0
+OVERLAY_QUOTE=0; QUOTE_MATCH_IMAGE=0; POOL_SHRINK=off
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 # THEME may be a space-separated list (multi-theme rotation): each fetch picks
 # one at random, so the pool converges to a MIX of the selected themes.
@@ -296,6 +296,13 @@ for src in $ORDER; do
     ext="jpg"; [ "$src" = ai ] && ext="ai.jpg"
     DEST="$POOL/$(date +%s).$$.$ext"
     mv "$TMP" "$DEST"
+    # Shrink-on-fetch (POOL_SHRINK, off by default; #1786): resize the new image
+    # to the chosen level before it settles in the pool. The aHash above was
+    # taken from the full-size download and stays valid (aHash is size-blind).
+    case "${POOL_SHRINK:-off}" in
+      off|'') ;;
+      *) "$(dirname "$0")/shrink-image.sh" --level "$POOL_SHRINK" "$DEST" 2>>"$LOG" ;;
+    esac
     # Record the accepted image's fingerprint so future fetches dedup against it.
     [ -n "$CAND" ] && printf '%s\t%s\n' "$CAND" "$DEST" >> "$PHASH_INDEX"
     # Quote-linked gen: persist the quote beside its image; the renderer

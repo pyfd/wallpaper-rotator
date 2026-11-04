@@ -5,6 +5,27 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-11-04 05:21 GMT — Fam3
+
+pool size controls: a size cap, an optional shrink of new images, and the "Keep newest" count in the web UI (#1786)
+
+### Added
+- **Size cap** (`POOL_MAX_MB`, default none): the most disk the pool may use. Set in the web UI's *Rotation & themes* card, beside **Keep newest** (`POOL_MAX`, which was config-file only until now).
+- **Shrink new images** (`POOL_SHRINK`, default off): each new download is resized so it still covers the target box, as the desktop crops it. Levels: 4K (3840×2160, q92), 1440p HQ (2560×1440, q92), screen size (q88). Only images bigger than the box on both sides are touched. A shrunk file keeps its original date, so pruning order is unchanged. On a 40-image sample measured on cc-desktop (3 Nov) the levels saved 62%, 77% and 89% of the bytes.
+- `bin/prune-pool.sh` enforces both caps, oldest first: hourly from cron, after a theme or AI flush, and straight away when a cap is changed in the UI. It never prunes favourites, the image on screen or the newest 12. A pruned image's `.quote` sidecar now goes with it. `--dry-run` lists what would go.
+- `bin/shrink-image.sh --pool` shrinks what is already in the pool, once (`--dry-run` first to see the saving).
+- `tests/test-pool-controls.sh`: 27 cases against a scratch pool. Each of 7 mutants (no oldest-first, no floor, no on-screen guard, no sidecar removal, no lock, no date keep, fit instead of fill) fails at least one case.
+
+### Changed
+- The hourly prune was an inline `ls | tail | xargs rm` in the cron line, and the web UI held three more copies of it. All four now call `prune-pool.sh`.
+- Prunes take a lock. Two cap changes in quick succession ran two prunes side by side, which both logged the same files (sandbox: 33 logged, 20 removed), inflating the page's "pruned" total.
+- The settings cards are positioned by their real height, and scroll if taller than the window. A fixed 330 px guess let the taller Rotation card run off the bottom of a short window.
+
+### Fixed
+- The README said the hourly prune keeps "30 newest". It has kept `POOL_MAX` (default 5000) since September.
+
+**Deploy:** `wru` on each machine. The new cron line comes from `install.sh`, so until a machine is updated its old inline prune keeps running (count cap only).
+
 ## 2026-10-22 10:15 BST — cc-desktop-3
 
 alert banner: the investigation prompt's dashboard links point at scb-cloud, the canonical store

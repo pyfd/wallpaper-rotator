@@ -39,6 +39,10 @@ LOGIN_BIN="/usr/local/bin/random-login-bg.sh"
 BUILD_GDM_BIN="/usr/local/bin/build-gdm-greeter.sh"
 SETWP_BIN="/usr/local/bin/set-wallpaper.sh"
 FETCH_BIN="/usr/local/bin/fetch-wallpaper.sh"
+# Pool size controls (#1786). Both live beside fetch-wallpaper.sh: the fetcher
+# and the web UI find them as $(dirname FETCH)/<name>.
+PRUNE_BIN="/usr/local/bin/prune-pool.sh"
+SHRINK_BIN="/usr/local/bin/shrink-image.sh"
 FETCHQ_BIN="/usr/local/bin/fetch-quotes.sh"
 GENSTATUS_BIN="/usr/local/bin/gen-status.sh"
 CHECKALERTS_BIN="/usr/local/bin/check-alerts.sh"
@@ -240,6 +244,14 @@ sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@RES@@#${RES}#
     "$REPO_DIR/bin/fetch-wallpaper.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$FETCH_BIN"
 rm -f "$TMP"
+for pair in "prune-pool.sh:$PRUNE_BIN" "shrink-image.sh:$SHRINK_BIN"; do
+  echo "==> installing ${pair#*:}"
+  TMP="$(mktemp)"
+  sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@RES@@#${RES}#g" \
+      -e "s#@@CONFIG@@#${CONFIG_FILE}#g" "$REPO_DIR/bin/${pair%%:*}" > "$TMP"
+  sudo install -m 0755 -o root -g root "$TMP" "${pair#*:}"
+  rm -f "$TMP"
+done
 
 # Seed-burst: if the pool is thin (< SEED_MIN), top it up to SEED_TARGET now
 # rather than leaving the 10-min cron to drip-fill it (~10h to ceiling from
@@ -428,7 +440,7 @@ echo "==> installing cron jobs"
 # Rotate interval from config (preserved across re-installs; the web UI updates it).
 CFG_INTERVAL="$(grep '^INTERVAL_MIN=' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2 | tr -dc '0-9')"
 [ -n "$CFG_INTERVAL" ] || CFG_INTERVAL=10
-NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@FETCHQ@@#${FETCHQ_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@CHECKALERTS@@#${CHECKALERTS_BIN}#g" -e "s#@@INTERVAL@@#${CFG_INTERVAL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" -e "s#@@CURRENT@@#${LOG_DIR}/current#g" "$REPO_DIR/cron/wallpaper.cron")"
+NEWCRON="$(sed -e "s#@@POOL@@#${POOL}#g" -e "s#@@SETWP@@#${SETWP_BIN}#g" -e "s#@@FETCH@@#${FETCH_BIN}#g" -e "s#@@PRUNE@@#${PRUNE_BIN}#g" -e "s#@@FETCHQ@@#${FETCHQ_BIN}#g" -e "s#@@GENSTATUS@@#${GENSTATUS_BIN}#g" -e "s#@@CHECKALERTS@@#${CHECKALERTS_BIN}#g" -e "s#@@INTERVAL@@#${CFG_INTERVAL}#g" -e "s#@@LOG@@#${LOG_FILE}#g" -e "s#@@CONFIG@@#${CONFIG_FILE}#g" -e "s#@@CURRENT@@#${LOG_DIR}/current#g" "$REPO_DIR/cron/wallpaper.cron")"
 # Drop our managed block AND any legacy unwrapped wallpaper lines (pre-marker
 # manual setups) so migrating/re-running never duplicates jobs.
 # When coexisting, drop the desktop-rotate line so we never fight the other manager.

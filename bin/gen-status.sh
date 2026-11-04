@@ -37,6 +37,7 @@ OVERLAY_CLOCK=0; CLOCK_STYLE=digital; CLOCK_POS=northwest; CLOCK_24H=1; CLOCK_DA
 CLOCK_FACE=classic; AI_WALLPAPER=0; AI_PROMPT=
 OVERLAY_PULSE=0; PULSE_POS=east; PULSE_URL=; PULSE_JQ=.; PULSE_TTL=5; PULSE_TITLE=""; PULSE_MAX=20
 WEB_BIND=
+POOL_MAX=5000; POOL_MAX_MB=0; POOL_SHRINK=off
 [ -f "$CONFIG" ] && . "$CONFIG" 2>/dev/null
 
 PORT="@@PORT@@"
@@ -189,6 +190,7 @@ jq -n \
   --arg c_ai "${AI_WALLPAPER}" --arg c_ai_prompt "${AI_PROMPT}" \
   --arg c_style "${OVERLAY_STYLE}" --arg c_size "${OVERLAY_SIZE}" --arg c_text "${OVERLAY_THEME}" --arg c_font "${OVERLAY_FONT}" \
   --arg c_theme "${THEME}" --arg c_web_bind "${WEB_BIND}" \
+  --arg c_pool_max "${POOL_MAX}" --arg c_pool_max_mb "${POOL_MAX_MB}" --arg c_pool_shrink "${POOL_SHRINK}" \
 '{
   version:$version, version_id:$vid, version_host:$vhost,
   host:$host, de:$de, backend:$backend, res:$res, now:$now,
@@ -213,7 +215,8 @@ jq -n \
     pulse_jq:$c_pulse_jq, pulse_ttl:$c_pulse_ttl, pulse_title:$c_pulse_title, pulse_max:$c_pulse_max,
     ai:$c_ai, ai_prompt:$c_ai_prompt,
     style:$c_style, size:$c_size, text:$c_text, font:$c_font,
-    theme:$c_theme, web_bind:$c_web_bind
+    theme:$c_theme, web_bind:$c_web_bind,
+    pool_max:$c_pool_max, pool_max_mb:$c_pool_max_mb, pool_shrink:$c_pool_shrink
   }
 }' > "$WEBDIR/state.json.tmp" && mv "$WEBDIR/state.json.tmp" "$WEBDIR/state.json"
 rm -f "$pool_file"
@@ -288,7 +291,7 @@ button{font:inherit}
 .obj.intray{position:static;max-width:none;cursor:grab}
 .obj .bodytxt{display:block;max-height:3.1em;overflow:hidden}
 /* inspector */
-.insp{position:fixed;z-index:20;width:248px;background:rgba(15,17,23,.96);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.13);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.55);padding:13px 15px;opacity:0;pointer-events:none;transform:translateY(6px) scale(.98);transition:.18s}
+.insp{position:fixed;z-index:20;width:248px;max-height:calc(100vh - 16px);overflow-y:auto;background:rgba(15,17,23,.96);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.13);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.55);padding:13px 15px;opacity:0;pointer-events:none;transform:translateY(6px) scale(.98);transition:.18s}
 .insp.show{opacity:1;pointer-events:auto;transform:none}
 .insp h3{margin:0 0 9px;font-size:12.5px;display:flex;align-items:center;gap:8px}
 .insp h3 .auto{margin-left:auto;font-size:10px;color:var(--mut);cursor:pointer;border:1px solid #2a2f3a;border-radius:6px;padding:2px 7px}
@@ -548,6 +551,10 @@ function renderStrip(){
 
 // ── inspector ───────────────────────────────────────────────
 function cb(key,label,cfgKey){const c=S.cfg;return `<label><input type=checkbox data-set="${key}" ${c[cfgKey??key]==='1'?'checked':''}> ${label}</label>`}
+// selL: like sel, but each option is [value,label] (value saved, label shown); a
+// current value outside the list (hand-edited config) is still shown, as-is.
+function selL(key,opts,cur){if(cur&&!opts.some(o=>o[0]===cur))opts=[[cur,cur],...opts];
+  return `<select data-set="${key}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
 function sel(key,opts,cur){return `<select data-set="${key}">${opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')}</select>`}
 function inspHtml(k){
   const c=S.cfg;
@@ -593,7 +600,12 @@ function inspHtml(k){
      <div class=row><span class=lbl>Change every</span>${sel('interval',['3','5','10','15','30','60'],c.interval)}<span class=lbl>min</span></div>
      <div class=row><span class=lbl>image themes (none = any)</span></div>
      <div class=chips>${themes.map(t=>`<span class="chip ${cur.has(t)?'cur':''}" data-chip="${t}">${t}</span>`).join('')}</div>
-     <div class=row style=margin-top:8px><span class=mut>sources: ${esc(S.sources)} — wallhaven honours themes</span></div>`;
+     <div class=row style=margin-top:8px><span class=mut>sources: ${esc(S.sources)} — wallhaven honours themes</span></div>
+     <div class=row style=margin-top:10px><span class=lbl>Image pool</span><span class=mut>${S.pool_count.toLocaleString()} images · ${esc(S.pool_size)}</span></div>
+     <div class=row><span class=lbl>Keep newest</span>${selL('pool_max',[['300','300'],['600','600'],['1200','1,200'],['2500','2,500'],['5000','5,000'],['10000','10,000']],c.pool_max)}</div>
+     <div class=row><span class=lbl>Size cap</span>${selL('pool_max_mb',[['0','none'],['500','500 MB'],['1000','1 GB'],['2000','2 GB'],['4000','4 GB'],['8000','8 GB']],c.pool_max_mb)}</div>
+     <div class=row><span class=lbl>Shrink new images</span>${selL('pool_shrink',[['off','off'],['4k','4K'],['1440hq','1440p HQ'],['screen','screen size']],c.pool_shrink)}</div>
+     <div class=row><span class=mut>oldest go first; favourites are never removed</span></div>`;
   }
   if(k==='ai') return `<h3>✦ AI dreamed
      <label class=tgl><input type=checkbox data-set=ai ${c.ai==='1'?'checked':''}><span class=sw></span></label></h3>
@@ -645,7 +657,9 @@ function showInsp(k,anchor){
   let x=r.right+12, y=r.top;
   if(x+260>innerWidth) x=r.left-262;
   if(x<6)x=6;
-  y=Math.min(Math.max(8,y),innerHeight-330);
+  // clamp by the card's REAL height (was a fixed 330px: the taller Rotation card ran
+  // off the bottom of a short window); the CSS max-height scrolls anything taller.
+  y=Math.max(8,Math.min(y,innerHeight-p.offsetHeight-8));
   p.style.left=x+'px'; p.style.top=y+'px';
   p.classList.add('show');
   document.querySelectorAll('.lay').forEach(l=>l.classList.toggle('sel',l.dataset.sel===k));
