@@ -481,12 +481,12 @@ function renderLayers(){
   const c=S.cfg; let h='<h4>Overlays</h4>';
   for(const [k,o] of Object.entries(OVERLAYS)){
     const on=c[o.onKey]==='1';
-    h+=`<div class="lay ${on?'':'dim'}" data-sel="${k}">${o.ic} ${o.name}
-        <span class=eye data-eye="${k}" title="${on?'disable':'enable'}">${on?'👁':'—'}</span></div>`;
+    h+=`<div class="lay ${on?'':'dim'}" data-sel="${k}" data-usage="layer-${k}">${o.ic} ${o.name}
+        <span class=eye data-eye="${k}" data-usage="eye-${k}" title="${on?'disable':'enable'}">${on?'👁':'—'}</span></div>`;
   }
   h+='<h4>Canvas</h4>';
   for(const [k,o] of Object.entries(CANVAS_ITEMS))
-    h+=`<div class=lay data-sel="${k}">${o.ic} ${o.name}</div>`;
+    h+=`<div class=lay data-sel="${k}" data-usage="layer-${k}">${o.ic} ${o.name}</div>`;
   $('layers').innerHTML=h;
 }
 function objBody(k){
@@ -517,7 +517,7 @@ function renderObjects(){
   for(const [k,o] of Object.entries(OVERLAYS)){
     const on=c[o.onKey]==='1', pos=c[o.posKey];
     const el=document.createElement('div');
-    el.className='obj'+(on?'':' dim'); el.dataset.k=k;
+    el.className='obj'+(on?'':' dim'); el.dataset.k=k; el.dataset.usage='obj-'+k;
     const title=k==='pulse'&&c.pulse_title?esc(c.pulse_title):o.name;
     const sub=k==='pulse'&&S.live.pulse_age?' · @'+S.live.pulse_age:'';
     el.innerHTML=`<span class=on ${on?'':'style="color:var(--mut)"'}>${o.ic} ${title}${on?'':' — off'}${sub}</span><span class=bodytxt>${objBody(k)}</span>`;
@@ -540,27 +540,29 @@ function renderStrip(){
   let h='';
   for(const p of list){
     const src='/thumb?f='+encodeURIComponent(p.n)+(p.fav?'&fav=1':'');
-    h+=`<div class="fr ${p.n===cur?'cur':''}" data-img="${esc(p.n)}" data-fav="${p.fav?1:0}" title="${esc(p.n)} — click to set as wallpaper">
+    h+=`<div class="fr ${p.n===cur?'cur':''}" data-img="${esc(p.n)}" data-fav="${p.fav?1:0}" data-usage="film-use" title="${esc(p.n)} — click to set as wallpaper">
       <img loading=lazy src="${src}">
       ${p.ai?'<span class=tag>✦ ai</span>':''}${p.fav?'<span class=star>★</span>':''}
-      <div class=acts><span data-fr-act="${p.fav?'unfav':'fav'}" title="${p.fav?'remove from favourites':'keep in favourites'}">${p.fav?'✕':'★'}</span><span data-fr-act=ban title="delete">🚫</span></div></div>`;
+      <div class=acts><span data-fr-act="${p.fav?'unfav':'fav'}" data-usage="film-${p.fav?'unfav':'fav'}" title="${p.fav?'remove from favourites':'keep in favourites'}">${p.fav?'✕':'★'}</span><span data-fr-act=ban data-usage="film-ban" title="delete">🚫</span></div></div>`;
   }
   h+=`<span class=more>${S.pool_count} in pool · ${S.fav_count} kept · ${S.pool_size}</span>`;
   $('strip').innerHTML=h;
 }
 
 // ── inspector ───────────────────────────────────────────────
-function cb(key,label,cfgKey){const c=S.cfg;return `<label><input type=checkbox data-set="${key}" ${c[cfgKey??key]==='1'?'checked':''}> ${label}</label>`}
+// Every control is named for the usage beacon (#1815): data-usage="set-<key>" beside its
+// data-set. A name, never a value: nothing typed is recorded.
+function cb(key,label,cfgKey){const c=S.cfg;return `<label><input type=checkbox data-set="${key}" data-usage="set-${key}" ${c[cfgKey??key]==='1'?'checked':''}> ${label}</label>`}
 // selL: like sel, but each option is [value,label] (value saved, label shown); a
 // current value outside the list (hand-edited config) is still shown, as-is.
 function selL(key,opts,cur){if(cur&&!opts.some(o=>o[0]===cur))opts=[[cur,cur],...opts];
-  return `<select data-set="${key}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
-function sel(key,opts,cur){return `<select data-set="${key}">${opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')}</select>`}
+  return `<select data-set="${key}" data-usage="set-${key}">${opts.map(([v,l])=>`<option value="${esc(v)}" ${v===cur?'selected':''}>${esc(l)}</option>`).join('')}</select>`}
+function sel(key,opts,cur){return `<select data-set="${key}" data-usage="set-${key}">${opts.map(o=>`<option ${o===cur?'selected':''}>${o}</option>`).join('')}</select>`}
 function inspHtml(k){
   const c=S.cfg;
   const head=(o,onKey)=>`<h3>${o.ic} ${o.name}
-    ${onKey?`<label class=tgl><input type=checkbox data-set="${onKey}" ${c[onKey]==='1'?'checked':''}><span class=sw></span></label>`:''}
-    ${OVERLAYS[k]?`<span class=auto data-auto="${k}" title="let the renderer pick the calmest spot">${c[OVERLAYS[k].posKey]==='auto'?'auto ✓':'↺ auto'}</span>`:''}</h3>`;
+    ${onKey?`<label class=tgl><input type=checkbox data-set="${onKey}" data-usage="set-${onKey}" ${c[onKey]==='1'?'checked':''}><span class=sw></span></label>`:''}
+    ${OVERLAYS[k]?`<span class=auto data-auto="${k}" data-usage="auto-${k}" title="let the renderer pick the calmest spot">${c[OVERLAYS[k].posKey]==='auto'?'auto ✓':'↺ auto'}</span>`:''}</h3>`;
   if(k==='quote') return head(OVERLAYS[k],'quote')+
     `<div class=row><span class=lbl>theme</span>${sel('quote_theme',['any','love','life','inspirational','humor','philosophy','wisdom','happiness','hope','success','romance','friendship','science'],c.quote_theme||'any')}</div>
      <div class=row>${cb('quote_detail','Attribution')}</div>
@@ -570,7 +572,7 @@ function inspHtml(k){
     // The location field stays EDITABLE while auto-location is on: it is the
     // fallback used when the geo-IP lookup fails. (It must also stay enabled —
     // a disabled input isn't submitted, so a full Apply would save it as "".)
-    `<div class=row><input type=text data-set=weather_location value="${esc(c.weather_location)}" placeholder="${c.weather_auto_location==='1'?'Fallback location':'Location'}" size=12></div>
+    `<div class=row><input type=text data-set=weather_location data-usage=set-weather_location value="${esc(c.weather_location)}" placeholder="${c.weather_auto_location==='1'?'Fallback location':'Location'}" size=12></div>
      <div class=row>${cb('weather_auto_location','Use current location')}</div>
      ${c.weather_auto_location==='1'?`<div class=row><span class=mut>geo-IP · ${esc(S.live.weather_geo||'not resolved yet')}<br>locates the connection, not the machine — can be 100km out. Falls back to the location above.</span></div>`:''}
      <div class=row>${cb('weather_icon','Icon')}${cb('weather_icon_color','Colour')}${cb('weather_forecast','Forecast')}</div>`;
@@ -581,11 +583,11 @@ function inspHtml(k){
     `<div class=row>${sel('clock_style',['analogue','digital'],c.clock_style)}<span class=lbl>face</span>${sel('clock_face',['classic','minimal','dots','numbers'],c.clock_face)}</div>
      <div class=row>${cb('clock_24h','24h')}${cb('clock_date','Date')}</div>`;
   if(k==='pulse') return head(OVERLAYS[k],'pulse')+
-    `<div class=row><span class=lbl>title</span><input type=text data-set=pulse_title value="${esc(c.pulse_title)}" size=12>
+    `<div class=row><span class=lbl>title</span><input type=text data-set=pulse_title data-usage=set-pulse_title value="${esc(c.pulse_title)}" size=12>
        <span class=lbl>every</span>${sel('pulse_ttl',['1','5','15','30'],c.pulse_ttl)}<span class=lbl>min</span>
        <span class=lbl>max lines</span>${sel('pulse_max',['8','12','16','20','24'],c.pulse_max)}</div>
-     <div class=row><span class=lbl>URL</span><input type=text class=wide data-set=pulse_url value="${esc(c.pulse_url)}" placeholder="https://host/api or file:///path.json"></div>
-     <div class=row><span class=lbl>template</span><input type=text class=wide data-set=pulse_jq value="${esc(c.pulse_jq)}" placeholder=".display[] (sectioned) or .lines_kv[]"></div>
+     <div class=row><span class=lbl>URL</span><input type=text class=wide data-set=pulse_url data-usage=set-pulse_url value="${esc(c.pulse_url)}" placeholder="https://host/api or file:///path.json"></div>
+     <div class=row><span class=lbl>template</span><input type=text class=wide data-set=pulse_jq data-usage=set-pulse_jq value="${esc(c.pulse_jq)}" placeholder=".display[] (sectioned) or .lines_kv[]"></div>
      <div class=row><button class=bbtn id=pulse-test>Test</button></div>
      <pre id=pulse-pre>${esc(S.live.pulse||'(no data yet)')}</pre>`;
   if(k==='appearance') return `<h3>🎨 Appearance</h3>
@@ -599,7 +601,7 @@ function inspHtml(k){
     return `<h3>🗂 Rotation & themes</h3>
      <div class=row><span class=lbl>Change every</span>${sel('interval',['3','5','10','15','30','60'],c.interval)}<span class=lbl>min</span></div>
      <div class=row><span class=lbl>image themes (none = any)</span></div>
-     <div class=chips>${themes.map(t=>`<span class="chip ${cur.has(t)?'cur':''}" data-chip="${t}">${t}</span>`).join('')}</div>
+     <div class=chips>${themes.map(t=>`<span class="chip ${cur.has(t)?'cur':''}" data-chip="${t}" data-usage="theme-${t}">${t}</span>`).join('')}</div>
      <div class=row style=margin-top:8px><span class=mut>sources: ${esc(S.sources)} — wallhaven honours themes</span></div>
      <div class=row style=margin-top:10px><span class=lbl>Image pool</span><span class=mut>${S.pool_count.toLocaleString()} images · ${esc(S.pool_size)}</span></div>
      <div class=row><span class=lbl>Keep newest</span>${selL('pool_max',[['300','300'],['600','600'],['1200','1,200'],['2500','2,500'],['5000','5,000'],['10000','10,000']],c.pool_max)}</div>
@@ -608,17 +610,18 @@ function inspHtml(k){
      <div class=row><span class=mut>oldest go first; favourites are never removed</span></div>`;
   }
   if(k==='ai') return `<h3>✦ AI dreamed
-     <label class=tgl><input type=checkbox data-set=ai ${c.ai==='1'?'checked':''}><span class=sw></span></label></h3>
-     <div class=row><input type=text class=wide data-set=ai_prompt value="${esc(c.ai_prompt)}" placeholder="extra style words (optional)"></div>
+     <label class=tgl><input type=checkbox data-set=ai data-usage=set-ai ${c.ai==='1'?'checked':''}><span class=sw></span></label></h3>
+     <div class=row><input type=text class=wide data-set=ai_prompt data-usage=set-ai_prompt value="${esc(c.ai_prompt)}" placeholder="extra style words (optional)"></div>
      <div class=row><span class=mut>prompts build from time · season · weather · theme${c.quote_match==='1'?' · quote':''}</span></div>
      <div class=row><button class=bbtn id=dream2>✦ Dream now</button></div>`;
   if(k==='system') return `<h3>⚙ Status & remote</h3>
-     <div class=row><label class=tgl><input type=checkbox data-set=web_bind ${c.web_bind?'checked':''}><span class=sw></span></label>
-       <span class=lbl>tailnet access${S.remote?` — <a style="color:var(--acc)" href="${esc(S.remote)}">${esc(S.remote)}</a>`:''}</span></div>
+     <div class=row><label class=tgl><input type=checkbox data-set=web_bind data-usage=set-web_bind ${c.web_bind?'checked':''}><span class=sw></span></label>
+       <span class=lbl>tailnet access${S.remote?` — <a style="color:var(--acc)" href="${esc(S.remote)}" data-usage=tailnet-link>${esc(S.remote)}</a>`:''}</span></div>
      <div class=row><span class=mut>v${esc(S.version)} · ${esc(S.de)} · ${esc(S.backend)}<br>
        rotate ${esc(S.rotate_when)} · download ${esc(S.dl_when)}<br>
        pruned ${S.pruned} · miss ${S.miss} / fail ${S.fail}<br>
        sources: ${Object.entries(S.srcs).map(([a,b])=>a+' '+b).join(' · ')}</span></div>
+     <div class=row><span class=lbl>Page use</span><span class=mut id=use-body>${USE_HTML||'loading…'}</span></div>
      <pre>${(S.recent||[]).slice(0,8).map(esc).join('\n')}</pre>`;
   if(k==='login') return `<h3>🔐 Login background</h3>
      <div id=loginbg-body class=mut>loading…</div>`;
@@ -643,16 +646,31 @@ async function loadLoginBg(){
       <div class=row><span class=lbl>image</span><span class=mut>${d.current_img?esc(d.current_img):'—'}</span></div>
       <div class=row><span class=lbl>refreshed</span><span class=mut>${when}</span></div>
       ${d.has_preview?`<div class=row><img src="/loginbg.jpg?t=${d.target_mtime||Date.now()}" alt="login background" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.12);display:block"></div>`:''}
-      <div class=row><label class=tgl><input type=checkbox data-set=login_rotate ${d.rotate?'checked':''}><span class=sw></span></label><span class=lbl>Randomise on each login</span></div>
+      <div class=row><label class=tgl><input type=checkbox data-set=login_rotate data-usage=set-login_rotate ${d.rotate?'checked':''}><span class=sw></span></label><span class=lbl>Randomise on each login</span></div>
       <div class=row><span class=mut>${d.rotate?'A fresh image is picked at every login.':'The login image stays fixed until you refresh.'}</span></div>
       <div class=row><button class=bbtn id=loginbg-refresh>↻ Refresh now</button></div>`;
   }catch(e){ el.innerHTML=`<span class=mut>couldn't load login-bg state: ${esc(e.message)}</span>`; }
+}
+// Page use (#1815): this page's own use on this machine, from /health.json (the
+// usage beacon's store). Fetched when the Status card opens, at most once a minute.
+let USE_HTML='', USE_AT=0;
+async function loadUse(){
+  if(Date.now()-USE_AT<60000) return; USE_AT=Date.now();
+  try{
+    const u=await (await fetch('/health.json')).json();
+    const top=(u.controls||[]).slice(0,4).map(([k,n])=>esc(k)+' '+n).join(' · ');
+    USE_HTML=`${u.page_loads} loads · ${u.views} views · ${u.focus_min} min on screen in ${u.days} days`+
+      (top?`<br>most used: ${top}`:'')+
+      ((u.usage_quiet||[]).length?`<br><span style="color:var(--bad)">⚠ ${esc(u.usage_quiet[0])}</span>`:'');
+  }catch(e){ USE_HTML=`couldn't load: ${esc(e.message)}`; }
+  const el=$('use-body'); if(el) el.innerHTML=USE_HTML;
 }
 let inspFor=null;
 function showInsp(k,anchor){
   inspFor=k;
   const p=$('insp'); p.innerHTML=inspHtml(k);
   if(k==='login') loadLoginBg();
+  if(k==='system') loadUse();
   const r=anchor.getBoundingClientRect();
   let x=r.right+12, y=r.top;
   if(x+260>innerWidth) x=r.left-262;
@@ -745,6 +763,7 @@ document.addEventListener('pointerup',e=>{
   const k=o.dataset.k, ov=OVERLAYS[k];
   if(moved && o.dataset.z!==undefined){
     const pos=ZONES[+o.dataset.z];
+    if(window.__usageNote) window.__usageNote('drag-'+k);   // a move, not a click (#1815)
     if(S.cfg[ov.posKey]!==pos) setone({[ov.posKey]:pos},`${ov.name} → ${pos}`);
   } else showInsp(k,o);
   if(renderQueued){renderQueued=false; render()}   // state that arrived mid-drag (setone has pinned the drop by now)

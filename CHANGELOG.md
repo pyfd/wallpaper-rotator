@@ -5,6 +5,20 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 Entry headers carry the date + local time + machine the change was made on
 (`## YYYY-MM-DD HH:MM TZ — <host>`).
 
+## 2026-11-07 11:02 GMT — cc-desktop
+
+page use: the web UI records how it's used, like every other page we serve (#1815)
+
+### Added
+- **The usage beacon on every page.** The server adds the shared beacon and its namer to every HTML response (one place, so a new page can't ship without them). They're vendored in `web/vendor/` (`scripts/vendor-usage-beacon.sh` refreshes them), installed to the web dir and served at `/vendor/`. The beacon reports time on screen and which controls were used to `POST /seen`. Nothing typed is recorded: controls are named, never their values.
+- **A store per machine**: `usage.db` in the state dir. `page_views` gets one row per page load. `usage_events` gets one row per page view the beacon reported, keeping the largest figures, so a repeat or late beacon can't lower them. Each row says who: `claude` (a Claude-in-Chrome tab, `by=claude`), `automation` (a script's user-agent) or `human`. Rows older than a year are pruned.
+- **`GET /health.json`**: a person's use over 30 days (page loads, views, minutes on screen, most-used controls) and `usage_quiet`, which says so when a person loaded the page 3+ times in 7 days and no beacon row came back.
+- **Page use** line in the *Status & remote* card, read from `/health.json`.
+- Every control the page acts on now carries a `data-usage` name (`set-<key>`, `layer-`, `eye-`, `auto-`, `theme-`, `film-use/fav/unfav/ban`, `obj-`), and a drag of an overlay counts as `drag-<overlay>`.
+- `tests/test_usage.py` (14 cases). It walks every GET route the server answers, read from `do_GET` itself rather than a file glob, and checks each HTML one carries exactly one beacon tag. It also covers the store, who made each row, the quiet check, the prune, the control names, and the vendored copies against upstream, byte for byte (`WR_NO_UPSTREAM=1` skips that check where the upstream repos aren't cloned).
+
+**Deploy:** `wru` on each machine. The page starts recording from that machine's update.
+
 ## 2026-11-04 05:21 GMT — Fam3
 
 pool size controls: a size cap, an optional shrink of new images, and the "Keep newest" count in the web UI (#1786)

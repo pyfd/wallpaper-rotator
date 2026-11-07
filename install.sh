@@ -375,6 +375,10 @@ TMP="$(mktemp)"
 sed -e "s#@@PYBIN@@#${PYBIN}#g" "$REPO_DIR/bin/wallpaper-web.sh" > "$TMP"
 sudo install -m 0755 -o root -g root "$TMP" "$WEB_BIN"
 rm -f "$TMP"
+# The usage beacon + its namer (#1815), vendored in web/vendor/ and served by the
+# control server at /vendor/; it records page use in the state dir's usage.db.
+mkdir -p "$WEBDIR/vendor"
+install -m 0644 "$REPO_DIR/web/vendor/usage-beacon.js" "$REPO_DIR/web/vendor/usage-names.js" "$WEBDIR/vendor/"
 "$GENSTATUS_BIN" 2>/dev/null || true   # generate the page once now
 
 # Always-on: systemd user service (auto-starts at login, restarts on crash).

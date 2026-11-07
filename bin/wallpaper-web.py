@@ -15,7 +15,8 @@
 # @@...@@ placeholders are substituted by install.sh; falls back to XDG defaults
 # when run from a raw checkout (guarded by the "@@" prefix check, which the
 # substitution can't reproduce).
-import os, re, shlex, shutil, subprocess, threading, time, json, urllib.parse, urllib.request
+import os, re, shlex, shutil, sqlite3, subprocess, threading, time, json, urllib.parse, urllib.request
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WEBDIR    = "@@WEBDIR@@"
@@ -366,8 +367,203 @@ def login_bg_state():
     }
 
 
+# ── Page use (#1815) ───────────────────────────────────────────────────────
+# Every page we serve records its own use (the house pattern, cldev
+# USAGE_TRACKING.md §3): the shared beacon (web/vendor/, vendored by
+# scripts/vendor-usage-beacon.sh) reports time on screen and which controls were
+# used, and the server counts page loads so a beacon that stops reporting shows
+# (usage_quiet). _send adds the tags to every HTML response, so a new page can't
+# ship without them. The store is this machine's own (STATE/usage.db): the page
+# is per machine on 127.0.0.1, with no central server behind it.
+#   page_views    one row per HTML page load (GET), with who loaded it
+#   usage_events  one row per page view the beacon reported, keyed by its view id;
+#                 later beacons for the same view raise it (the largest cumulative
+#                 figures are kept, so duplicates and out-of-order delivery are harmless)
+# Rows older than USAGE_KEEP_DAYS are pruned (at most once a day). Nothing typed
+# is recorded: the beacon names controls by structure, never by value.
+USAGE_DB = os.path.join(STATE, "usage.db")
+USAGE_KEEP_DAYS = 365
+QUIET_DAYS, QUIET_MIN_VIEWS = 7, 3
+SEEN_PATH = "/seen"          # no usage/metrics/event/track word: filter lists block those (SJ, 19 Oct)
+VENDOR_DIRS = (os.path.join(WEBDIR, "vendor"), os.path.join(HERE, "..", "web", "vendor"))
+USAGE_JS = {"/vendor/usage-names.js": "usage-names.js", "/vendor/usage-beacon.js": "usage-beacon.js"}
+# The namer loads first: it listens on window, before the beacon's document listener.
+BEACON_TAGS = (b'<script src="/vendor/usage-names.js"></script>'
+               b'<script src="/vendor/usage-beacon.js" data-usage-beacon data-endpoint="' + SEEN_PATH.encode() + b'"></script>')
+ACTORS = ("human", "claude", "automation")
+AUTOMATION_UA = re.compile(
+    r"headlesschrome|puppeteer|playwright|selenium|phantomjs|lighthouse|curl|wget|python-requests|python-urllib|httpx|"
+    r"node-fetch|undici|go-http-client|bot\b|spider", re.I)
+VIEW_ID = re.compile(r"[A-Za-z0-9-]{8,64}")
+MAX_VIEW_ROWS = 10
+_last_prune = 0.0
+
+
+def with_beacon(body):
+    """An HTML page (bytes) with the beacon's two tags before its last </body>; once only."""
+    if b"data-usage-beacon" in body:
+        return body
+    i = body.rfind(b"</body>")
+    return body + BEACON_TAGS if i < 0 else body[:i] + BEACON_TAGS + body[i:]
+
+
+def _utc(dt=None):
+    return (dt or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def usage_connect():
+    os.makedirs(os.path.dirname(USAGE_DB), exist_ok=True)
+    con = sqlite3.connect(USAGE_DB, timeout=5)
+    con.row_factory = sqlite3.Row
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS page_views (
+            id INTEGER PRIMARY KEY, path TEXT NOT NULL, actor TEXT NOT NULL, ua TEXT,
+            added TEXT NOT NULL, updated TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS page_views_added ON page_views(added);
+        CREATE TABLE IF NOT EXISTS usage_events (
+            id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'view', view_id TEXT NOT NULL UNIQUE,
+            path TEXT NOT NULL, ms INTEGER NOT NULL DEFAULT 0, detail TEXT, actor TEXT NOT NULL, ua TEXT,
+            added TEXT NOT NULL, updated TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS usage_events_updated ON usage_events(updated);
+    """)
+    return con
+
+
+def actor_for(claimed, ua):
+    """'claude' when the tab says so (Claude-in-Chrome's by=claude, the only value a
+    browser may claim), 'automation' by user-agent, else 'human'."""
+    if claimed == "claude":
+        return "claude"
+    if not ua or AUTOMATION_UA.search(ua):
+        return "automation"
+    return "human"
+
+
+def claimed_by(path):
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(path or "").query)
+    return "claude" if q.get("by") == ["claude"] else None
+
+
+def _count(v, hi):
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
+        return None
+    return int(max(0, min(hi, v)))
+
+
+def view_rows(b):
+    """The shared beacon's payload ({rows: [{kind: 'view', session, path, focus_ms,
+    actions, detail, load_ms, actor}]}) as (view_id, path, focus_ms, detail, claimed
+    actor) tuples; [] when it isn't one (the whole body is refused, not part of it)."""
+    rows = b.get("rows") if isinstance(b, dict) else None
+    if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_VIEW_ROWS:
+        return []
+    out = []
+    for r in rows:
+        if not isinstance(r, dict) or r.get("kind") != "view":
+            return []
+        vid, path = r.get("session"), r.get("path")
+        if not isinstance(vid, str) or not VIEW_ID.fullmatch(vid) or not isinstance(path, str) or not path.startswith("/"):
+            return []
+        focus = _count(r.get("focus_ms", 0), 86_400_000)
+        actions = _count(r.get("actions", 0), 100_000)
+        if focus is None or actions is None:
+            return []
+        controls = r.get("detail")
+        controls = ({str(k)[:60]: _count(n, 100_000) or 0 for k, n in list(controls.items())[:60]}
+                    if isinstance(controls, dict) else None)
+        load = _count(r.get("load_ms"), 600_000) if r.get("load_ms") is not None else None
+        detail = {"actions": actions}
+        if controls:
+            detail["controls"] = controls
+        if load is not None:
+            detail["load_ms"] = load
+        out.append((vid, path[:300], focus, detail, r.get("actor")))
+    return out
+
+
+def _prune(con):
+    global _last_prune
+    if time.time() - _last_prune < 86400:
+        return
+    _last_prune = time.time()
+    cut = _utc(datetime.now(timezone.utc) - timedelta(days=USAGE_KEEP_DAYS))
+    con.execute("DELETE FROM page_views WHERE added < ?", (cut,))
+    con.execute("DELETE FROM usage_events WHERE updated < ?", (cut,))
+
+
+def record_page_view(path, ua):
+    try:
+        con = usage_connect()
+        t = _utc()
+        with con:
+            con.execute("INSERT INTO page_views (path, actor, ua, added, updated) VALUES (?,?,?,?,?)",
+                        (path[:300], actor_for(claimed_by(path), ua), ua[:300], t, t))
+            _prune(con)
+        con.close()
+    except Exception:   # usage tracking never breaks the page
+        pass
+
+
+def record_views(rows, ua):
+    """Write the beacon's view rows: a new view is inserted; a known one keeps the
+    larger focus time and the detail with more actions (first actor and load time stand)."""
+    con = usage_connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")   # a view's beacons can arrive together: never insert one twice
+        t = _utc()
+        for vid, path, focus, detail, claimed in rows:
+            old = con.execute("SELECT id, detail FROM usage_events WHERE view_id=?", (vid,)).fetchone()
+            if old is None:
+                con.execute("INSERT INTO usage_events (kind, view_id, path, ms, detail, actor, ua, added, updated) "
+                            "VALUES ('view',?,?,?,?,?,?,?,?)",
+                            (vid, path, focus, json.dumps(detail), actor_for(claimed, ua), ua[:300], t, t))
+            else:
+                was = json.loads(old["detail"] or "{}")
+                keep = dict(detail if detail["actions"] > was.get("actions", 0) else was)
+                if "load_ms" in was:
+                    keep["load_ms"] = was["load_ms"]
+                con.execute("UPDATE usage_events SET ms=MAX(ms, ?), detail=?, updated=? WHERE id=?",
+                            (focus, json.dumps(keep), t, old["id"]))
+        con.commit()
+    finally:
+        con.close()
+
+
+def usage_summary(days=30, at=None):
+    """What /health.json answers: a person's use of the page over `days`, and
+    usage_quiet (page loads by a person with no beacon row: clicks and time on
+    screen aren't being recorded). Read by the page's own Use line and by
+    cldev scripts/page-tracking-check."""
+    at = at or datetime.now(timezone.utc)
+    con = usage_connect()
+    try:
+        since = _utc(at - timedelta(days=days))
+        qsince = _utc(at - timedelta(days=QUIET_DAYS))
+        loads = con.execute("SELECT COUNT(*) FROM page_views WHERE actor='human' AND added>=?", (since,)).fetchone()[0]
+        rows = con.execute("SELECT ms, detail FROM usage_events WHERE actor='human' AND updated>=?", (since,)).fetchall()
+        qloads = con.execute("SELECT COUNT(*) FROM page_views WHERE actor='human' AND added>=?", (qsince,)).fetchone()[0]
+        qrows = con.execute("SELECT COUNT(*) FROM usage_events WHERE actor='human' AND updated>=?", (qsince,)).fetchone()[0]
+        last = con.execute("SELECT MAX(updated) FROM usage_events WHERE actor='human'").fetchone()[0]
+    finally:
+        con.close()
+    controls = {}
+    for r in rows:
+        for k, n in (json.loads(r["detail"] or "{}").get("controls") or {}).items():
+            controls[k] = controls.get(k, 0) + n
+    quiet = []
+    if qloads >= QUIET_MIN_VIEWS and not qrows:
+        quiet.append(f"usage beacon quiet: {qloads} page loads by a person in {QUIET_DAYS} days and no beacon row "
+                     f"(clicks and time on screen aren't being recorded)")
+    return {"days": days, "page_loads": loads, "views": len(rows),
+            "focus_min": round(sum(r["ms"] for r in rows) / 60000, 1),
+            "controls": sorted(controls.items(), key=lambda kv: -kv[1])[:8],
+            "last_view": last, "usage_quiet": quiet}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, ctype, body):
+        if code == 200 and ctype.startswith("text/html"):
+            body = with_beacon(body)      # every HTML page carries the beacon (#1815)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -503,13 +699,49 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, "text/plain", b"not found"); return
             fn = os.path.join(POOL, "favourites", name)
             ctype = "image/png" if name.lower().endswith(".png") else "image/jpeg"
+        elif path in USAGE_JS:                    # the vendored beacon + namer (#1815)
+            ctype = "text/javascript; charset=utf-8"
+            fn = next((p for p in (os.path.join(d, USAGE_JS[path]) for d in VENDOR_DIRS) if os.path.isfile(p)),
+                      os.path.join(VENDOR_DIRS[0], USAGE_JS[path]))
+        elif path == "/health.json":              # page use + usage_quiet (#1815)
+            try:
+                body = json.dumps(usage_summary()).encode()
+            except Exception as e:
+                self._send(500, "application/json", json.dumps({"error": str(e)[:200]}).encode()); return
+            self._send(200, "application/json; charset=utf-8", body); return
         else:
             self._send(404, "text/plain", b"not found"); return
         try:
             with open(fn, "rb") as f:
-                self._send(200, ctype, f.read())
+                body = f.read()
         except FileNotFoundError:
-            self._send(404, "text/plain", b"not generated yet")
+            self._send(404, "text/plain", b"not generated yet"); return
+        if ctype.startswith("text/html"):
+            record_page_view(self.path, self.headers.get("User-Agent") or "")
+        self._send(200, ctype, body)
+
+    def _seen(self):
+        """POST /seen: the usage beacon's view rows (#1815). Writes them if the body
+        is well formed, then answers 204 whatever it held. Written before the
+        answer (the bike finder answers first): a local SQLite write is a few ms,
+        sendBeacon never waits on the reply, and a reader straight after the
+        answer then always sees the row. Never a page_views row (the beacon
+        would count itself)."""
+        try:
+            ln = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            ln = 0
+        raw = self.rfile.read(ln) if 0 < ln <= 8192 else b""
+        if ln > 8192:
+            self.close_connection = True   # the unread body would be parsed as the next request
+        try:
+            rows = view_rows(json.loads(raw.decode("utf-8")))
+            if rows:
+                record_views(rows, self.headers.get("User-Agent") or "")
+        except Exception:   # usage tracking never breaks the page
+            pass
+        self.send_response(204)
+        self.end_headers()
 
     def _done(self, do_regen=True):
         """Regenerate the page and bounce to / (fetch() follows and gets fresh HTML).
@@ -541,7 +773,9 @@ class Handler(BaseHTTPRequestHandler):
         # to accept cross-site. See same_origin().
         if not same_origin(self):
             self._send(403, "text/plain", b"cross-site request rejected"); return
-        if path == "/next":                       # rotate now
+        if path == SEEN_PATH:                     # the usage beacon (#1815)
+            self._seen(); return
+        if path == "/next":                      # rotate now
             self._setwp()
             self._done(do_regen=False); return
         if path == "/ack":                        # acknowledge an infra alert
