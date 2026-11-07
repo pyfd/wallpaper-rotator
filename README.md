@@ -165,6 +165,25 @@ systemd user session — just call the launcher directly:
 wallpaper-web                       # -> http://127.0.0.1:8787  (Ctrl-C to stop)
 ```
 
+**Page use (recorded on this machine only).** The web UI records how it is used, so a
+control nobody touches can be found and retired. A small script (`web/vendor/usage-beacon.js`, with
+`usage-names.js`), added by the server to every page it sends, reports **time on screen** (visible and
+not idle) and **which controls were used, by name** (`set-interval`, `film-use`, `drag-clock`…). It
+never sends what was typed, or any value. Rows go to `POST /seen` and land in
+`~/.local/state/wallpaper-rotator/usage.db` (SQLite: `page_views`, one row per page load;
+`usage_events`, one row per page view). Each row says who made it: `human`, `automation` (a script's
+user-agent) or `claude` (a tab opened with `?by=claude`). Rows older than a year are pruned. Nothing
+leaves the machine. Read it in the *Status & remote* card (**Page use**), or:
+
+```bash
+curl -s http://127.0.0.1:8787/health.json   # 30 days: page loads, views, minutes on screen, top controls
+```
+
+`usage_quiet` in that reply is non-empty when a person loaded the page 3+ times in 7 days and no
+beacon row came back: the script is being blocked or has broken. A tab that stays open reports when
+it is hidden or closed, and every 2 minutes while in use, so a fresh click shows up within 2 minutes.
+`uninstall.sh --purge` deletes the database with the rest of the state.
+
 **What the inspectors control** (each change writes the config, rewrites the
 rotate cron line where relevant, and re-renders immediately):
 
@@ -373,9 +392,12 @@ wallpaper-rotator/
 │   ├── random-login-bg.sh                  # login-image generator (templated)
 │   ├── build-gdm-greeter.sh                # rebuilds the GDM theme gresource → login bg
 │   ├── gen-status.sh                        # builds state.json + the canvas-editor app shell (templated)
-│   ├── wallpaper-web.py                      # status + control server (serve, POST /set) (templated)
+│   ├── wallpaper-web.py                      # status + control server (serve, POST /set; page use: /seen, /health.json) (templated)
 │   └── wallpaper-web.sh                     # launcher: execs the Python server (templated)
+├── web/vendor/                             # usage-beacon.js + usage-names.js: vendored, do not edit below the sentinel
+├── scripts/vendor-usage-beacon.sh          # re-vendors web/vendor/ from upstream
 ├── tests/test-pool-controls.sh             # prune + shrink against a scratch pool
+├── tests/test_usage.py                     # page use: every HTML route carries the beacon, the store, the names, drift
 ├── cron/wallpaper.cron                     # download + prune + rotate (templated)
 ├── systemd/user/wallpaper-web.service       # always-on web UI as a user service (templated)
 ├── autostart/random-login-bg.desktop       # refresh login image at login
