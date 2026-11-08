@@ -123,13 +123,10 @@ if printf '%s' "$DM" | grep -qi lightdm || command -v lightdm >/dev/null 2>&1; t
   esac
   echo "    display manager: LightDM (greeter conf: $GREETER_CONF)"
 elif printf '%s' "$DM" | grep -qi gdm || command -v gdm3 >/dev/null 2>&1 || command -v gdm >/dev/null 2>&1; then
-  if command -v gresource >/dev/null 2>&1 && command -v glib-compile-resources >/dev/null 2>&1; then
-    GDM_GREETER=1
-    echo "    display manager: GDM (login background via gresource rebuild)"
-  else
-    echo "    display manager: GDM — login background needs glib-compile-resources;"
-    echo "      install 'libglib2.0-dev-bin' (+ libglib2.0-bin) then re-run, skipping for now"
-  fi
+  # The gresource tools are installed in step 4 if missing (a fresh Zorin 18 lacks
+  # glib-compile-resources; skipping here used to drop the login half silently).
+  GDM_GREETER=1
+  echo "    display manager: GDM (login background via gresource rebuild)"
 else
   echo "    display manager: ${DM:-unknown} — login background NOT supported, will skip (desktop rotation still works)"
 fi
@@ -193,6 +190,14 @@ ensure_pkg crontab  cron        cronie      cronie      cron
 ensure_pkg jq       jq          jq          jq          jq          # JSON parse for wallhaven/bing sources
 ensure_pkg python3  python3     python3     python3     python3     # local status web UI (wallpaper-web)
 case "$DE" in *xfce*) ensure_pkg xfconf-query xfconf xfconf xfconf xfconf ;; esac
+if [ -n "$GDM_GREETER" ]; then   # GDM login background: rebuilds the shell theme gresource
+  ensure_pkg gresource              libglib2.0-bin     glib2       glib2 glib2-tools || true
+  ensure_pkg glib-compile-resources libglib2.0-dev-bin glib2-devel glib2 glib2-devel || true
+  if ! command -v gresource >/dev/null 2>&1 || ! command -v glib-compile-resources >/dev/null 2>&1; then
+    GDM_GREETER=""
+    echo "    WARNING: GDM login background SKIPPED: gresource/glib-compile-resources still missing" >&2
+  fi
+fi
 # KDE Plasma sets the wallpaper via plasma-apply-wallpaperimage (ships with
 # plasma-workspace, so normally already present) or a qdbus fallback. We don't
 # pull a package for it — just warn if neither is available.
