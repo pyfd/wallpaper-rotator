@@ -64,7 +64,7 @@ One **image pool** (`~/Pictures/online-wallpapers/`) feeds two consumers:
 | Display manager | Login background |
 |-----------------|:----------------:|
 | **LightDM** (gtk or slick greeter) | ✅ supported (`background=` greeter key) |
-| **GDM** (GNOME) | ✅ supported (rebuilt theme gresource — needs `libglib2.0-dev-bin`) |
+| **GDM** (GNOME) | ✅ supported (rebuilt theme gresource; `install.sh` installs `libglib2.0-dev-bin` for it) |
 | SDDM / none | ⏭️ skipped (desktop rotation still works) |
 
 GDM has no plain config key for the greeter background — the login wallpaper is

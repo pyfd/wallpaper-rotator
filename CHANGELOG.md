@@ -12,6 +12,8 @@ GDM login background: install the gresource tools instead of skipping (#1535)
 ### Fixed
 - **A fresh GNOME/Zorin machine now gets the login background.** On GDM, `install.sh` used to check for `gresource` + `glib-compile-resources` and, if either was missing, print "skipping for now" and carry on: the desktop rotated but the login screen stayed stock, with nothing to flag it. A fresh Zorin 18.1 (Fam4, 8 Nov) ships `libglib2.0-bin` but not `libglib2.0-dev-bin`, so it hit this. The tools are now installed with the other dependencies (`libglib2.0-dev-bin`/`glib2-devel`); only if that fails is the login half skipped, with a WARNING on stderr.
 
+- README's display-manager table no longer says to install `libglib2.0-dev-bin` by hand.
+
 **Deploy:** `wru` on a machine whose login screen isn't ours (it re-runs `install.sh`, which asks for sudo once).
 
 ## 2026-11-07 11:02 GMT — cc-desktop
